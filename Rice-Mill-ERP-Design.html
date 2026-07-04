@@ -1,0 +1,1629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rice Mill ERP — Solution Architecture Document</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<style>
+  :root{
+    --paper:#FAF7F0;
+    --paper-2:#F1ECE0;
+    --ink:#221F1A;
+    --ink-soft:#5B5648;
+    --rule:#DCD3BC;
+    --wheat:#B8862E;
+    --wheat-dark:#8C6420;
+    --husk:#6F7D5C;
+    --charcoal:#1E2420;
+    --charcoal-2:#272E28;
+    --mono: "JetBrains Mono","SF Mono",Consolas,monospace;
+    --sans: "Inter","Segoe UI",-apple-system,sans-serif;
+    --serif: "Source Serif 4","Georgia",serif;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    font-family:var(--sans);
+    background:var(--paper);
+    color:var(--ink);
+    line-height:1.65;
+    font-size:16px;
+  }
+  /* Layout */
+  .shell{display:grid; grid-template-columns:280px 1fr; min-height:100vh;}
+  aside.sidebar{
+    background:var(--charcoal);
+    color:#E7E2D3;
+    padding:28px 20px 60px;
+    position:sticky; top:0; height:100vh; overflow-y:auto;
+    border-right:1px solid #0d100e;
+  }
+  .brand{
+    font-family:var(--serif);
+    font-size:1.05rem;
+    letter-spacing:.02em;
+    color:#fff;
+    margin-bottom:2px;
+  }
+  .brand-sub{
+    font-family:var(--mono);
+    font-size:.68rem;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:var(--wheat);
+    margin-bottom:26px;
+    display:block;
+  }
+  nav.toc{display:flex; flex-direction:column; gap:2px;}
+  .nav-link{
+    color:#BDB7A2;
+    text-decoration:none;
+    font-size:.83rem;
+    padding:8px 10px;
+    border-radius:4px;
+    border-left:2px solid transparent;
+    transition:background .15s, color .15s, border-color .15s;
+    line-height:1.35;
+  }
+  .nav-link:hover{background:var(--charcoal-2); color:#fff;}
+  .nav-link.active{
+    color:var(--wheat);
+    border-left:2px solid var(--wheat);
+    background:var(--charcoal-2);
+  }
+  .sidebar-foot{
+    margin-top:28px; padding-top:18px; border-top:1px solid #3a4138;
+    font-family:var(--mono); font-size:.7rem; color:#7C7868; letter-spacing:.04em;
+  }
+
+  main{padding:64px 64px 120px; max-width:980px;}
+
+  /* Header block */
+  main > h1:first-of-type{
+    font-family:var(--serif);
+    font-size:2.5rem;
+    line-height:1.15;
+    margin:0 0 6px;
+    color:var(--ink);
+    border-bottom:4px solid var(--wheat);
+    padding-bottom:18px;
+  }
+  main > h3:first-of-type{
+    font-family:var(--mono);
+    font-weight:500;
+    font-size:.95rem;
+    letter-spacing:.04em;
+    color:var(--ink-soft);
+    margin:14px 0 28px;
+    text-transform:uppercase;
+  }
+
+  h1,h2,h3,h4{font-family:var(--serif); color:var(--ink); font-weight:600;}
+  h2{
+    font-size:1.6rem;
+    margin:64px 0 18px;
+    padding-bottom:10px;
+    border-bottom:1px solid var(--rule);
+    scroll-margin-top:24px;
+    position:relative;
+  }
+  h2::before{
+    content:"";
+    position:absolute; left:-64px; top:.35em;
+    width:34px; height:3px; background:var(--wheat);
+  }
+  h3{font-size:1.15rem; margin:32px 0 12px;}
+  h4{font-size:1rem; margin:24px 0 8px; font-family:var(--sans); font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:var(--ink-soft);}
+
+  p{margin:0 0 14px; color:#3A362E;}
+  strong{color:var(--ink); font-weight:650;}
+  a{color:var(--wheat-dark);}
+  hr{border:none; border-top:1px solid var(--rule); margin:48px 0;}
+
+  blockquote{
+    margin:20px 0; padding:14px 20px;
+    background:var(--paper-2);
+    border-left:3px solid var(--husk);
+    border-radius:0 4px 4px 0;
+    color:var(--ink-soft);
+    font-size:.93rem;
+  }
+  blockquote p{margin:0; color:var(--ink-soft);}
+
+  ul,ol{padding-left:22px; margin:0 0 16px;}
+  li{margin-bottom:6px; color:#3A362E;}
+
+  /* Tables */
+  table{
+    width:100%; border-collapse:collapse;
+    margin:18px 0 28px;
+    font-size:.86rem;
+    background:#fff;
+    box-shadow:0 1px 0 var(--rule);
+  }
+  thead th{
+    background:var(--charcoal);
+    color:#EFE9D8;
+    text-align:left;
+    padding:10px 12px;
+    font-family:var(--mono);
+    font-size:.72rem;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    font-weight:600;
+  }
+  tbody td{
+    padding:9px 12px;
+    border-bottom:1px solid var(--rule);
+    vertical-align:top;
+    color:#3A362E;
+  }
+  tbody tr:nth-child(even){background:#FBF9F3;}
+  tbody tr:hover{background:#F3ECD9;}
+  td code, li code, p code{
+    font-family:var(--mono); font-size:.82em;
+    background:var(--paper-2); padding:1px 6px; border-radius:3px;
+    color:var(--wheat-dark);
+  }
+
+  /* Code blocks (non-mermaid) */
+  pre:not(.mermaid){
+    background:var(--charcoal);
+    color:#E7E2D3;
+    padding:18px 20px;
+    border-radius:6px;
+    overflow-x:auto;
+    font-family:var(--mono);
+    font-size:.82rem;
+    line-height:1.55;
+    margin:16px 0 24px;
+    border-left:3px solid var(--wheat);
+  }
+  pre:not(.mermaid) code{background:none; color:inherit; padding:0;}
+
+  /* Mermaid diagrams */
+  pre.mermaid, .mermaid{
+    background:#fff;
+    border:1px solid var(--rule);
+    border-radius:8px;
+    padding:20px;
+    margin:20px 0 28px;
+    display:flex; justify-content:center;
+    overflow-x:auto;
+  }
+
+  .section-pill{
+    display:inline-block;
+    font-family:var(--mono); font-size:.68rem; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--husk);
+    background:#EAEEE2; padding:3px 9px; border-radius:20px;
+    margin-bottom:10px;
+  }
+
+  /* Mobile */
+  .menu-toggle{display:none;}
+  @media (max-width:900px){
+    .shell{grid-template-columns:1fr;}
+    aside.sidebar{
+      position:fixed; left:0; top:0; width:78%; max-width:300px;
+      transform:translateX(-100%);
+      transition:transform .25s ease;
+      z-index:50; box-shadow:4px 0 24px rgba(0,0,0,.3);
+    }
+    aside.sidebar.open{transform:translateX(0);}
+    main{padding:84px 24px 100px;}
+    h2::before{display:none;}
+    .menu-toggle{
+      display:flex; position:fixed; top:16px; left:16px; z-index:60;
+      background:var(--charcoal); color:#fff; border:none;
+      width:42px; height:42px; border-radius:8px; align-items:center; justify-content:center;
+      font-size:1.2rem; cursor:pointer;
+    }
+  }
+  @media print{
+    aside.sidebar, .menu-toggle{display:none;}
+    .shell{grid-template-columns:1fr;}
+    main{padding:0 12px;}
+  }
+</style>
+</head>
+<body>
+
+<button class="menu-toggle" id="menuToggle" aria-label="Toggle navigation">☰</button>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">Rice Mill ERP</div>
+    <span class="brand-sub">Solution Architecture · v1.0</span>
+    <nav class="toc" id="tocNav">
+      <a href="#table-of-contents" class="nav-link">Table of Contents</a>
+      <a href="#1-business-process-flow" class="nav-link">1. Business Process Flow</a>
+      <a href="#2-swimlane-flowchart" class="nav-link">2. Swimlane Flowchart</a>
+      <a href="#3-decision-tree" class="nav-link">3. Decision Tree</a>
+      <a href="#4-production-flow-diagram-material-by-product-trace" class="nav-link">4. Production Flow Diagram (Material &amp; By-Product Trace)</a>
+      <a href="#5-erp-module-architecture" class="nav-link">5. ERP Module Architecture</a>
+      <a href="#6-er-diagram" class="nav-link">6. ER Diagram</a>
+      <a href="#7-complete-database-schema" class="nav-link">7. Complete Database Schema</a>
+      <a href="#8-relationships-cardinality-summary" class="nav-link">8. Relationships (Cardinality Summary)</a>
+      <a href="#9-master-tables-vs-transaction-tables" class="nav-link">9. Master Tables vs Transaction Tables</a>
+      <a href="#10-status-flow" class="nav-link">10. Status Flow</a>
+      <a href="#11-user-permission-matrix" class="nav-link">11. User Permission Matrix</a>
+      <a href="#12-approval-workflow" class="nav-link">12. Approval Workflow</a>
+      <a href="#13-inventory-movement-flow" class="nav-link">13. Inventory Movement Flow</a>
+      <a href="#14-production-tracking-flow" class="nav-link">14. Production Tracking Flow</a>
+      <a href="#15-material-traceability-flow" class="nav-link">15. Material Traceability Flow</a>
+      <a href="#16-reports-required" class="nav-link">16. Reports Required</a>
+      <a href="#17-dashboard-kpis" class="nav-link">17. Dashboard KPIs</a>
+      <a href="#18-api-structure-rest-sample" class="nav-link">18. API Structure (REST, sample)</a>
+      <a href="#19-suggestions-enhancements-industry-best-practice-field-notes" class="nav-link">19. Suggestions &amp; Enhancements (Industry Best Practice + Field Notes)</a>
+    </nav>
+    <div class="sidebar-foot">Gate&nbsp;→&nbsp;Lab&nbsp;→&nbsp;Mill&nbsp;→&nbsp;Pack&nbsp;→&nbsp;Dispatch<br>Full traceability · Audit-ready</div>
+  </aside>
+
+  <main>
+    <h1 id="rice-mill-inventory-procurement-production-dispatch-management-system">Rice Mill Inventory, Procurement, Production &amp; Dispatch Management System</h1>
+<h3 id="enterprise-erp-design-document-v10">Enterprise ERP Design Document — v1.0</h3>
+<p><strong>Prepared as:</strong> Solution Architecture / Business Analysis / Database Design Blueprint
+<strong>Scope:</strong> Gate Entry → Procurement → Lab QC → Production → Packing → Finished Goods → Dispatch, with full traceability, approvals, and audit.</p>
+<blockquote>
+<p><strong>Note on field notes incorporated:</strong> This design incorporates the operational notes captured on-site (vehicle token/queue system, vendor portal for PO/DO upload, driver photo capture, bag-level rejection/replace/refund, two milling process types — "bag/dry" vs "wet" — by-product sales to separate customers, stock aging, WhatsApp integration, batch tracking, day-wise/shift reports, machine downtime/stoppage tracking, and process-time/cycle-time tracking). These are called out explicitly in <strong>Section 20 — Suggestions &amp; Enhancements</strong>, and woven into the relevant modules/tables throughout.</p>
+</blockquote>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li>Business Process Flow</li>
+<li>Swimlane Flowchart</li>
+<li>Decision Tree</li>
+<li>Production Flow Diagram</li>
+<li>ERP Module Architecture</li>
+<li>ER Diagram</li>
+<li>Complete Database Schema</li>
+<li>Relationships</li>
+<li>Master Tables</li>
+<li>Transaction Tables</li>
+<li>Status Flow</li>
+<li>User Permission Matrix</li>
+<li>Approval Workflow</li>
+<li>Inventory Movement Flow</li>
+<li>Production Tracking Flow</li>
+<li>Material Traceability Flow</li>
+<li>Reports Required</li>
+<li>Dashboard KPIs</li>
+<li>API Structure</li>
+<li>Suggestions &amp; Enhancements (incl. field-note items)</li>
+</ol>
+<hr />
+<h2 id="1-business-process-flow">1. Business Process Flow</h2>
+<pre><code>GATE ENTRY → TOKEN/QUEUE → SAMPLING → LAB TESTING → (NEGOTIATION) → WEIGHBRIDGE (GROSS)
+   → UNLOADING → [STORE IN WAREHOUSE]  OR  [DIRECT TO PRODUCTION]
+   → QUICK QC (bag-level) → MOISTURE DECISION → (DRYER if wet) → MILLING
+   → SEPARATOR → WHITENING/SHINER (1-5) → COLOR SORTER → LENGTH GRADER
+   → PACKING (batch/lot/barcode/QR) → FINISHED GOODS WAREHOUSE
+   → SALES ORDER → DISPATCH (Invoice/Challan/Loading Slip) → WEIGHBRIDGE (TARE/NET)
+   → GATE-OUT
+</code></pre>
+<p>Every arrow above is a <strong>stage transition</strong> that is logged with: actor (user), timestamp, location, quantity in/out, and document reference — this is the backbone of traceability (see Section 16).</p>
+<h3 id="step-by-step-narrative">Step-by-step narrative</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Stage</th>
+<th>Key Inputs</th>
+<th>Key Outputs</th>
+<th>Owner Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Gate Entry</td>
+<td>Vehicle No., Driver details + photo, Vendor, Challan, PO (optional), Material, Expected Qty</td>
+<td>Gate Entry record, <strong>Token Number</strong>, Vehicle Status = <em>Waiting for Sampling</em></td>
+<td>Gate Security</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Sampling</td>
+<td>Physical sample from truck</td>
+<td>Sample record linked to Gate Entry</td>
+<td>Gate Security / Sampling Officer</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Lab Testing</td>
+<td>Sample</td>
+<td>Moisture %, Broken %, FM %, Color, Smell, Variety, Grain size, Verdict (Accept/Reject/Negotiate)</td>
+<td>Lab Technician</td>
+</tr>
+<tr>
+<td>3a</td>
+<td>Negotiation (conditional)</td>
+<td>Lab verdict, Vendor call</td>
+<td>New rate or Reject</td>
+<td>Purchase Officer</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Gross Weight</td>
+<td>Truck on weighbridge</td>
+<td>Gross Weight, Slip No., Date-Time</td>
+<td>Weighbridge Operator</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Unloading</td>
+<td>Truck at unloading bay</td>
+<td>Unload Time, Lot No., Warehouse, Stack No.</td>
+<td>Warehouse Staff</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Storage/Production Decision</td>
+<td>Unloaded material</td>
+<td>Stack ID <strong>or</strong> Production Issue</td>
+<td>Warehouse Manager</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Quick QC (bag level)</td>
+<td>Bags from store/direct</td>
+<td>Accepted Qty, Rejected Qty, Reason</td>
+<td>QA Operator</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Moisture Decision</td>
+<td>Paddy moisture %</td>
+<td>Dry → Milling; Wet → Dryer</td>
+<td>Production Manager</td>
+</tr>
+<tr>
+<td>8a</td>
+<td>Drying (conditional)</td>
+<td>Wet paddy</td>
+<td>Dried paddy, recheck moisture</td>
+<td>Dryer Operator</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Paddy Milling</td>
+<td>Dry paddy</td>
+<td>Brown Rice, Husk, Broken, Waste, Recovery %</td>
+<td>Machine Operator</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Separator</td>
+<td>Brown rice</td>
+<td>Cleaned rice + Impurities/Dust/Stone</td>
+<td>Machine Operator</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Whitening/Shiner (1–5)</td>
+<td>Cleaned rice</td>
+<td>Polished rice, Loss qty</td>
+<td>Machine Operator</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Optical Color Sorter</td>
+<td>Polished rice</td>
+<td>Good grains, Rejected grains</td>
+<td>Machine Operator</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Length Grader</td>
+<td>Sorted rice</td>
+<td>Long/Medium/Broken/Small-broken lots</td>
+<td>Machine Operator</td>
+</tr>
+<tr>
+<td>14</td>
+<td>Packing</td>
+<td>Graded rice</td>
+<td>Packed bags w/ Batch/Lot/Barcode/QR</td>
+<td>Packing Operator</td>
+</tr>
+<tr>
+<td>15</td>
+<td>Finished Goods Warehouse</td>
+<td>Packed stock</td>
+<td>FG Stock with Rack/Pallet location</td>
+<td>Store Manager</td>
+</tr>
+<tr>
+<td>16</td>
+<td>Dispatch</td>
+<td>Sales Order</td>
+<td>Delivery Challan, Invoice, Loading Slip, Dispatch Weight</td>
+<td>Dispatch Manager</td>
+</tr>
+<tr>
+<td>17</td>
+<td>Retain in Stock (alt.)</td>
+<td>Unsold FG</td>
+<td>Stock held, auto inventory update</td>
+<td>Store Manager</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-swimlane-flowchart">2. Swimlane Flowchart</h2>
+<pre class="mermaid">flowchart TD
+ subgraph GS["Gate Security"]
+  A1([Truck Arrives]) --> A2{Docs / Photo / Vehicle No. OK?}
+  A2 -- No --> A3([Reject Entry])
+  A2 -- Yes --> A4[/Generate Token + Gate Entry/]
+ end
+ subgraph SAMP["Sampling Officer"]
+  A4 --> B1[Collect Sample]
+  B1 --> B2[Send to Lab]
+ end
+ subgraph LAB["Lab Technician"]
+  B2 --> C1[Test Moisture/Broken/FM/Color/Variety]
+  C1 --> C2{Verdict}
+  C2 -- Rejected --> Z1([Truck Exit])
+  C2 -- Negotiation --> D1
+  C2 -- Accepted --> E1
+ end
+ subgraph PUR["Purchase Officer"]
+  D1[Call Vendor] --> D2{Vendor Decision}
+  D2 -- Reject --> Z1
+  D2 -- Accept New Rate --> D3[Update PO Rate] --> E1
+ end
+ subgraph WB["Weighbridge Operator"]
+  E1[Proceed to Weighbridge] --> E2[Capture Gross Weight]
+ end
+ subgraph WH["Warehouse Staff/Manager"]
+  E2 --> F1[Unload Material]
+  F1 --> F2{Store or Direct Production?}
+  F2 -- Store --> F3[(Stack/Bin/Lot)]
+  F2 -- Direct --> G1
+ end
+ subgraph QC["QA Operator"]
+  F3 -.Production Request.-> G1
+  G1[Quick Bag-level QC] --> G2{Bag OK?}
+  G2 -- No --> G3[(Reject Area: Replace/Refund)]
+  G2 -- Yes --> H1
+ end
+ subgraph PROD["Production / Machine Operator"]
+  H1{Moisture: Dry or Wet?}
+  H1 -- Wet --> H2[Dryer] --> H3[Recheck Moisture] --> H4[Milling]
+  H1 -- Dry --> H4
+  H4 --> H5[Separator] --> H6[Shiner 1-5] --> H7[Color Sorter] --> H8[Length Grader]
+ end
+ subgraph PACK["Packing Operator"]
+  H8 --> I1[Pack: Batch/Lot/Barcode/QR]
+ end
+ subgraph FG["Store Manager"]
+  I1 --> J1[(FG Warehouse: Rack/Pallet)]
+ end
+ subgraph DISP["Dispatch Manager"]
+  J1 --> K1{Sales Order Received?}
+  K1 -- Yes --> K2[Pick + Challan + Invoice + Loading Slip]
+  K2 --> K3[Weighbridge Tare/Net] --> K4([Gate Out / Dispatched])
+  K1 -- No --> J1
+ end
+</pre>
+<hr />
+<h2 id="3-decision-tree">3. Decision Tree</h2>
+<pre class="mermaid">flowchart TD
+ S0([Truck at Gate]) --> D1{Docs/Vehicle/Photo Valid?}
+ D1 -- No --> X1([REJECT ENTRY])
+ D1 -- Yes --> D2{Lab Verdict}
+ D2 -- Rejected --> X2([TRUCK EXIT])
+ D2 -- "Negotiation Required" --> D3{Vendor Accepts New Rate?}
+ D3 -- No --> X2
+ D3 -- Yes --> D4
+ D2 -- Accepted --> D4{Storage or Direct Production?}
+ D4 -- Store --> X3([Held in Warehouse — pauses here until Production Request]):::pause
+ D4 -- Direct --> D5{Bag-level QC: Pass?}
+ X3 -.Production Request.-> D5
+ D5 -- No --> D5a{Action}
+ D5a -- Replace --> D5
+ D5a -- Refund --> X4([Reject Area / Vendor Credit Note])
+ D5 -- Yes --> D6{Moisture: Dry or Wet?}
+ D6 -- Wet --> D7[Dryer] --> D6b{Recheck: Dry now?}
+ D6b -- No --> D7
+ D6b -- Yes --> D8[Proceed to Milling]
+ D6 -- Dry --> D8
+ D8 --> D9[Separator -> Shiner -> Color Sorter -> Length Grader]
+ D9 --> D10{Color Sorter: Good or Rejected Grain?}
+ D10 -- Rejected --> X5([Reprocess / By-product stream])
+ D10 -- Good --> D11[Length Grading -> Separate Lots]
+ D11 --> D12[Packing]
+ D12 --> D13{Sales Order Available?}
+ D13 -- No --> X6([Hold in FG Warehouse / Aging Tracking])
+ D13 -- Yes --> D14([Dispatch])
+ classDef pause fill:#fff3cd,stroke:#856404
+</pre>
+<hr />
+<h2 id="4-production-flow-diagram-material-by-product-trace">4. Production Flow Diagram (Material &amp; By-Product Trace)</h2>
+<pre class="mermaid">flowchart LR
+ RM[Raw Paddy] --> MIL[Milling]
+ MIL --> BR[Brown Rice]
+ MIL --> HUSK((Husk))
+ MIL --> BRK1((Broken))
+ MIL --> WST1((Waste))
+ BR --> SEP[Separator]
+ SEP --> CLEAN[Cleaned Rice]
+ SEP --> IMP((Impurities/Dust/Stone))
+ CLEAN --> SH1[Shiner 1] --> SH2[Shiner 2] --> SH3[Shiner 3] --> SH4[Shiner 4] --> SH5[Shiner 5]
+ SH5 --> BRAN((Bran - by-product))
+ SH5 --> POLISHED[Polished Rice]
+ POLISHED --> COL[Optical Color Sorter]
+ COL --> REJG((Rejected Grain))
+ COL --> GOOD[Good Grain]
+ GOOD --> LEN[Length Grader]
+ LEN --> LONG[Long Grain Lot]
+ LEN --> MED[Medium Grain Lot]
+ LEN --> BRK2[Broken Rice Lot]
+ LEN --> SBRK[Small Broken Lot]
+ LONG --> PACK[Packing]
+ MED --> PACK
+ BRK2 --> PACK
+ SBRK --> PACK
+ PACK --> FG[(Finished Goods)]
+ HUSK --> BYP[(By-Product Inventory & Sales)]
+ BRAN --> BYP
+ BRK1 --> BYP
+ WST1 --> WASTE[(Waste Disposal Log)]
+ IMP --> WASTE
+ REJG --> RWORK{Rework or By-product?}
+ RWORK -- Rework --> SEP
+ RWORK -- By-product --> BYP
+ FG --> DISPATCH([Dispatch / Direct Outward])
+ BYP --> BSALE([By-Product Sales Order — separate Customer Master])
+</pre>
+<p><strong>Key traceability rule:</strong> every box above is a <strong>lot/batch</strong> with quantity in, quantity out, and a recorded yield/loss %, so any finished bag can be traced back to the originating paddy lot(s) and vice-versa (forward &amp; backward traceability).</p>
+<hr />
+<h2 id="5-erp-module-architecture">5. ERP Module Architecture</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Module</th>
+<th>Core Responsibility</th>
+<th>New/Enhanced (from field notes)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Gate Management</td>
+<td>Entry/exit, token &amp; queue, driver photo capture</td>
+<td><strong>Token/queue system</strong>, ANPR-ready vehicle no. capture</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Vendor Portal</td>
+<td>Vendor self-service</td>
+<td><strong>Vendor uploads PO/DO</strong>; gate verifies against it</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Vendor Management</td>
+<td>Vendor master, rating, ledger</td>
+<td>—</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Purchase Management</td>
+<td>PO, rate negotiation, contracts</td>
+<td>—</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Sampling</td>
+<td>Sample collection &amp; chain-of-custody</td>
+<td>—</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Laboratory (QC-Inbound)</td>
+<td>Lab test parameters &amp; verdicts</td>
+<td>—</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Negotiation</td>
+<td>Rate revision workflow</td>
+<td>—</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Weighbridge</td>
+<td>Gross/Tare/Net capture, slip printing</td>
+<td>—</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Warehouse Management</td>
+<td>Stack/Bin/Lot, raw material storage</td>
+<td><strong>Stock aging report</strong></td>
+</tr>
+<tr>
+<td>10</td>
+<td>Inventory</td>
+<td>Real-time stock ledger across all stages</td>
+<td>Real-time tracking</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Production</td>
+<td>Batch creation, stage routing</td>
+<td><strong>Two process types: Dry (bag) vs Wet</strong></td>
+</tr>
+<tr>
+<td>12</td>
+<td>Dryer Management</td>
+<td>Drying cycles, moisture recheck</td>
+<td>—</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Machine Management</td>
+<td>Machine master, run logs, recovery %</td>
+<td><strong>Downtime/stoppage reason codes</strong></td>
+</tr>
+<tr>
+<td>14</td>
+<td>Quality Control (in-process)</td>
+<td>Bag-level QC, rejection handling</td>
+<td><strong>Replace / Refund workflow</strong></td>
+</tr>
+<tr>
+<td>15</td>
+<td>By-Product Management</td>
+<td>Husk/Bran/Broken/Waste tracking &amp; sale</td>
+<td><strong>Separate customer master for by-products</strong></td>
+</tr>
+<tr>
+<td>16</td>
+<td>Packing</td>
+<td>Batch/Lot/Barcode/QR generation</td>
+<td><strong>Batch tracking</strong></td>
+</tr>
+<tr>
+<td>17</td>
+<td>Finished Goods</td>
+<td>FG stock, rack/pallet, aging</td>
+<td><strong>Aging</strong></td>
+</tr>
+<tr>
+<td>18</td>
+<td>Sales Order Management</td>
+<td>Order booking, allocation</td>
+<td>—</td>
+</tr>
+<tr>
+<td>19</td>
+<td>Dispatch</td>
+<td>Challan, invoice, loading slip</td>
+<td><strong>Direct outward (skip-warehouse) dispatch</strong></td>
+</tr>
+<tr>
+<td>20</td>
+<td>Vehicle Management</td>
+<td>Vehicle/driver master, history</td>
+<td>—</td>
+</tr>
+<tr>
+<td>21</td>
+<td>GPS Tracking (optional)</td>
+<td>Live vehicle location</td>
+<td>—</td>
+</tr>
+<tr>
+<td>22</td>
+<td>Accounts/Finance</td>
+<td>Invoices, payments, ledgers</td>
+<td>—</td>
+</tr>
+<tr>
+<td>23</td>
+<td>Reports &amp; Analytics</td>
+<td>Day-wise, shift-wise, MIS</td>
+<td><strong>Day-wise reports, cycle/process-time reports</strong></td>
+</tr>
+<tr>
+<td>24</td>
+<td>Dashboard</td>
+<td>Real-time KPIs</td>
+<td>Real-time tracking</td>
+</tr>
+<tr>
+<td>25</td>
+<td>Master Settings</td>
+<td>Org, plant, UOM, variety masters</td>
+<td>—</td>
+</tr>
+<tr>
+<td>26</td>
+<td>User Management</td>
+<td>Users, roles, permissions</td>
+<td>—</td>
+</tr>
+<tr>
+<td>27</td>
+<td>Audit Logs</td>
+<td>Every CRUD + status change</td>
+<td>—</td>
+</tr>
+<tr>
+<td>28</td>
+<td>Notifications</td>
+<td>Alerts, escalations</td>
+<td><strong>WhatsApp Integration</strong></td>
+</tr>
+<tr>
+<td>29</td>
+<td>Maintenance</td>
+<td>Preventive/breakdown maintenance</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h3 id="module-interaction-high-level">Module Interaction (high level)</h3>
+<pre class="mermaid">flowchart TB
+ GP[Vendor Portal] --> GM[Gate Mgmt]
+ GM --> SM[Sampling] --> LB[Laboratory] --> NG[Negotiation] --> WB[Weighbridge]
+ WB --> WM[Warehouse Mgmt] --> INV[(Inventory Ledger)]
+ INV --> PR[Production] --> MC[Machine Mgmt]
+ PR --> QC[Quality Control]
+ PR --> BP[By-Product Mgmt]
+ PR --> PK[Packing] --> FG[Finished Goods] --> INV
+ FG --> SO[Sales Order] --> DP[Dispatch]
+ BP --> SO
+ DP --> ACC[Accounts]
+ ACC --> RPT[Reports/Dashboard]
+ INV --> RPT
+ NOTIF[Notifications/WhatsApp] -.alerts.- GM & LB & WM & PR & DP
+ AUD[Audit Logs] -.logs.- GM & LB & PR & PK & DP & ACC
+</pre>
+<hr />
+<h2 id="6-er-diagram">6. ER Diagram</h2>
+<pre class="mermaid">erDiagram
+ USERS }o--|| ROLES : has
+ ROLES }o--o{ PERMISSIONS : grants
+ VENDORS ||--o{ PURCHASE_ORDER : issues
+ VENDORS ||--o{ GATE_ENTRY : supplies
+ DRIVERS ||--o{ GATE_ENTRY : drives
+ VEHICLES ||--o{ GATE_ENTRY : used_in
+ GATE_ENTRY ||--|| SAMPLING : generates
+ SAMPLING ||--|| LAB_TEST : tested_in
+ LAB_TEST ||--o{ NEGOTIATION : may_trigger
+ LAB_TEST ||--|| WEIGHT_SLIP : leads_to
+ GATE_ENTRY ||--|| WEIGHT_SLIP : records
+ PURCHASE_ORDER ||--o{ GATE_ENTRY : referenced_by
+ WEIGHT_SLIP ||--|| PURCHASE : finalizes
+ PURCHASE ||--o{ LOTS : creates
+ LOTS ||--o{ STACKS : stored_in
+ STACKS }o--|| WAREHOUSE : located_in
+ LOTS ||--o{ INVENTORY : tracked_in
+ LOTS ||--o{ PRODUCTION_BATCH : feeds
+ PRODUCTION_BATCH ||--o{ QUALITY_CHECK : undergoes
+ PRODUCTION_BATCH ||--o{ DRYER : may_pass_through
+ PRODUCTION_BATCH ||--o{ MACHINE_LOGS : processed_by
+ MACHINE_LOGS }o--|| MACHINES : uses
+ PRODUCTION_BATCH ||--o{ SEPARATOR_OUTPUT : yields
+ PRODUCTION_BATCH ||--o{ SHINER_PROCESS : yields
+ PRODUCTION_BATCH ||--o{ COLOR_SORTER : yields
+ PRODUCTION_BATCH ||--o{ LENGTH_GRADING : yields
+ LENGTH_GRADING ||--o{ PACKING : packed_into
+ PACKING ||--o{ FINISHED_GOODS : stored_as
+ PRODUCTION_BATCH ||--o{ REJECT_MATERIAL : generates
+ PRODUCTION_BATCH ||--o{ WASTE_MANAGEMENT : generates
+ FINISHED_GOODS ||--o{ STOCK_MOVEMENT : moves_via
+ FINISHED_GOODS }o--o{ SALES_ORDER : allocated_to
+ SALES_ORDER ||--|| DISPATCH : fulfilled_by
+ DISPATCH ||--|| INVOICES : billed_via
+ INVOICES ||--o{ PAYMENTS : settled_by
+ SALES_ORDER }o--|| CUSTOMERS : placed_by
+ MACHINES ||--o{ MACHINE_MAINTENANCE : maintained_by
+ USERS ||--o{ AUDIT_LOGS : performs
+ USERS ||--o{ NOTIFICATIONS : receives
+</pre>
+<blockquote>
+<p>The relational dictionary in Section 7 expands every entity above into a concrete table with columns, keys, and indexes.</p>
+</blockquote>
+<hr />
+<h2 id="7-complete-database-schema">7. Complete Database Schema</h2>
+<p><strong>Convention applied to every table (not repeated below for brevity):</strong>
+<code>id (PK, BIGINT/UUID)</code>, <code>created_by (FK-&gt;users.id)</code>, <code>updated_by (FK-&gt;users.id)</code>, <code>created_at</code>, <code>updated_at</code>, <code>status (ENUM, table-specific)</code>, <code>is_deleted (BOOLEAN, soft delete)</code>, <code>tenant_id/plant_id</code> (for multi-plant scalability).</p>
+<h3 id="71-master-tables">7.1 Master Tables</h3>
+<p><strong>users</strong> — username, email, phone, password_hash, role_id (FK roles), employee_code, is_active
+<strong>roles</strong> — role_name, description
+<strong>permissions</strong> — module, action (create/read/update/delete/approve), code
+<strong>role_permissions</strong> — role_id (FK), permission_id (FK)
+<strong>vendors</strong> — vendor_code, name, gstin, address, bank_details, rating, credit_terms, vendor_type(supplier/by-product-buyer)
+<strong>customers</strong> — customer_code, name, gstin, address, credit_limit, customer_type(FG/by-product) <em>(supports note #25: by-product customers ≠ FG customers)</em>
+<strong>drivers</strong> — name, mobile, license_no, photo_url
+<strong>vehicles</strong> — vehicle_no, type(truck/tractor-trolley), capacity, owner_vendor_id (FK, nullable)
+<strong>material_master</strong> — material_code, name, category(paddy/rice/husk/bran/broken/etc.), uom, variety, hsn_code
+<strong>variety_master</strong> — variety_name, grain_type(long/medium/short)
+<strong>warehouse_master</strong> — warehouse_code, name, location, capacity, type(raw/FG)
+<strong>bin_stack_master</strong> — bin_code, warehouse_id (FK), capacity
+<strong>machine_master</strong> — machine_code, name, type(huller/separator/shiner/colorsorter/grader/dryer), capacity_per_hr, install_date
+<strong>uom_master</strong> — uom_code, name, conversion_factor
+<strong>rate_master</strong> — material_id (FK), variety_id (FK), base_rate, effective_date
+<strong>quality_parameter_master</strong> — parameter_name, unit, acceptable_min, acceptable_max <em>(moisture, broken%, FM%, etc.)</em>
+<strong>reason_code_master</strong> — category(rejection/downtime/waste), code, description <em>(supports note #1, #6, #7: stoppage &amp; rejection reasons)</em>
+<strong>plant_master</strong> — plant_code, name, address <em>(multi-plant scalability)</em></p>
+<h3 id="72-transaction-tables">7.2 Transaction Tables</h3>
+<p><strong>purchase_order</strong> — po_no, vendor_id (FK), material_id (FK), variety_id (FK), qty, rate, po_date, validity, do_no (Delivery Order), uploaded_by_vendor (BOOLEAN) <em>(note #12)</em>
+<strong>gate_entry</strong> — token_no (UNIQUE, sequential), vehicle_id (FK), driver_id (FK), driver_photo_url, vendor_id (FK), po_id (FK, nullable), challan_no, material_id (FK), expected_qty, entry_time, exit_time, gate_status(waiting_token/waiting_sampling/rejected/in_process/parked/exited) <em>(notes #2,#5,#13: token + status incl. "parked")</em>
+<strong>sampling</strong> — gate_entry_id (FK), sample_code, collected_by (FK users), collected_at, sent_to_lab_at
+<strong>lab_test</strong> — sampling_id (FK), moisture_pct, broken_pct, fm_pct, color, smell, variety_detected, grain_size, verdict(accepted/rejected/negotiation), tested_by (FK), tested_at
+<strong>negotiation</strong> — lab_test_id (FK), old_rate, proposed_rate, vendor_response(accept/reject), negotiated_by (FK), negotiated_at
+<strong>weight_slip</strong> — gate_entry_id (FK), slip_no, gross_weight, tare_weight, net_weight, weighed_at, weighbridge_operator_id (FK)
+<strong>purchase</strong> — po_id (FK), gate_entry_id (FK), weight_slip_id (FK), final_rate, final_qty, amount, purchase_date
+<strong>lots</strong> — lot_no (UNIQUE), purchase_id (FK, nullable for production-generated lots), material_id (FK), variety_id (FK), qty, parent_lot_id (FK self, for derived lots) <em>(traceability backbone)</em>
+<strong>stacks</strong> — stack_code, lot_id (FK), warehouse_id (FK), bin_id (FK), qty, stacked_at, age_days (computed) <em>(note #24: aging)</em>
+<strong>inventory</strong> — lot_id (FK), material_id (FK), warehouse_id (FK)/stage, qty_in, qty_out, balance_qty, as_of
+<strong>quality_check</strong> — batch_id (FK), check_level(bag/lot), accepted_qty, rejected_qty, reason_code_id (FK), action(replace/refund/scrap), checked_by (FK) <em>(notes #6,#7,#16,#17)</em>
+<strong>dryer</strong> — batch_id (FK), machine_id (FK), start_time, end_time, moisture_before, moisture_after, recheck_status
+<strong>production_batch</strong> — batch_no (UNIQUE), lot_id (FK), process_type(dry/wet) <em>(note #22)</em>, input_qty, plant_id (FK), production_date, status
+<strong>machines</strong> — (alias to machine_master for FK linkage)
+<strong>machine_logs</strong> — batch_id (FK), machine_id (FK), operator_id (FK), start_time, end_time, running_hours, input_qty, output_qty, recovery_pct, downtime_minutes, downtime_reason_id (FK) <em>(note #1: why it stops)</em>
+<strong>separator_output</strong> — batch_id (FK), input_qty, cleaned_qty, impurity_qty, stone_qty, dust_qty
+<strong>shiner_process</strong> — batch_id (FK), stage_no(1-5), machine_id (FK), input_qty, output_qty, loss_qty, bran_qty
+<strong>color_sorter</strong> — batch_id (FK), input_qty, good_qty, rejected_qty
+<strong>length_grading</strong> — batch_id (FK), input_qty, long_qty, medium_qty, broken_qty, small_broken_qty
+<strong>packing</strong> — batch_id (FK), lot_id (FK output), pack_size(5/10/25/50/custom), bag_count, batch_no, qr_code, barcode, production_date, expiry_date, packed_by (FK)
+<strong>finished_goods</strong> — packing_id (FK), warehouse_id (FK), rack_id, pallet_id, qty, status(ready/on_hold/aging/dispatched), aged_days (computed) <em>(note #24)</em>
+<strong>reject_material</strong> — source_stage, batch_id (FK), qty, reason_code_id (FK), disposition(rework/scrap/return-to-vendor)
+<strong>waste_management</strong> — source_stage, batch_id (FK), waste_type(husk/dust/stone/etc.), qty, disposal_method
+<strong>by_product_inventory</strong> — material_id (FK: husk/bran/broken), qty_produced, qty_sold, qty_in_stock <em>(note #19,#20)</em>
+<strong>sales_order</strong> — so_no, customer_id (FK), order_type(FG/by-product) <em>(note #25)</em>, material_id (FK), qty, rate, order_date, status
+<strong>dispatch</strong> — so_id (FK), challan_no, invoice_id (FK), vehicle_id (FK), driver_id (FK), dispatch_weight, dispatch_time, dispatch_type(normal/direct-outward) <em>(note #23: direct outwards = skip FG warehouse)</em>
+<strong>stock_movement</strong> — material_id (FK), lot_id (FK), from_location, to_location, qty, movement_type(in/out/transfer), moved_at
+<strong>invoices</strong> — invoice_no, dispatch_id (FK), customer_id (FK), amount, tax, invoice_date
+<strong>payments</strong> — invoice_id (FK), amount_paid, payment_date, mode, reference_no
+<strong>machine_maintenance</strong> — machine_id (FK), maintenance_type(preventive/breakdown), start_time, end_time, cost, performed_by
+<strong>audit_logs</strong> — table_name, record_id, action, old_value(JSON), new_value(JSON), performed_by (FK), performed_at
+<strong>notifications</strong> — user_id/role_id, channel(app/sms/whatsapp) <em>(note #11)</em>, message, status, sent_at
+<strong>process_time_log</strong> — batch_id (FK), stage_name, stage_start, stage_end, duration_minutes <em>(note #26: process times, end-to-end cycle time)</em></p>
+<hr />
+<h2 id="8-relationships-cardinality-summary">8. Relationships (Cardinality Summary)</h2>
+<table>
+<thead>
+<tr>
+<th>Parent</th>
+<th>Child</th>
+<th>Cardinality</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>vendors</td>
+<td>purchase_order</td>
+<td>1:N</td>
+<td>one vendor, many POs</td>
+</tr>
+<tr>
+<td>vendors</td>
+<td>gate_entry</td>
+<td>1:N</td>
+<td>one vendor, many trucks over time</td>
+</tr>
+<tr>
+<td>purchase_order</td>
+<td>gate_entry</td>
+<td>1:N</td>
+<td>a PO may be fulfilled across multiple trucks</td>
+</tr>
+<tr>
+<td>gate_entry</td>
+<td>sampling</td>
+<td>1:1</td>
+<td>one sample drawn per entry</td>
+</tr>
+<tr>
+<td>sampling</td>
+<td>lab_test</td>
+<td>1:1</td>
+<td>one test result per sample</td>
+</tr>
+<tr>
+<td>lab_test</td>
+<td>negotiation</td>
+<td>1:0..1</td>
+<td>only when verdict = negotiation</td>
+</tr>
+<tr>
+<td>gate_entry</td>
+<td>weight_slip</td>
+<td>1:1</td>
+<td>gross weight per entry</td>
+</tr>
+<tr>
+<td>purchase</td>
+<td>lots</td>
+<td>1:N</td>
+<td>a purchase can be split into multiple lots (e.g., quality grades)</td>
+</tr>
+<tr>
+<td>lots</td>
+<td>stacks</td>
+<td>1:N</td>
+<td>a lot may span multiple stacks/bins</td>
+</tr>
+<tr>
+<td>lots</td>
+<td>production_batch</td>
+<td>1:N</td>
+<td>a lot can feed several batches over time</td>
+</tr>
+<tr>
+<td>production_batch</td>
+<td>machine_logs</td>
+<td>1:N</td>
+<td>one batch passes through many machine operations</td>
+</tr>
+<tr>
+<td>production_batch</td>
+<td>shiner_process</td>
+<td>1:5</td>
+<td>up to 5 shiner stages</td>
+</tr>
+<tr>
+<td>length_grading</td>
+<td>packing</td>
+<td>1:N</td>
+<td>one grading output packed into many bag-lots</td>
+</tr>
+<tr>
+<td>packing</td>
+<td>finished_goods</td>
+<td>1:1</td>
+<td>each packed lot becomes one FG stock record</td>
+</tr>
+<tr>
+<td>finished_goods</td>
+<td>sales_order</td>
+<td>M:N (via allocation)</td>
+<td>one FG lot can serve multiple SOs (partial) and vice-versa</td>
+</tr>
+<tr>
+<td>sales_order</td>
+<td>dispatch</td>
+<td>1:N</td>
+<td>partial dispatches allowed</td>
+</tr>
+<tr>
+<td>dispatch</td>
+<td>invoices</td>
+<td>1:1</td>
+<td>one invoice per dispatch (configurable to consolidated)</td>
+</tr>
+<tr>
+<td>invoices</td>
+<td>payments</td>
+<td>1:N</td>
+<td>partial/multiple payments</td>
+</tr>
+<tr>
+<td>machines</td>
+<td>machine_logs</td>
+<td>1:N</td>
+<td>usage history</td>
+</tr>
+<tr>
+<td>machines</td>
+<td>machine_maintenance</td>
+<td>1:N</td>
+<td>maintenance history</td>
+</tr>
+<tr>
+<td>users</td>
+<td>audit_logs</td>
+<td>1:N</td>
+<td>every action logged</td>
+</tr>
+<tr>
+<td>lots</td>
+<td>lots (self)</td>
+<td>1:N (parent_lot_id)</td>
+<td>derived lots (e.g., brown rice lot ← paddy lot) for traceability</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="9-master-tables-vs-transaction-tables">9. Master Tables vs Transaction Tables</h2>
+<p><strong>Master (slow-changing, reference data):</strong>
+users, roles, permissions, vendors, customers, drivers, vehicles, material_master, variety_master, warehouse_master, bin_stack_master, machine_master, uom_master, rate_master, quality_parameter_master, reason_code_master, plant_master</p>
+<p><strong>Transaction (event/movement data):</strong>
+purchase_order, gate_entry, sampling, lab_test, negotiation, weight_slip, purchase, lots, stacks, inventory, quality_check, dryer, production_batch, machine_logs, separator_output, shiner_process, color_sorter, length_grading, packing, finished_goods, reject_material, waste_management, by_product_inventory, sales_order, dispatch, stock_movement, invoices, payments, machine_maintenance, audit_logs, notifications, process_time_log</p>
+<hr />
+<h2 id="10-status-flow">10. Status Flow</h2>
+<table>
+<thead>
+<tr>
+<th>Entity</th>
+<th>Status Sequence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Gate Entry</strong></td>
+<td><code>token_issued → waiting_sampling → sampling_done → lab_pending → accepted/rejected/negotiation → weighed → unloaded → exited</code></td>
+</tr>
+<tr>
+<td><strong>Lab Test</strong></td>
+<td><code>pending → tested → accepted / rejected / negotiation_required</code></td>
+</tr>
+<tr>
+<td><strong>Negotiation</strong></td>
+<td><code>initiated → vendor_responded → accepted / rejected</code></td>
+</tr>
+<tr>
+<td><strong>Lot</strong></td>
+<td><code>created → stored / in_production → consumed / closed</code></td>
+</tr>
+<tr>
+<td><strong>Production Batch</strong></td>
+<td><code>created → in_progress (per stage) → completed → closed</code></td>
+</tr>
+<tr>
+<td><strong>Quality Check</strong></td>
+<td><code>pending → passed / failed → replaced / refunded / scrapped</code></td>
+</tr>
+<tr>
+<td><strong>Packing/FG</strong></td>
+<td><code>packed → ready_for_dispatch → on_hold(aging) → dispatched</code></td>
+</tr>
+<tr>
+<td><strong>Sales Order</strong></td>
+<td><code>draft → confirmed → allocated → partially_dispatched → fully_dispatched → closed</code></td>
+</tr>
+<tr>
+<td><strong>Dispatch</strong></td>
+<td><code>pending → loaded → invoiced → dispatched → delivered</code></td>
+</tr>
+<tr>
+<td><strong>Invoice</strong></td>
+<td><code>draft → issued → partially_paid → paid → overdue</code></td>
+</tr>
+<tr>
+<td><strong>Machine</strong></td>
+<td><code>idle → running → stopped(reason) → under_maintenance</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="11-user-permission-matrix">11. User Permission Matrix</h2>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Gate</th>
+<th>Sampling/Lab</th>
+<th>Purchase/Negotiation</th>
+<th>Warehouse</th>
+<th>Production/QC</th>
+<th>Machine</th>
+<th>Packing/FG</th>
+<th>Sales/Dispatch</th>
+<th>Accounts</th>
+<th>Admin/Master</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gate Security</td>
+<td>C/R</td>
+<td>R</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Lab Technician</td>
+<td>R</td>
+<td>C/R/U</td>
+<td>R</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Purchase Officer</td>
+<td>R</td>
+<td>R</td>
+<td>C/R/U/<strong>Approve</strong></td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>R</td>
+<td>—</td>
+</tr>
+<tr>
+<td>QA Manager</td>
+<td>—</td>
+<td>R/<strong>Approve</strong></td>
+<td>—</td>
+<td>R</td>
+<td>C/R/U/<strong>Approve</strong></td>
+<td>—</td>
+<td>R</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Warehouse Manager</td>
+<td>R</td>
+<td>—</td>
+<td>—</td>
+<td>C/R/U/<strong>Approve</strong></td>
+<td>R</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Production Manager</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>R</td>
+<td>C/R/U/<strong>Approve</strong></td>
+<td>R</td>
+<td>R</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Machine Operator</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>C/R/U (logs)</td>
+<td>C/R/U</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Packing Operator</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>R</td>
+<td>—</td>
+<td>C/R/U</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Store Manager</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>R</td>
+<td>—</td>
+<td>—</td>
+<td>C/R/U/<strong>Approve</strong></td>
+<td>R</td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Dispatch Manager</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>R</td>
+<td>—</td>
+<td>—</td>
+<td>R</td>
+<td>C/R/U/<strong>Approve</strong></td>
+<td>—</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Accountant</td>
+<td>—</td>
+<td>—</td>
+<td>R</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>R</td>
+<td>C/R/U/<strong>Approve</strong></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Admin</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>C/R/U/D</td>
+</tr>
+<tr>
+<td>Owner</td>
+<td>R (all, read-only/strategic) across all modules + Dashboard</td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<p><em>C=Create, R=Read, U=Update, D=Delete. Approve = workflow sign-off rights (see Section 12). Permissions are stored in <code>role_permissions</code>, not hard-coded — this matrix is the seed data.</em></p>
+<hr />
+<h2 id="12-approval-workflow">12. Approval Workflow</h2>
+<pre class="mermaid">flowchart LR
+ A[Gate Entry] -->|auto| B[Sampling]
+ B -->|auto| C[Lab Test]
+ C -->|Lab Tech submits verdict| D{QA Manager Review}
+ D -- Negotiation --> E[Purchase Officer negotiates] --> F{Purchase Officer Approves Rate}
+ F -- Approved --> G[Weighbridge]
+ D -- Accepted --> G
+ G -->|auto| H[Unloading]
+ H --> I{Warehouse Manager Approves Storage/Production Issue}
+ I --> J[Production]
+ J --> K{QA Manager Approves Bag QC Disposition}
+ K --> L[Packing]
+ L --> M{Store Manager Approves FG Stock Entry}
+ M --> N[Sales Order]
+ N --> O{Dispatch Manager Approves Dispatch}
+ O --> P{Accountant Approves Invoice}
+ P --> Q[Dispatched & Invoiced]
+</pre>
+<p><strong>Approval levels by value/exception:</strong>
+- Rate negotiation beyond ±X% of base rate → escalate to <strong>Owner/Admin</strong>.
+- Bag rejection beyond a configurable threshold (e.g. &gt;5% of a lot) → escalate to <strong>QA Manager</strong> before replace/refund is executed.
+- Credit-note/refund to vendor → requires <strong>Accountant + Purchase Officer</strong> dual approval.
+- Dispatch without full payment (credit sale) → requires <strong>Accounts</strong> approval against customer credit limit.</p>
+<hr />
+<h2 id="13-inventory-movement-flow">13. Inventory Movement Flow</h2>
+<pre><code>Raw Paddy (Gate-In) → Sampling (no stock impact, sample qty negligible/tracked) 
+ → Weighbridge (Gross Qty booked as &quot;In-Transit Stock&quot;)
+ → Unloading (Stock moves to Warehouse Stack OR Production Floor)
+ → Quick QC (Accepted Qty stays in flow; Rejected Qty moves to Reject Store)
+ → Drying (Stock stays in &quot;WIP - Drying&quot; location; qty unchanged, moisture changes)
+ → Milling (Input Paddy Stock decreases; Output Stock created: Brown Rice + Husk + Broken + Waste)
+ → Separator (Brown Rice decreases; Cleaned Rice + Impurities created)
+ → Shiner x5 (Cleaned Rice decreases; Polished Rice + Bran created, cumulative loss tracked)
+ → Color Sorter (Polished Rice splits into Good Grain + Rejected Grain)
+ → Length Grader (Good Grain splits into 4 graded lots)
+ → Packing (Graded lot stock decreases; Finished Goods stock created)
+ → FG Warehouse (Stock held; &quot;aging&quot; clock starts)
+ → Dispatch (FG stock decreases; Customer ledger / Sales register updated)
+ → By-products (Husk/Bran/Broken/Waste accumulate in By-Product Inventory → sold via separate Sales Order)
+</code></pre>
+<p>Every line above corresponds to a write to <strong><code>inventory</code></strong> and <strong><code>stock_movement</code></strong>, ensuring the sum of all "qty_out" at any node equals "qty_in" (mass-balance reconciliation report — see Section 17).</p>
+<hr />
+<h2 id="14-production-tracking-flow">14. Production Tracking Flow</h2>
+<p>For every <code>production_batch</code>:
+1. Batch created from <code>lots</code> with <code>process_type</code> = Dry or Wet (field note #22).
+2. Each stage (<code>machine_logs</code>, <code>dryer</code>, <code>separator_output</code>, <code>shiner_process</code>, <code>color_sorter</code>, <code>length_grading</code>) logs <strong>input qty, output qty, loss/recovery %, operator, machine, start/end time</strong>.
+3. <code>process_time_log</code> captures stage duration → rolled up into <strong>total cycle time per batch</strong> and <strong>machine-wise downtime</strong> (field note #1, #8, #26).
+4. Recovery % is compared against historical/standard recovery to flag anomalies (e.g., unusually high broken % → quality or machine-setting alert).
+5. Batch is "closed" only when all output quantities (main product + by-products + waste) reconcile against input quantity within tolerance.</p>
+<hr />
+<h2 id="15-material-traceability-flow">15. Material Traceability Flow</h2>
+<ul>
+<li><strong>Backward traceability:</strong> From any Finished Goods bag (via QR/Barcode) → <code>packing</code> → <code>length_grading</code> → <code>color_sorter</code> → <code>shiner_process</code> → <code>separator_output</code> → <code>production_batch</code> → <code>lots</code> → <code>purchase</code> → <code>gate_entry</code> → <code>vendor</code>. Full chain in seconds.</li>
+<li><strong>Forward traceability:</strong> From any incoming <code>gate_entry</code>/<code>lots</code>, find every <code>production_batch</code>, every packed lot, and every <code>dispatch</code>/customer that received material derived from it — essential for recalls or vendor-quality disputes.</li>
+<li>Implemented via the <strong><code>parent_lot_id</code> self-reference on <code>lots</code></strong> plus FK chains on every transaction table — this is the single most important integrity rule in the schema.</li>
+</ul>
+<hr />
+<h2 id="16-reports-required">16. Reports Required</h2>
+<ol>
+<li>Day-wise / Shift-wise Production Report <em>(field note: Day-wise Reports)</em></li>
+<li>Gate-in / Gate-out Register with Token &amp; Waiting-time Report</li>
+<li>Vendor-wise Purchase &amp; Quality Rejection Report</li>
+<li>Lab Test Trend Report (moisture/broken/FM trends by vendor/variety)</li>
+<li>Machine-wise Downtime &amp; Stoppage Reason Report <em>(field note #1)</em></li>
+<li>Recovery % / Yield Report (paddy → rice, stage-wise loss)</li>
+<li>Bag-level Rejection, Replacement &amp; Refund Report <em>(field note #6, #7)</em></li>
+<li>Stock Ledger / Inventory Valuation Report (raw, WIP, FG, by-product)</li>
+<li><strong>Stock Aging Report</strong> (FG and by-product, days-in-stock buckets) <em>(field note #24)</em></li>
+<li>By-Product Sales &amp; Realization Report <em>(field note #19, #20, #25)</em></li>
+<li>Sales Register / Customer-wise Dispatch Report</li>
+<li><strong>Direct-Outward Dispatch Report</strong> (bypassed-warehouse dispatches) <em>(field note #23)</em></li>
+<li>Cycle Time / Process Time Report per batch and per stage <em>(field note #26)</em></li>
+<li>Accounts Receivable / Payable Aging Report</li>
+<li>Audit Trail Report (who changed what, when)</li>
+<li>Wastage &amp; By-product Realization Ratio Report</li>
+<li>Vehicle/Driver History Report</li>
+<li>Machine Maintenance &amp; Breakdown Report</li>
+</ol>
+<h2 id="17-dashboard-kpis">17. Dashboard KPIs</h2>
+<ul>
+<li>Trucks waiting at gate (live token queue) / Avg. waiting time</li>
+<li>Today's intake vs. target (qty)</li>
+<li>Lab rejection rate % (today / MTD)</li>
+<li>Active production batches &amp; stage-wise WIP</li>
+<li>Machine OEE / uptime % (live)</li>
+<li>Recovery % (today vs. standard)</li>
+<li>FG stock by SKU &amp; age buckets</li>
+<li>By-product stock &amp; realization value</li>
+<li>Pending sales orders vs. dispatch backlog</li>
+<li>Today's dispatch value / Outstanding receivables</li>
+<li>Top 5 quality-rejection reasons (rolling 30 days)</li>
+<li>Mass-balance reconciliation variance (alert if &gt;tolerance)</li>
+</ul>
+<hr />
+<h2 id="18-api-structure-rest-sample">18. API Structure (REST, sample)</h2>
+<pre><code>POST   /api/v1/gate-entries                  Create gate entry (+token)
+GET    /api/v1/gate-entries/{id}
+PATCH  /api/v1/gate-entries/{id}/status
+
+POST   /api/v1/sampling
+POST   /api/v1/lab-tests
+POST   /api/v1/lab-tests/{id}/verdict
+
+POST   /api/v1/negotiations
+PATCH  /api/v1/negotiations/{id}/respond
+
+POST   /api/v1/weight-slips
+POST   /api/v1/purchases
+
+GET    /api/v1/lots/{id}/trace                Full backward/forward trace
+POST   /api/v1/stacks
+GET    /api/v1/inventory?stage=&amp;warehouse=&amp;material=
+
+POST   /api/v1/production-batches
+POST   /api/v1/production-batches/{id}/quality-check
+POST   /api/v1/production-batches/{id}/dryer
+POST   /api/v1/machine-logs
+POST   /api/v1/production-batches/{id}/separator
+POST   /api/v1/production-batches/{id}/shiner
+POST   /api/v1/production-batches/{id}/color-sorter
+POST   /api/v1/production-batches/{id}/length-grading
+
+POST   /api/v1/packing
+GET    /api/v1/finished-goods?status=ready_for_dispatch
+
+POST   /api/v1/sales-orders
+POST   /api/v1/dispatches
+POST   /api/v1/invoices
+POST   /api/v1/payments
+
+GET    /api/v1/reports/{report-code}
+GET    /api/v1/dashboard/kpis
+
+POST   /api/v1/webhooks/whatsapp/notify        Outbound WhatsApp notifications
+POST   /api/v1/vendor-portal/po-do-upload      Vendor uploads PO/DO for gate verification
+</code></pre>
+<p>All endpoints: JWT auth, role-based scopes, <code>plant_id</code> tenant filter, standard <code>{data, meta, errors}</code> envelope, pagination via <code>?page&amp;size</code>, and full request logged to <code>audit_logs</code>.</p>
+<hr />
+<h2 id="19-suggestions-enhancements-industry-best-practice-field-notes">19. Suggestions &amp; Enhancements (Industry Best Practice + Field Notes)</h2>
+<h3 id="191-from-the-on-site-field-notes-mapped-to-design-decisions-above">19.1 From the on-site field notes (mapped to design decisions above)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Field Note</th>
+<th>Design Response</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Why machines stop (failure reasons)</td>
+<td><code>machine_logs.downtime_reason_id</code> + <code>reason_code_master</code>; Downtime report (Sec. 16 #5)</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Token for vehicles waiting to unload</td>
+<td><code>gate_entry.token_no</code>, queue status, "Gate Queue" dashboard widget</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Sample of crop</td>
+<td><code>sampling</code> table, chain-of-custody to <code>lab_test</code></td>
+</tr>
+<tr>
+<td>4</td>
+<td>Rate can vary based on sample</td>
+<td><code>negotiation</code> table + <code>purchase_order</code> rate history</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Vehicle status: rejected / unloading / parked</td>
+<td><code>gate_entry.gate_status</code> enum includes <code>parked</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td>Unloading staff flagging mid-unload rejection</td>
+<td><code>quality_check</code> allows rejection at any stage with reason code, not only at gate</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Rejected bags → replace or refund</td>
+<td><code>quality_check.action</code> = replace/refund/scrap + vendor credit-note workflow</td>
+</tr>
+<tr>
+<td>8</td>
+<td>"Cut" happens mid-process</td>
+<td>Stage-wise QC checkpoints (not just start/end) across <code>quality_check</code></td>
+</tr>
+<tr>
+<td>9</td>
+<td>Direct-to-production after unload</td>
+<td><code>gate_entry</code>/<code>stacks</code> decision point already modeled (Sec. 1, Step 6)</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Batch tracking</td>
+<td><code>production_batch.batch_no</code>, <code>packing.batch_no</code>, full traceability (Sec. 15)</td>
+</tr>
+<tr>
+<td>11</td>
+<td>WhatsApp integration</td>
+<td><code>notifications.channel = whatsapp</code>; webhook in API (Sec. 18)</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Vendor uploads PO/DO; gate verifies</td>
+<td>Vendor Portal module + <code>purchase_order.uploaded_by_vendor</code>; gate cross-checks</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Gate verifies by vehicle no., driver photo, quality</td>
+<td><code>gate_entry.driver_photo_url</code>, vehicle/driver master lookups</td>
+</tr>
+<tr>
+<td>14</td>
+<td>No. of bags, quality, quantity at gate</td>
+<td><code>gate_entry</code>/<code>quality_check</code> capture bag count alongside qty</td>
+</tr>
+<tr>
+<td>15</td>
+<td>Post-unload: direct process or stacked</td>
+<td>Sec. 1 Step 6 decision point</td>
+</tr>
+<tr>
+<td>16–17</td>
+<td>Bags rejected on quality/loading; rejected qty can re-process</td>
+<td><code>reject_material.disposition = rework</code></td>
+</tr>
+<tr>
+<td>18</td>
+<td>Rice categorized by quality after process</td>
+<td><code>length_grading</code> + grade-wise <code>lots</code></td>
+</tr>
+<tr>
+<td>19–20</td>
+<td>Husk/bran/marketable by-products for sale, by quality</td>
+<td><code>by_product_inventory</code>, by-product quality grading optional extension</td>
+</tr>
+<tr>
+<td>21</td>
+<td>Direct name 12–14 (variety naming convention)</td>
+<td><code>variety_master</code> — suggest standardizing variety codes/names in master data setup</td>
+</tr>
+<tr>
+<td>22</td>
+<td>Two process types: dry (bag) vs wet</td>
+<td><code>production_batch.process_type</code></td>
+</tr>
+<tr>
+<td>23</td>
+<td>Direct outwards (skip FG warehouse)</td>
+<td><code>dispatch.dispatch_type = direct-outward</code></td>
+</tr>
+<tr>
+<td>24</td>
+<td>Aging</td>
+<td><code>finished_goods.aged_days</code>, <code>stacks.age_days</code>, Aging Report</td>
+</tr>
+<tr>
+<td>25</td>
+<td>By-product customers differ from product customers</td>
+<td><code>customers.customer_type</code>, separate <code>sales_order.order_type</code></td>
+</tr>
+<tr>
+<td>26</td>
+<td>Process times</td>
+<td><code>process_time_log</code>, Cycle Time Report</td>
+</tr>
+</tbody>
+</table>
+<h3 id="192-additional-industry-standard-processes-to-consider-gap-analysis">19.2 Additional industry-standard processes to consider (gap analysis)</h3>
+<ul>
+<li><strong>Vendor Quality Scorecard</strong> — auto-rate vendors on rejection %, moisture trends, on-time delivery to drive future PO allocation.</li>
+<li><strong>Standard Recovery/Yield Norms</strong> — define expected recovery % per variety; auto-flag batches deviating beyond tolerance (helps catch pilferage or machine miscalibration).</li>
+<li><strong>Lot/Batch Genealogy Visualization</strong> — a tree/graph UI on top of <code>parent_lot_id</code> for instant audits.</li>
+<li><strong>Weighbridge Integration (IoT)</strong> — direct serial/API capture from weighbridge hardware to eliminate manual entry errors.</li>
+<li><strong>ANPR Camera at Gate</strong> — auto-capture vehicle number to reduce gate clerk error and speed up token issuance.</li>
+<li><strong>Mobile App for Drivers/Vendors</strong> — token status, expected wait time, e-receipt — reduces gate congestion and disputes.</li>
+<li><strong>Quality-linked Dynamic Pricing</strong> — rate formula driven by lab parameters (moisture/broken slabs) rather than manual negotiation alone, with manual override retained for true exceptions.</li>
+<li><strong>Preventive Maintenance Scheduling</strong> — calendar/usage-hour-based triggers in <code>machine_maintenance</code> to reduce unplanned downtime (ties into note #1).</li>
+<li><strong>Energy &amp; Utility Consumption Tracking</strong> — per batch/per machine, common in modern rice-mill ERPs for cost-per-kg analysis.</li>
+<li><strong>Bagging Material (Empty Bag) Inventory</strong> — track consumption of packing material as its own inventory stream.</li>
+<li><strong>Quality Certificate / Lab Report PDF Generation</strong> — auto-generated and attachable to invoices for B2B/export customers.</li>
+<li><strong>GST/E-Way Bill Integration (India-specific)</strong> — auto-generate e-way bills from <code>dispatch</code> for compliant transport documentation.</li>
+<li><strong>Multi-Plant / Multi-Godown Consolidated Reporting</strong> — for groups operating more than one mill, supported by <code>plant_master</code> already in schema.</li>
+<li><strong>Customer Portal</strong> — order tracking, e-invoice download, by-product order booking, mirroring the Vendor Portal.</li>
+<li><strong>Approval Hierarchy Configuration UI</strong> — let Admin define approval chains/thresholds (rate variance %, rejection %) without code changes.</li>
+<li><strong>Cold-chain/Pest/Fumigation Log</strong> — for warehouse compliance and food-safety audits (FSSAI traceability requirements in India).</li>
+<li><strong>Bank/LC (Letter of Credit) tracking</strong> — relevant if mill exports rice; track shipment docs against LC terms.</li>
+</ul>
+<hr />
+<h3 id="closing-note">Closing Note</h3>
+<p>This document is structured so each module → table → field maps directly to backlog items / Jira epics for development: Gate Mgmt, Vendor Portal, Procurement &amp; Lab QC, Warehouse &amp; Inventory, Production &amp; Machine Mgmt, Packing &amp; FG, Sales &amp; Dispatch, Accounts, Reports/Dashboard, Notifications, Admin/Master, Audit. The ER diagram (Sec. 6) and full schema (Sec. 7) can be handed directly to a DB engineer to generate migrations; the Mermaid diagrams (Sec. 2–4, 5.1, 12) can be pasted into any Mermaid-compatible tool (GitHub, Notion, draw.io, Mermaid Live Editor) for visual review with stakeholders.</p>
+  </main>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad:true,
+    theme:'base',
+    themeVariables:{
+      primaryColor:'#F1ECE0',
+      primaryTextColor:'#221F1A',
+      primaryBorderColor:'#B8862E',
+      lineColor:'#6F7D5C',
+      secondaryColor:'#EAEEE2',
+      tertiaryColor:'#FAF7F0',
+      fontFamily:'Inter, sans-serif',
+      fontSize:'14px'
+    },
+    flowchart:{ curve:'basis', htmlLabels:true }
+  });
+
+  // mobile menu toggle
+  const toggle = document.getElementById('menuToggle');
+  const sidebar = document.getElementById('sidebar');
+  toggle.addEventListener('click', () => sidebar.classList.toggle('open'));
+  document.querySelectorAll('.nav-link').forEach(a=>{
+    a.addEventListener('click', ()=> sidebar.classList.remove('open'));
+  });
+
+  // active link highlight on scroll
+  const links = Array.from(document.querySelectorAll('.nav-link'));
+  const sections = links.map(a => document.getElementById(a.getAttribute('href').slice(1))).filter(Boolean);
+  const setActive = () => {
+    let current = sections[0];
+    for (const sec of sections){
+      if (sec.getBoundingClientRect().top - 100 <= 0) current = sec;
+    }
+    links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + current.id));
+  };
+  window.addEventListener('scroll', setActive, {passive:true});
+  setActive();
+</script>
+</body>
+</html>

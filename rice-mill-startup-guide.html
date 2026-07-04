@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rice Mill ERP — 8-Day Dev Kickstart</title>
+<style>
+  :root{
+    --bg:#0F1710;
+    --bg2:#161E17;
+    --bg3:#1E2820;
+    --border:#2B3B2D;
+    --green:#4ADE80;
+    --green-dim:#2A7A45;
+    --gold:#D4A832;
+    --gold-dim:#7A5B12;
+    --red:#F87171;
+    --blue:#60A5FA;
+    --text:#E8F0E9;
+    --text-dim:#8FA391;
+    --text-muted:#566858;
+    --mono:"JetBrains Mono","SF Mono",Consolas,monospace;
+    --sans:"Inter","Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{scroll-behavior:smooth;}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.65;}
+
+  /* shell */
+  .shell{display:grid;grid-template-columns:260px 1fr;min-height:100vh;}
+  aside{
+    background:var(--bg2);border-right:1px solid var(--border);
+    padding:28px 18px 60px;position:sticky;top:0;height:100vh;overflow-y:auto;
+  }
+  .brand{font-family:var(--mono);font-size:.75rem;letter-spacing:.15em;text-transform:uppercase;color:var(--green);margin-bottom:4px;}
+  .brand-title{font-size:1.1rem;font-weight:700;color:var(--text);margin-bottom:24px;}
+  .nav-section{font-family:var(--mono);font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);margin:20px 0 6px;}
+  nav a{
+    display:block;text-decoration:none;color:var(--text-dim);font-size:.83rem;
+    padding:7px 10px;border-radius:5px;border-left:2px solid transparent;
+    transition:.15s;line-height:1.3;
+  }
+  nav a:hover{color:var(--text);background:var(--bg3);}
+  nav a.active{color:var(--green);border-left-color:var(--green);background:var(--bg3);}
+
+  main{padding:56px 60px 120px;max-width:1000px;}
+
+  /* hero */
+  .hero{margin-bottom:56px;}
+  .hero-tag{display:inline-block;font-family:var(--mono);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--green);border:1px solid var(--green-dim);padding:4px 12px;border-radius:20px;margin-bottom:16px;}
+  .hero h1{font-size:2.4rem;font-weight:800;line-height:1.1;color:#fff;margin-bottom:12px;}
+  .hero h1 span{color:var(--green);}
+  .hero p{color:var(--text-dim);font-size:1rem;max-width:580px;}
+
+  /* section headings */
+  .sec{scroll-margin-top:24px;margin-top:64px;}
+  .sec-label{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin-bottom:8px;}
+  .sec h2{font-size:1.55rem;font-weight:700;color:#fff;margin-bottom:22px;padding-bottom:12px;border-bottom:1px solid var(--border);}
+
+  /* day cards */
+  .days-grid{display:grid;gap:16px;}
+  .day-card{
+    background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+    overflow:hidden;
+  }
+  .day-header{
+    display:flex;align-items:center;gap:16px;
+    padding:14px 20px;cursor:pointer;
+    user-select:none;
+  }
+  .day-header:hover{background:var(--bg3);}
+  .day-num{
+    font-family:var(--mono);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;
+    background:var(--bg3);border:1px solid var(--border);
+    padding:5px 10px;border-radius:6px;color:var(--green);white-space:nowrap;min-width:60px;text-align:center;
+  }
+  .day-title{font-weight:700;font-size:1rem;color:#fff;flex:1;}
+  .day-focus{font-family:var(--mono);font-size:.72rem;color:var(--text-muted);}
+  .day-chevron{color:var(--text-muted);transition:.2s;font-size:.9rem;}
+  .day-body{padding:0 20px;max-height:0;overflow:hidden;transition:max-height .35s ease,padding .3s;}
+  .day-body.open{max-height:4000px;padding:4px 20px 20px;}
+  .task-list{list-style:none;display:flex;flex-direction:column;gap:10px;margin:10px 0;}
+  .task-list li{
+    display:flex;align-items:flex-start;gap:10px;
+    background:var(--bg3);border:1px solid var(--border);border-radius:7px;padding:10px 14px;
+    font-size:.87rem;
+  }
+  .task-list li .pill{
+    flex-shrink:0;font-family:var(--mono);font-size:.65rem;letter-spacing:.06em;
+    text-transform:uppercase;padding:2px 8px;border-radius:10px;margin-top:2px;
+  }
+  .be{background:#1A2E40;color:var(--blue);border:1px solid #1E4060;}
+  .fe{background:#2A1A40;color:#A78BFA;border:1px solid #3D1E70;}
+  .db{background:#1A2A1A;color:var(--green);border:1px solid #1E401E;}
+  .inf{background:#2A2010;color:var(--gold);border:1px solid #403010;}
+  .task-text{color:var(--text-dim);line-height:1.4;}
+
+  .deliverable-box{
+    margin-top:14px;background:#0D1F0F;border:1px solid var(--green-dim);
+    border-radius:8px;padding:12px 16px;
+  }
+  .deliverable-box .dl-title{font-family:var(--mono);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--green);margin-bottom:8px;}
+  .deliverable-box ul{list-style:none;display:flex;flex-direction:column;gap:4px;}
+  .deliverable-box ul li{font-size:.84rem;color:var(--text-dim);}
+  .deliverable-box ul li::before{content:"✓ ";color:var(--green);font-family:var(--mono);}
+
+  /* stack cards */
+  .stack-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .stack-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;}
+  .stack-card h3{font-size:.95rem;font-weight:700;color:#fff;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+  .stack-icon{font-size:1.1rem;}
+  .stack-list{list-style:none;display:flex;flex-direction:column;gap:8px;}
+  .stack-list li{font-size:.84rem;color:var(--text-dim);}
+  .stack-list li strong{color:var(--text);display:block;font-size:.82rem;}
+  .stack-list li span{color:var(--text-muted);font-size:.77rem;}
+
+  /* code blocks */
+  .code-block{
+    background:#0A0F0B;border:1px solid var(--border);border-left:3px solid var(--green);
+    border-radius:8px;padding:18px 20px;overflow-x:auto;
+    font-family:var(--mono);font-size:.8rem;line-height:1.6;color:#B8D4BA;
+    margin:16px 0;
+    position:relative;
+  }
+  .code-block .cb-label{
+    position:absolute;top:10px;right:12px;
+    font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);
+  }
+  .code-block .c-comment{color:var(--text-muted);}
+  .code-block .c-cmd{color:var(--green);}
+  .code-block .c-str{color:var(--gold);}
+  .code-block .c-key{color:var(--blue);}
+  .code-block .c-val{color:#E879F9;}
+
+  /* folder tree */
+  .tree{
+    background:#0A0F0B;border:1px solid var(--border);border-radius:8px;
+    padding:18px 20px;font-family:var(--mono);font-size:.8rem;line-height:1.8;
+    color:#B8D4BA;margin:16px 0;overflow-x:auto;
+  }
+  .tree .t-dir{color:var(--blue);}
+  .tree .t-file{color:var(--text-dim);}
+  .tree .t-note{color:var(--text-muted);font-size:.72rem;}
+
+  /* pill row */
+  .pill-row{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;}
+  .pill-chip{
+    font-family:var(--mono);font-size:.72rem;letter-spacing:.05em;
+    padding:4px 12px;border-radius:20px;border:1px solid;
+  }
+  .chip-g{color:var(--green);border-color:var(--green-dim);background:#0D1F0F;}
+  .chip-b{color:var(--blue);border-color:#1E4060;background:#0D1A25;}
+  .chip-y{color:var(--gold);border-color:var(--gold-dim);background:#1A1205;}
+  .chip-p{color:#A78BFA;border-color:#3D1E70;background:#160D25;}
+
+  /* scope table */
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.84rem;}
+  thead th{
+    background:var(--bg3);color:var(--text-dim);text-align:left;
+    padding:10px 14px;font-family:var(--mono);font-size:.7rem;
+    letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid var(--border);
+  }
+  tbody td{padding:9px 14px;border-bottom:1px solid var(--border);color:var(--text-dim);vertical-align:top;}
+  tbody tr:hover{background:var(--bg3);}
+  .badge{
+    display:inline-block;font-size:.7rem;font-family:var(--mono);
+    padding:2px 8px;border-radius:10px;
+  }
+  .badge-must{background:#2A0D0D;color:var(--red);border:1px solid #5A1A1A;}
+  .badge-nice{background:#1A2A1A;color:var(--green);border:1px solid #1E401E;}
+  .badge-later{background:#1A1A2A;color:var(--blue);border:1px solid #1E1E50;}
+
+  /* info boxes */
+  .info-box{
+    border-radius:8px;padding:14px 18px;margin:16px 0;font-size:.88rem;
+  }
+  .info-box.warn{background:#1A1500;border:1px solid #4A3B00;color:#C8A830;}
+  .info-box.tip{background:#0D1F0F;border:1px solid var(--green-dim);color:#7DC48A;}
+  .info-box .ib-title{font-weight:700;margin-bottom:4px;font-family:var(--mono);font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;}
+
+  /* sub-grid for 3col */
+  .three-col{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:12px 0;}
+  .mini-card{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px 16px;}
+  .mini-card .mc-title{font-family:var(--mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:6px;}
+  .mini-card .mc-val{font-size:1.3rem;font-weight:800;color:#fff;}
+  .mini-card .mc-sub{font-size:.75rem;color:var(--text-muted);margin-top:2px;}
+
+  /* mobile */
+  .mob-toggle{display:none;}
+  @media(max-width:860px){
+    .shell{grid-template-columns:1fr;}
+    aside{position:fixed;left:0;top:0;height:100vh;width:75%;max-width:280px;
+      transform:translateX(-100%);transition:.25s;z-index:50;box-shadow:4px 0 20px rgba(0,0,0,.5);}
+    aside.open{transform:translateX(0);}
+    main{padding:80px 20px 100px;}
+    .stack-grid{grid-template-columns:1fr;}
+    .three-col{grid-template-columns:1fr 1fr;}
+    .mob-toggle{display:flex;position:fixed;top:14px;left:14px;z-index:60;
+      background:var(--bg2);border:1px solid var(--border);color:var(--text);
+      width:42px;height:42px;border-radius:8px;align-items:center;justify-content:center;
+      font-size:1.1rem;cursor:pointer;}
+  }
+</style>
+</head>
+<body>
+
+<button class="mob-toggle" id="mobBtn">☰</button>
+
+<div class="shell">
+<aside id="sidebar">
+  <div class="brand">Rice Mill ERP</div>
+  <div class="brand-title">8-Day Dev Roadmap</div>
+  <div class="nav-section">Overview</div>
+  <nav>
+    <a href="#stack">Tech Stack</a>
+    <a href="#setup">Project Setup</a>
+    <a href="#structure">Folder Structure</a>
+    <a href="#db">Database Setup</a>
+    <a href="#scope">8-Day Prototype Scope</a>
+  </nav>
+  <div class="nav-section">Daily Sprint</div>
+  <nav>
+    <a href="#day1">Day 1 — Foundation</a>
+    <a href="#day2">Day 2 — Auth + Gate</a>
+    <a href="#day3">Day 3 — Lab + Purchase</a>
+    <a href="#day4">Day 4 — Warehouse</a>
+    <a href="#day5">Day 5 — Production</a>
+    <a href="#day6">Day 6 — Packing + FG</a>
+    <a href="#day7">Day 7 — Dispatch + Reports</a>
+    <a href="#day8">Day 8 — Polish + Demo</a>
+  </nav>
+  <div class="nav-section">Reference</div>
+  <nav>
+    <a href="#commands">Key Commands</a>
+    <a href="#tips">Pro Tips</a>
+  </nav>
+</aside>
+
+<main>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-tag">Developer Kickstart Guide</div>
+  <h1>Build the ERP in <span>8 Days.</span></h1>
+  <p>Node.js + PostgreSQL backend · React frontend · Full prototype from Gate Entry to Dispatch — step by step from zero to demo.</p>
+</div>
+
+<!-- STATS ROW -->
+<div class="three-col">
+  <div class="mini-card"><div class="mc-title">Timeline</div><div class="mc-val">8</div><div class="mc-sub">days to working prototype</div></div>
+  <div class="mini-card"><div class="mc-title">Modules</div><div class="mc-val">7</div><div class="mc-sub">in scope for prototype</div></div>
+  <div class="mini-card"><div class="mc-title">Stack</div><div class="mc-val">4</div><div class="mc-sub">core technologies</div></div>
+</div>
+
+<!-- TECH STACK -->
+<div class="sec" id="stack">
+  <div class="sec-label">Section 01</div>
+  <h2>Tech Stack — What & Why</h2>
+  <div class="stack-grid">
+    <div class="stack-card">
+      <h3><span class="stack-icon">⚙️</span> Backend</h3>
+      <ul class="stack-list">
+        <li><strong>Node.js + Express.js</strong><span>Fast REST API, massive ecosystem</span></li>
+        <li><strong>PostgreSQL</strong><span>Relational DB — perfect for ERP with FKs, transactions, triggers</span></li>
+        <li><strong>Sequelize ORM</strong><span>Model-based DB access, migrations, seed data</span></li>
+        <li><strong>JWT (jsonwebtoken)</strong><span>Stateless auth — role-based access per ERP spec</span></li>
+        <li><strong>Joi</strong><span>Request validation — critical for data integrity</span></li>
+        <li><strong>Multer</strong><span>Driver photo upload (Gate Entry requirement)</span></li>
+        <li><strong>node-cron</strong><span>Scheduled jobs: aging calc, maintenance alerts</span></li>
+      </ul>
+    </div>
+    <div class="stack-card">
+      <h3><span class="stack-icon">🖥️</span> Frontend</h3>
+      <ul class="stack-list">
+        <li><strong>React 18 + Vite</strong><span>Fast dev server, modern build tooling</span></li>
+        <li><strong>React Router v6</strong><span>Module-based page routing</span></li>
+        <li><strong>Zustand</strong><span>Lightweight state — auth, active batch, notifications</span></li>
+        <li><strong>TanStack Query</strong><span>Server-state + cache — no Redux boilerplate</span></li>
+        <li><strong>Ant Design (antd)</strong><span>Production-grade tables, forms, modals — speeds up ERP UI massively</span></li>
+        <li><strong>Recharts</strong><span>Dashboard KPI charts</span></li>
+        <li><strong>Axios</strong><span>HTTP client with interceptors for JWT</span></li>
+      </ul>
+    </div>
+    <div class="stack-card">
+      <h3><span class="stack-icon">🛠️</span> Dev Tooling</h3>
+      <ul class="stack-list">
+        <li><strong>ESLint + Prettier</strong><span>Code consistency across team</span></li>
+        <li><strong>Nodemon</strong><span>Auto-restart backend on save</span></li>
+        <li><strong>dotenv</strong><span>Env config management</span></li>
+        <li><strong>Thunder Client / Postman</strong><span>API testing during development</span></li>
+        <li><strong>pgAdmin 4</strong><span>PostgreSQL GUI for DB inspection</span></li>
+      </ul>
+    </div>
+    <div class="stack-card">
+      <h3><span class="stack-icon">☁️</span> Infrastructure (Day 1 local, later)</h3>
+      <ul class="stack-list">
+        <li><strong>Local dev</strong><span>Node + Postgres installed locally — keep it simple for 8 days</span></li>
+        <li><strong>PM2</strong><span>Process manager for staging demo</span></li>
+        <li><strong>Nginx</strong><span>Reverse proxy for staging (Day 8)</span></li>
+        <li><strong>GitHub</strong><span>Source control — commit every day minimum</span></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- PROJECT SETUP -->
+<div class="sec" id="setup">
+  <div class="sec-label">Section 02</div>
+  <h2>Project Setup — Run These First</h2>
+
+  <p style="color:var(--text-dim);margin-bottom:16px;">Prerequisites: Node.js 20+, PostgreSQL 15+, Git — all installed on your machine.</p>
+
+  <h3 style="color:var(--text-dim);font-size:.9rem;margin-bottom:8px;">1. Create workspace</h3>
+  <div class="code-block">
+    <span class="cb-label">terminal</span>
+mkdir rice-mill-erp && cd rice-mill-erp<br>
+mkdir backend frontend<br>
+git init
+  </div>
+
+  <h3 style="color:var(--text-dim);font-size:.9rem;margin-bottom:8px;">2. Backend init</h3>
+  <div class="code-block">
+    <span class="cb-label">terminal</span>
+cd backend<br>
+npm init -y<br>
+npm install express sequelize pg pg-hstore dotenv cors helmet bcryptjs jsonwebtoken joi multer node-cron<br>
+npm install --save-dev nodemon eslint prettier
+  </div>
+
+  <h3 style="color:var(--text-dim);font-size:.9rem;margin-bottom:8px;">3. Frontend init</h3>
+  <div class="code-block">
+    <span class="cb-label">terminal</span>
+cd ../frontend<br>
+npm create vite@latest . -- --template react<br>
+npm install<br>
+npm install axios antd @ant-design/icons react-router-dom zustand @tanstack/react-query recharts dayjs
+  </div>
+
+  <h3 style="color:var(--text-dim);font-size:.9rem;margin-bottom:8px;">4. Create database</h3>
+  <div class="code-block">
+    <span class="cb-label">psql</span>
+<span class="c-comment">-- open psql terminal</span><br>
+psql -U postgres<br>
+CREATE DATABASE rice_mill_erp;<br>
+CREATE USER erp_user WITH PASSWORD 'yourpassword';<br>
+GRANT ALL PRIVILEGES ON DATABASE rice_mill_erp TO erp_user;<br>
+\q
+  </div>
+
+  <h3 style="color:var(--text-dim);font-size:.9rem;margin-bottom:8px;">5. Backend .env file</h3>
+  <div class="code-block">
+    <span class="cb-label">backend/.env</span>
+<span class="c-key">PORT</span>=<span class="c-val">5000</span><br>
+<span class="c-key">DB_HOST</span>=<span class="c-val">localhost</span><br>
+<span class="c-key">DB_PORT</span>=<span class="c-val">5432</span><br>
+<span class="c-key">DB_NAME</span>=<span class="c-val">rice_mill_erp</span><br>
+<span class="c-key">DB_USER</span>=<span class="c-val">erp_user</span><br>
+<span class="c-key">DB_PASS</span>=<span class="c-val">yourpassword</span><br>
+<span class="c-key">JWT_SECRET</span>=<span class="c-val">supersecretkey_change_this</span><br>
+<span class="c-key">JWT_EXPIRES_IN</span>=<span class="c-val">8h</span><br>
+<span class="c-key">UPLOAD_DIR</span>=<span class="c-val">./uploads</span>
+  </div>
+
+  <h3 style="color:var(--text-dim);font-size:.9rem;margin-bottom:8px;">6. Start both servers (two terminals)</h3>
+  <div class="code-block">
+    <span class="cb-label">terminal 1 — backend</span>
+cd backend<br>
+npx nodemon src/server.js
+  </div>
+  <div class="code-block">
+    <span class="cb-label">terminal 2 — frontend</span>
+cd frontend<br>
+npm run dev
+  </div>
+  <div class="info-box tip"><div class="ib-title">✓ Running at</div>Backend: http://localhost:5000 · Frontend: http://localhost:5173</div>
+</div>
+
+<!-- FOLDER STRUCTURE -->
+<div class="sec" id="structure">
+  <div class="sec-label">Section 03</div>
+  <h2>Folder Structure</h2>
+
+  <div class="stack-grid" style="grid-template-columns:1fr 1fr;">
+    <div>
+      <div style="color:var(--text-dim);font-size:.82rem;margin-bottom:8px;font-family:var(--mono);">backend/</div>
+      <div class="tree">
+<span class="t-dir">src/</span><br>
+├── <span class="t-dir">config/</span><br>
+│   ├── <span class="t-file">db.js</span>        <span class="t-note">← Sequelize init</span><br>
+│   └── <span class="t-file">env.js</span><br>
+├── <span class="t-dir">models/</span>     <span class="t-note">← one file per table</span><br>
+│   ├── <span class="t-file">User.js</span><br>
+│   ├── <span class="t-file">GateEntry.js</span><br>
+│   ├── <span class="t-file">Sampling.js</span><br>
+│   ├── <span class="t-file">LabTest.js</span><br>
+│   ├── <span class="t-file">WeightSlip.js</span><br>
+│   ├── <span class="t-file">Lot.js</span><br>
+│   ├── <span class="t-file">ProductionBatch.js</span><br>
+│   └── <span class="t-file">index.js</span>  <span class="t-note">← associations</span><br>
+├── <span class="t-dir">routes/</span><br>
+│   ├── <span class="t-file">auth.routes.js</span><br>
+│   ├── <span class="t-file">gate.routes.js</span><br>
+│   ├── <span class="t-file">lab.routes.js</span><br>
+│   ├── <span class="t-file">production.routes.js</span><br>
+│   └── <span class="t-file">dispatch.routes.js</span><br>
+├── <span class="t-dir">controllers/</span>  <span class="t-note">← business logic</span><br>
+├── <span class="t-dir">middleware/</span><br>
+│   ├── <span class="t-file">auth.js</span>    <span class="t-note">← JWT verify</span><br>
+│   ├── <span class="t-file">role.js</span>    <span class="t-note">← RBAC check</span><br>
+│   └── <span class="t-file">validate.js</span><span class="t-note">← Joi schemas</span><br>
+├── <span class="t-dir">services/</span>    <span class="t-note">← reusable logic</span><br>
+├── <span class="t-dir">migrations/</span>  <span class="t-note">← schema history</span><br>
+├── <span class="t-dir">seeders/</span>     <span class="t-note">← master data</span><br>
+└── <span class="t-file">server.js</span>
+      </div>
+    </div>
+    <div>
+      <div style="color:var(--text-dim);font-size:.82rem;margin-bottom:8px;font-family:var(--mono);">frontend/src/</div>
+      <div class="tree">
+<span class="t-dir">src/</span><br>
+├── <span class="t-dir">api/</span>          <span class="t-note">← axios calls</span><br>
+│   ├── <span class="t-file">gate.api.js</span><br>
+│   ├── <span class="t-file">lab.api.js</span><br>
+│   └── <span class="t-file">client.js</span>  <span class="t-note">← axios instance</span><br>
+├── <span class="t-dir">components/</span><br>
+│   ├── <span class="t-dir">layout/</span><br>
+│   │   ├── <span class="t-file">Sidebar.jsx</span><br>
+│   │   └── <span class="t-file">TopBar.jsx</span><br>
+│   └── <span class="t-dir">shared/</span>   <span class="t-note">← Table, Badge, etc.</span><br>
+├── <span class="t-dir">pages/</span>        <span class="t-note">← one folder per module</span><br>
+│   ├── <span class="t-dir">auth/</span><br>
+│   ├── <span class="t-dir">gate/</span><br>
+│   ├── <span class="t-dir">lab/</span><br>
+│   ├── <span class="t-dir">warehouse/</span><br>
+│   ├── <span class="t-dir">production/</span><br>
+│   ├── <span class="t-dir">packing/</span><br>
+│   ├── <span class="t-dir">dispatch/</span><br>
+│   └── <span class="t-dir">dashboard/</span><br>
+├── <span class="t-dir">store/</span>        <span class="t-note">← Zustand stores</span><br>
+│   ├── <span class="t-file">authStore.js</span><br>
+│   └── <span class="t-file">notifStore.js</span><br>
+├── <span class="t-dir">hooks/</span>        <span class="t-note">← useGateEntries etc.</span><br>
+├── <span class="t-dir">utils/</span><br>
+└── <span class="t-file">main.jsx</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DATABASE SETUP -->
+<div class="sec" id="db">
+  <div class="sec-label">Section 04</div>
+  <h2>Database Setup with Sequelize</h2>
+
+  <h3 style="color:var(--text-dim);font-size:.9rem;margin-bottom:8px;">config/db.js</h3>
+  <div class="code-block">
+<span class="cb-label">backend/src/config/db.js</span>
+<span class="c-key">const</span> { Sequelize } = <span class="c-str">require</span>(<span class="c-str">'sequelize'</span>);<br>
+<br>
+<span class="c-key">const</span> sequelize = <span class="c-key">new</span> Sequelize(<br>
+&nbsp;&nbsp;process.env.DB_NAME,<br>
+&nbsp;&nbsp;process.env.DB_USER,<br>
+&nbsp;&nbsp;process.env.DB_PASS,<br>
+&nbsp;&nbsp;{<br>
+&nbsp;&nbsp;&nbsp;&nbsp;host: process.env.DB_HOST,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;dialect: <span class="c-str">'postgres'</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;logging: <span class="c-key">false</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;pool: { max:5, min:0, acquire:30000, idle:10000 }<br>
+&nbsp;&nbsp;}<br>
+);<br>
+<br>
+module.exports = sequelize;
+  </div>
+
+  <h3 style="color:var(--text-dim);font-size:.9rem;margin-bottom:8px;">Sync strategy for prototype (Day 1–2)</h3>
+  <div class="code-block">
+<span class="c-comment">// server.js — use sync for rapid prototyping</span><br>
+<span class="c-comment">// NEVER use force:true in production — it drops tables</span><br>
+await sequelize.sync({ alter: <span class="c-key">true</span> });<br>
+<br>
+<span class="c-comment">// From Day 3+ switch to proper migrations:</span><br>
+<span class="c-comment">// npx sequelize-cli db:migrate</span>
+  </div>
+
+  <div class="info-box warn">
+    <div class="ib-title">⚠ Migration discipline</div>
+    Use <strong>alter:true</strong> only for the first 2 days while you're defining the schema. Switch to Sequelize CLI migrations from Day 3 — this prevents accidental data loss and gives you a proper migration history.
+  </div>
+
+  <h3 style="color:var(--text-dim);font-size:.9rem;margin-bottom:8px;">Core model pattern (copy for every table)</h3>
+  <div class="code-block">
+<span class="cb-label">models/GateEntry.js</span>
+<span class="c-key">const</span> { DataTypes } = <span class="c-str">require</span>(<span class="c-str">'sequelize'</span>);<br>
+<br>
+module.exports = (sequelize) => {<br>
+&nbsp;&nbsp;<span class="c-key">const</span> GateEntry = sequelize.define(<span class="c-str">'GateEntry'</span>, {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;id:         { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: <span class="c-key">true</span> },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;token_no:   { type: DataTypes.STRING, unique: <span class="c-key">true</span>, allowNull: <span class="c-key">false</span> },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;vehicle_no: { type: DataTypes.STRING, allowNull: <span class="c-key">false</span> },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;driver_name:{ type: DataTypes.STRING },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;driver_mobile:{ type: DataTypes.STRING },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;driver_photo_url:{ type: DataTypes.STRING },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;challan_no: { type: DataTypes.STRING },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;expected_qty:{ type: DataTypes.DECIMAL(10,2) },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;entry_time: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;gate_status:{ type: DataTypes.ENUM(<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="c-str">'waiting_sampling'</span>,<span class="c-str">'sampling_done'</span>,<span class="c-str">'lab_pending'</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="c-str">'accepted'</span>,<span class="c-str">'rejected'</span>,<span class="c-str">'weighed'</span>,<span class="c-str">'unloaded'</span>,<span class="c-str">'exited'</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;), defaultValue: <span class="c-str">'waiting_sampling'</span> },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;is_deleted: { type: DataTypes.BOOLEAN, defaultValue: <span class="c-key">false</span> },<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="c-comment">// FK: vendor_id, driver_id, po_id — added in models/index.js associations</span><br>
+&nbsp;&nbsp;}, {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;tableName: <span class="c-str">'gate_entries'</span>,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;paranoid: <span class="c-key">true</span>, <span class="c-comment">// adds deletedAt for soft delete</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;underscored: <span class="c-key">true</span>,<br>
+&nbsp;&nbsp;});<br>
+&nbsp;&nbsp;<span class="c-key">return</span> GateEntry;<br>
+};
+  </div>
+</div>
+
+<!-- 8-DAY SCOPE -->
+<div class="sec" id="scope">
+  <div class="sec-label">Section 05</div>
+  <h2>8-Day Prototype Scope</h2>
+  <p style="color:var(--text-dim);margin-bottom:16px;">You can't build all 19 modules in 8 days. Below is what <em>must</em> work for a compelling demo — and what can be faked/stubbed.</p>
+
+  <table>
+    <thead><tr><th>Module</th><th>Prototype Depth</th><th>Priority</th></tr></thead>
+    <tbody>
+      <tr><td>Auth + Roles</td><td>Login, JWT, 4 roles (Admin, Gate, Lab, Production)</td><td><span class="badge badge-must">MUST</span></td></tr>
+      <tr><td>Gate Entry</td><td>Create entry, token, photo upload, status flow</td><td><span class="badge badge-must">MUST</span></td></tr>
+      <tr><td>Sampling + Lab</td><td>Collect sample, enter test results, verdict, negotiation</td><td><span class="badge badge-must">MUST</span></td></tr>
+      <tr><td>Weighbridge</td><td>Enter gross weight, generate weight slip</td><td><span class="badge badge-must">MUST</span></td></tr>
+      <tr><td>Warehouse / Lot</td><td>Unload, create lot, assign stack</td><td><span class="badge badge-must">MUST</span></td></tr>
+      <tr><td>Production Batch</td><td>Create batch, log stages (milling/separator/shiner/packing)</td><td><span class="badge badge-must">MUST</span></td></tr>
+      <tr><td>Finished Goods</td><td>FG stock list, status, aging</td><td><span class="badge badge-must">MUST</span></td></tr>
+      <tr><td>Dispatch</td><td>Create sales order, dispatch, generate challan PDF</td><td><span class="badge badge-must">MUST</span></td></tr>
+      <tr><td>Dashboard</td><td>5–6 live KPI cards + 1 chart</td><td><span class="badge badge-must">MUST</span></td></tr>
+      <tr><td>Vendor Management</td><td>Basic vendor list + create (no portal yet)</td><td><span class="badge badge-nice">NICE</span></td></tr>
+      <tr><td>Machine Logs</td><td>Simple log entry (no maintenance module yet)</td><td><span class="badge badge-nice">NICE</span></td></tr>
+      <tr><td>Reports</td><td>1 gate report + 1 production report as tables</td><td><span class="badge badge-nice">NICE</span></td></tr>
+      <tr><td>WhatsApp / GPS</td><td>Stub only — show the button, explain it later</td><td><span class="badge badge-later">LATER</span></td></tr>
+      <tr><td>Accounts / Payments</td><td>Invoice generated, payment entry — basic only</td><td><span class="badge badge-later">LATER</span></td></tr>
+      <tr><td>Notifications / Audit</td><td>Backend logging only, no UI</td><td><span class="badge badge-later">LATER</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- DAY CARDS -->
+<div class="sec" id="day1">
+  <div class="sec-label">Section 06</div>
+  <h2>The 8-Day Sprint</h2>
+  <div class="days-grid">
+
+    <!-- DAY 1 -->
+    <div class="day-card" id="day1">
+      <div class="day-header" onclick="toggle(this)">
+        <div class="day-num">Day 1</div>
+        <div class="day-title">Foundation — Server, DB, Auth</div>
+        <div class="day-focus">Backend setup · Models · JWT</div>
+        <div class="day-chevron">▼</div>
+      </div>
+      <div class="day-body open">
+        <ul class="task-list">
+          <li><span class="pill be">BE</span><div class="task-text">Set up Express server with helmet, cors, morgan, dotenv. Wire up Sequelize connection. Test DB connection on startup.</div></li>
+          <li><span class="pill db">DB</span><div class="task-text">Create models: User, Role, Vendor, Vehicle, Driver. Define associations in models/index.js. Run sync — check tables created in pgAdmin.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Build Auth routes: POST /api/auth/login (email+password → JWT). POST /api/auth/me (verify token, return user+role). Write JWT middleware and RBAC role-check middleware.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Seed: insert Admin user, 4 roles (Admin/Gate/Lab/Production), 3 test vendors.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Create Vite app. Set up React Router with a layout wrapper (Sidebar + TopBar). Build Login page — POST to /api/auth/login, store JWT in Zustand authStore, redirect to dashboard.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Axios client.js: base URL, interceptor to attach Authorization header, 401 → auto logout.</div></li>
+        </ul>
+        <div class="deliverable-box">
+          <div class="dl-title">✓ Day 1 Deliverable</div>
+          <ul><li>Server runs, DB connected, tables created</li><li>Login page works, JWT auth working</li><li>Role-protected routes working</li></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAY 2 -->
+    <div class="day-card" id="day2">
+      <div class="day-header" onclick="toggle(this)">
+        <div class="day-num">Day 2</div>
+        <div class="day-title">Gate Entry Module</div>
+        <div class="day-focus">Token · Photo upload · Status flow</div>
+        <div class="day-chevron">▼</div>
+      </div>
+      <div class="day-body">
+        <ul class="task-list">
+          <li><span class="pill db">DB</span><div class="task-text">Create GateEntry model with full fields from the ERP spec: token_no (auto-generate as "GT-YYYYMMDD-001"), vehicle_no, driver fields, challan_no, expected_qty, gate_status ENUM, vendor_id FK, entry_time.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Routes: POST /api/gate (create entry + auto-generate token), GET /api/gate (list, filterable by status/date), PATCH /api/gate/:id/status (move status forward). Multer for driver photo upload to /uploads.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Token generation service: query DB for today's max token, increment, format as GT-20260702-001. Must be atomic — use DB transaction or sequence to avoid race conditions.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Gate Entry page: Ant Design Form (vehicle no, vendor dropdown, challan, expected qty, driver name/mobile, photo upload). Submit → POST API. Show success with token number.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Gate Queue page: Ant Design Table showing today's entries with status badges (color-coded: waiting=yellow, rejected=red, unloaded=green). Status action buttons per row.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Vendor dropdown: fetch /api/vendors on mount. React-query with useQuery hook.</div></li>
+        </ul>
+        <div class="deliverable-box">
+          <div class="dl-title">✓ Day 2 Deliverable</div>
+          <ul><li>Gate security can create entries and see token numbers</li><li>Driver photo uploads and saves</li><li>Gate queue list with live status badges</li></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAY 3 -->
+    <div class="day-card" id="day3">
+      <div class="day-header" onclick="toggle(this)">
+        <div class="day-num">Day 3</div>
+        <div class="day-title">Sampling · Lab Testing · Negotiation</div>
+        <div class="day-focus">QC flow · Verdict · Purchase rate</div>
+        <div class="day-chevron">▼</div>
+      </div>
+      <div class="day-body">
+        <ul class="task-list">
+          <li><span class="pill db">DB</span><div class="task-text">Models: Sampling (gate_entry_id FK, sample_code, collected_at), LabTest (sampling_id FK, moisture_pct, broken_pct, fm_pct, color, smell, variety, verdict ENUM), Negotiation (lab_test_id FK, old_rate, new_rate, vendor_response), PurchaseOrder (vendor_id, material, qty, rate, po_no, do_no).</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Routes: POST /api/sampling (links to gate entry, auto-updates gate status to 'sampling_done'), POST /api/lab-tests, PATCH /api/lab-tests/:id/verdict (triggers status change to accepted/rejected), POST /api/negotiations, PATCH /api/negotiations/:id/respond.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Business rule: when lab verdict = 'rejected' → gate entry status = 'rejected'. When 'accepted' → status = 'lab_accepted'. When negotiation accepted → update purchase rate + status = 'lab_accepted'.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Lab Testing page: list of 'sampling_done' entries. Click any → open test form (input fields for all parameters). Submit verdict with dropdown: Accept / Reject / Negotiation. On Negotiation: show negotiation panel inline.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Status timeline component: show a horizontal step tracker (Ant Design Steps) on the gate entry detail page showing: Gate Entry → Sampling → Lab → Weighbridge → Unloading.</div></li>
+        </ul>
+        <div class="deliverable-box">
+          <div class="dl-title">✓ Day 3 Deliverable</div>
+          <ul><li>Full lab QC flow working end-to-end</li><li>Accept/Reject/Negotiate all update status correctly</li><li>Status timeline visible per entry</li></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAY 4 -->
+    <div class="day-card" id="day4">
+      <div class="day-header" onclick="toggle(this)">
+        <div class="day-num">Day 4</div>
+        <div class="day-title">Weighbridge · Unloading · Warehouse</div>
+        <div class="day-focus">Weight · Lot creation · Stack assignment</div>
+        <div class="day-chevron">▼</div>
+      </div>
+      <div class="day-body">
+        <ul class="task-list">
+          <li><span class="pill db">DB</span><div class="task-text">Models: WeightSlip (gate_entry_id, slip_no, gross_weight, tare_weight, net_weight, weighed_at), Warehouse (code, name, type, capacity), Lot (lot_no auto-gen, purchase linked, material_id, qty, variety, parent_lot_id self-ref), Stack (stack_code, lot_id, warehouse_id, qty, stacked_at).</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Weighbridge: POST /api/weight-slips (only allowed for 'lab_accepted' gate entries). Auto-calc net = gross - tare. Creates Purchase record finalizing qty and rate from PO.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Unloading + Lot: POST /api/lots (links to gate entry/purchase, generates lot_no "LOT-YYYYMMDD-001", creates Stack record). PATCH /api/lots/:id/route → { destination: 'warehouse' | 'production' }. Updates gate entry to 'unloaded'.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Inventory service: on lot creation, write to inventory table (lot_id, qty_in, stage='raw_material', warehouse_id).</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Weighbridge page: list of 'lab_accepted' trucks. Select one → enter gross weight (tare as default config). Preview net weight. Submit → show slip number.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Warehouse page: Lot list with warehouse/stack info. "Send to Production" button per lot. Current stock table.</div></li>
+        </ul>
+        <div class="deliverable-box">
+          <div class="dl-title">✓ Day 4 Deliverable</div>
+          <ul><li>Weight captured and slip generated</li><li>Lots created with auto-numbers</li><li>Warehouse stock list showing live inventory</li></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAY 5 -->
+    <div class="day-card" id="day5">
+      <div class="day-header" onclick="toggle(this)">
+        <div class="day-num">Day 5</div>
+        <div class="day-title">Production Batch — Full Pipeline</div>
+        <div class="day-focus">Milling · Separator · Shiner · Color · Grader</div>
+        <div class="day-chevron">▼</div>
+      </div>
+      <div class="day-body">
+        <ul class="task-list">
+          <li><span class="pill db">DB</span><div class="task-text">Models: ProductionBatch (batch_no, lot_id, process_type dry/wet, input_qty, status), Dryer (batch_id, moisture_before, moisture_after, start/end), MachineLog (batch_id, machine_id, input/output/recovery_pct, operator, start/end), SeparatorOutput, ShinerProcess (stage 1-5), ColorSorter, LengthGrading. Machine master with 10 seed machines.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">POST /api/production/batches — create batch from lot. Returns batch with stage checklist. PATCH /api/production/batches/:id/dryer, /milling, /separator, /shiner, /color-sorter, /length-grading — each stage saves output qty and advances batch status.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Recovery % calculated automatically: output_qty / input_qty * 100. Store on machine log. Emit by-product inventory entries (husk, bran, broken) on milling/shiner stage save.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Production Batch page: card-based stage tracker. Each stage = a collapsible card with form inputs. Completing a stage unlocks the next. Visual progress bar across stages.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Active batch dashboard: show all in-progress batches with current stage highlighted. Which machine is running, operator name, start time.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Moisture decision UI: after entering paddy details, ask "Dry or Wet?" — if Wet, show Dryer form first. After dryer, recheck moisture prompt.</div></li>
+        </ul>
+        <div class="deliverable-box">
+          <div class="dl-title">✓ Day 5 Deliverable</div>
+          <ul><li>Full production pipeline working stage by stage</li><li>Recovery % calculated and shown</li><li>By-products auto-created in inventory</li><li>Batch can be traced from lot → all stages</li></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAY 6 -->
+    <div class="day-card" id="day6">
+      <div class="day-header" onclick="toggle(this)">
+        <div class="day-num">Day 6</div>
+        <div class="day-title">Packing + Finished Goods</div>
+        <div class="day-focus">Batch/Lot · Barcode · FG stock · Aging</div>
+        <div class="day-chevron">▼</div>
+      </div>
+      <div class="day-body">
+        <ul class="task-list">
+          <li><span class="pill db">DB</span><div class="task-text">Models: Packing (batch_id, lot_id output, pack_size ENUM 5/10/25/50, bag_count, batch_no, barcode, qr_code, production_date, expiry_date), FinishedGoods (packing_id, warehouse_id, qty, status, aged_days).</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">POST /api/packing — create packing record from length grader output. Auto-generate batch_no (PCK-YYYYMMDD-001), barcode (EAN-13 format string), QR code (JSON string with lot/batch/date). Create FinishedGoods record with status='ready'.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">GET /api/finished-goods — list with filters: status, pack_size, warehouse, date range. Include aged_days (computed: today - production_date). node-cron job: every night update aged_days and flag stock >30 days as 'aging'.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Packing form: select batch → show graded outputs → enter pack size, bag count per grade, production date. Generate barcode display (use a simple barcode renderer library or just show the number).</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Finished Goods warehouse page: table with columns for SKU, pack size, qty, production date, aged days (highlight red if >30), status badge. Filter bar by pack size and status.</div></li>
+        </ul>
+        <div class="deliverable-box">
+          <div class="dl-title">✓ Day 6 Deliverable</div>
+          <ul><li>Packing records created with batch/lot/barcode</li><li>FG stock list live</li><li>Aging days calculated and color-coded</li></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAY 7 -->
+    <div class="day-card" id="day7">
+      <div class="day-header" onclick="toggle(this)">
+        <div class="day-num">Day 7</div>
+        <div class="day-title">Dispatch · Reports · Dashboard</div>
+        <div class="day-focus">Sales order · Challan PDF · KPI dashboard · Reports</div>
+        <div class="day-chevron">▼</div>
+      </div>
+      <div class="day-body">
+        <ul class="task-list">
+          <li><span class="pill db">DB</span><div class="task-text">Models: Customer, SalesOrder (customer_id, material_id, qty, rate, status), Dispatch (so_id, challan_no, vehicle_id, dispatch_weight, dispatch_time, status), Invoice (dispatch_id, amount, tax, status).</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">POST /api/sales-orders → POST /api/dispatches (allocate FG stock, update FG status to 'dispatched', generate challan_no). GET /api/dispatches/:id/challan → return JSON for PDF. Use pdfkit (npm install pdfkit) to generate a basic Delivery Challan PDF.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Dashboard API: GET /api/dashboard/kpis → { trucks_at_gate, today_intake_qty, lab_rejection_rate, active_batches, fg_stock_qty, pending_dispatch_count, today_dispatch_value }. Single aggregation query joining multiple tables.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Reports: GET /api/reports/gate-register?from=&to= → paginated gate entries with all details. GET /api/reports/production-summary?from=&to= → batch-wise input/output/recovery. Both return JSON (rendered as tables in FE).</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Dashboard page: 6 KPI stat cards (Ant Design Statistic). 1 Recharts BarChart (daily intake last 7 days). Auto-refresh every 60 seconds using TanStack Query refetchInterval.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Dispatch page: create sales order → select FG stock to allocate → confirm dispatch → show challan number + "Download Challan PDF" button (calls /api/dispatches/:id/challan, triggers file download).</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Reports page: tab between Gate Register and Production Summary. Date range picker → fetch → display in Ant Design Table with export to CSV button.</div></li>
+        </ul>
+        <div class="deliverable-box">
+          <div class="dl-title">✓ Day 7 Deliverable</div>
+          <ul><li>Full dispatch flow working — FG allocated, challan downloadable</li><li>Dashboard showing live KPIs</li><li>2 reports working with date filter</li></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- DAY 8 -->
+    <div class="day-card" id="day8">
+      <div class="day-header" onclick="toggle(this)">
+        <div class="day-num">Day 8</div>
+        <div class="day-title">Polish · Seed Data · Demo Prep</div>
+        <div class="day-focus">End-to-end test · Fix bugs · Deploy · Demo script</div>
+        <div class="day-chevron">▼</div>
+      </div>
+      <div class="day-body">
+        <ul class="task-list">
+          <li><span class="pill inf">INFRA</span><div class="task-text">Run the full end-to-end flow manually: Gate Entry → Lab → Weighbridge → Lot → Production → Packing → FG → Dispatch. Fix any broken step. This is your demo script — run it perfectly.</div></li>
+          <li><span class="pill db">DB</span><div class="task-text">Seed comprehensive demo data: 5 vendors, 10 varieties, 3 warehouses, 10 machines. Pre-create 3 past batches in 'completed' state so reports and dashboard look populated for demo.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">UI polish: consistent color scheme, loading spinners on all API calls, error messages for failed requests, empty states for empty tables ("No gate entries today — create one →").</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Role-based sidebar: hide menu items the logged-in user's role can't access. Gate Security sees only Gate + Queue. Lab Technician sees only Lab. Etc.</div></li>
+          <li><span class="pill inf">INFRA</span><div class="task-text">Build frontend: npm run build. Serve via Express static or deploy to Vercel (frontend) + Render.com free tier (backend + Postgres). Or run both locally with PM2 for the demo.</div></li>
+          <li><span class="pill inf">INFRA</span><div class="task-text">Prepare demo credentials: admin@ricemill.com / admin123, gate@ricemill.com, lab@ricemill.com, production@ricemill.com. Print or share before demo.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Print/save this as your pitch: "This prototype covers the full Gate-to-Dispatch flow in 8 days. Phase 2 adds Accounts, WhatsApp notifications, vendor portal, and mobile app over the next 3–4 weeks."</div></li>
+        </ul>
+        <div class="deliverable-box">
+          <div class="dl-title">✓ Day 8 Deliverable — Demo-Ready ERP</div>
+          <ul>
+            <li>Full flow from truck arrival → dispatch working live</li>
+            <li>4 user roles with restricted views</li>
+            <li>Dashboard with real data</li>
+            <li>2 downloadable reports</li>
+            <li>Delivery Challan PDF generation</li>
+            <li>Hosted on staging URL (or localhost for demo)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end days-grid -->
+</div>
+
+<!-- KEY COMMANDS -->
+<div class="sec" id="commands">
+  <div class="sec-label">Section 07</div>
+  <h2>Key Commands Reference</h2>
+  <div class="stack-grid">
+    <div>
+      <div style="color:var(--text-dim);font-size:.82rem;margin-bottom:6px;font-family:var(--mono);">Backend</div>
+      <div class="code-block">
+<span class="c-comment"># Start dev server</span><br>
+npx nodemon src/server.js<br>
+<br>
+<span class="c-comment"># Install pdfkit for challan PDF</span><br>
+npm install pdfkit<br>
+<br>
+<span class="c-comment"># Switch to Sequelize CLI (Day 3+)</span><br>
+npm install --save-dev sequelize-cli<br>
+npx sequelize-cli init<br>
+npx sequelize-cli db:migrate<br>
+npx sequelize-cli db:seed:all<br>
+<br>
+<span class="c-comment"># Create a new migration</span><br>
+npx sequelize-cli migration:generate --name add-lots-table
+      </div>
+    </div>
+    <div>
+      <div style="color:var(--text-dim);font-size:.82rem;margin-bottom:6px;font-family:var(--mono);">Frontend</div>
+      <div class="code-block">
+<span class="c-comment"># Dev server</span><br>
+npm run dev<br>
+<br>
+<span class="c-comment"># Production build</span><br>
+npm run build<br>
+npm run preview<br>
+<br>
+<span class="c-comment"># Install QR code library (Day 6)</span><br>
+npm install qrcode.react<br>
+<br>
+<span class="c-comment"># Install barcode display (Day 6)</span><br>
+npm install react-barcode<br>
+<br>
+<span class="c-comment"># Export CSV from table</span><br>
+npm install xlsx
+      </div>
+    </div>
+  </div>
+
+  <div style="color:var(--text-dim);font-size:.82rem;margin-bottom:6px;font-family:var(--mono);">Git workflow — commit every evening</div>
+  <div class="code-block">
+git add .<br>
+git commit -m "Day 2: Gate Entry module complete — token, photo upload, status flow"<br>
+git push origin main
+  </div>
+</div>
+
+<!-- PRO TIPS -->
+<div class="sec" id="tips">
+  <div class="sec-label">Section 08</div>
+  <h2>Pro Tips for 8 Days</h2>
+
+  <div class="info-box tip">
+    <div class="ib-title">🚀 Build backend first, frontend second — same day</div>
+    For each module: write the route → controller → model → test in Thunder Client → then build the React page. Don't build FE before BE is working.
+  </div>
+  <div class="info-box tip">
+    <div class="ib-title">🎯 Ant Design saves you 2 days</div>
+    Use &lt;Table&gt;, &lt;Form&gt;, &lt;Modal&gt;, &lt;Steps&gt;, &lt;Tag&gt; from antd directly. Don't write custom CSS for the first prototype. Focus on logic, not looks.
+  </div>
+  <div class="info-box warn">
+    <div class="ib-title">⚠ Don't build what isn't demoed</div>
+    WhatsApp, GPS, maintenance, full accounts — stub these as "coming in Phase 2." Every hour on a non-demo feature is an hour stolen from core flow stability.
+  </div>
+  <div class="info-box tip">
+    <div class="ib-title">🔢 Use UUIDs for all PKs from Day 1</div>
+    Sequelize DataTypes.UUIDV4. Easier to merge data later, better for multi-plant expansion, no integer overflow. One line of config now saves a painful migration later.
+  </div>
+  <div class="info-box tip">
+    <div class="ib-title">📦 TanStack Query = your best friend</div>
+    <code>useQuery(['gate-entries', filters], fetchFn, {'{'} refetchInterval: 30000 {'}'}) </code> — every list screen auto-refreshes. No manual state sync needed.
+  </div>
+  <div class="info-box warn">
+    <div class="ib-title">⚠ Always test the status machine</div>
+    The most common bug: status transitions that go backwards or skip steps. Write a status validation service on Day 1 that rejects invalid transitions (e.g., can't go from 'waiting_sampling' directly to 'weighed').
+  </div>
+
+  <div style="margin-top:32px;padding:24px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;">
+    <div style="font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);margin-bottom:12px;">Phase 2 — After the prototype (Week 2–4)</div>
+    <div class="pill-row">
+      <span class="pill-chip chip-g">WhatsApp Notifications</span>
+      <span class="pill-chip chip-g">Vendor Portal</span>
+      <span class="pill-chip chip-g">Machine Maintenance</span>
+      <span class="pill-chip chip-b">Accounts & Payments</span>
+      <span class="pill-chip chip-b">Audit Log UI</span>
+      <span class="pill-chip chip-b">Full Reports Suite</span>
+      <span class="pill-chip chip-p">Mobile App (React Native)</span>
+      <span class="pill-chip chip-p">GPS Tracking</span>
+      <span class="pill-chip chip-y">E-Way Bill Integration</span>
+      <span class="pill-chip chip-y">ANPR Camera Gate</span>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<script>
+  function toggle(header) {
+    const body = header.nextElementSibling;
+    const chev = header.querySelector('.day-chevron');
+    const isOpen = body.classList.toggle('open');
+    chev.style.transform = isOpen ? 'rotate(180deg)' : '';
+  }
+
+  // Mobile sidebar
+  const btn = document.getElementById('mobBtn');
+  const sb = document.getElementById('sidebar');
+  btn.addEventListener('click', () => sb.classList.toggle('open'));
+  document.querySelectorAll('nav a').forEach(a => {
+    a.addEventListener('click', () => sb.classList.remove('open'));
+  });
+
+  // Active nav highlight
+  const links = Array.from(document.querySelectorAll('nav a'));
+  const targets = links.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  const onScroll = () => {
+    let cur = targets[0];
+    for (const t of targets) {
+      if (t.getBoundingClientRect().top - 80 <= 0) cur = t;
+    }
+    links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + cur.id));
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+</script>
+</body>
+</html>

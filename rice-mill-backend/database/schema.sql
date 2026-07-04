@@ -1,0 +1,17 @@
+-- Rice Mill ERP — Database Schema
+-- TODO: generate full DDL from Rice-Mill-ERP-Design.html Section 7 (Complete Database Schema).
+--
+-- Master Tables (Section 7.1): users, roles, permissions, role_permissions, vendors,
+--   customers, drivers, vehicles, material_master, variety_master, warehouse_master,
+--   bin_stack_master, machine_master, uom_master, rate_master, quality_parameter_master,
+--   reason_code_master, plant_master
+--
+-- Transaction Tables (Section 7.2): purchase_order, gate_entry, sampling, lab_test,
+--   negotiation, weight_slip, purchase, lots, stacks, inventory, quality_check, dryer,
+--   production_batch, machine_logs, separator_output, shiner_process, color_sorter,
+--   length_grading, packing, finished_goods, reject_material, waste_management,
+--   by_product_inventory, sales_order, dispatch, stock_movement, invoices, payments,
+--   machine_maintenance, audit_logs, notifications
+--
+-- Common columns on every table: id, created_by, updated_by, created_at, updated_at,
+-- status, is_deleted, plant_id.
