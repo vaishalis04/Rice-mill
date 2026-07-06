@@ -6,10 +6,9 @@ const { verifyAccessToken, attachUser, authorize } = require("../middlewares/aut
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
 // Public or shared-auth route group — apply middleware per-route if needed.
 
-router.get("/",     Controller.getAll);
-router.get("/:id",  Controller.getById);
-router.post("/",    Controller.create);
-router.put("/:id",  Controller.update);
-router.delete("/:id", Controller.delete);
+router.post("/register", Controller.register);
+router.post("/login", Controller.login);
+router.post("/refresh", Controller.refresh);
+router.post("/logout", Controller.logout);
 
 module.exports = router;

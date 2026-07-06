@@ -1,19 +1,22 @@
-const { verifyAccessToken } = require("../helpers/jwt.helper");
+const createError = require("http-errors");
+const { User } = require("../models/index");
 
-// TODO: implement — attach decoded user (and role) onto req
 const attachUser = async (req, res, next) => {
   try {
-    // req.userId is set by verifyAccessToken; fetch full user + role here
+    if (!req.userId) return next(createError.Unauthorized());
+    const user = await User.findByPk(req.userId, { attributes: { exclude: ["password"] } });
+    if (!user || user.is_inactive) return next(createError.Unauthorized("User not found"));
+    req.user = user;
     next();
   } catch (err) {
     next(err);
   }
 };
 
-// TODO: implement — allow only given role(s) to proceed
 const authorize = (...roles) => (req, res, next) => {
-  // check req.user.role against `roles`
+  if (!req.user) return next(createError.Unauthorized());
+  if (!roles.includes(req.user.role)) return next(createError.Forbidden("Access denied: insufficient permissions"));
   next();
 };
 
-module.exports = { verifyAccessToken, attachUser, authorize };
+module.exports = { attachUser, authorize };
