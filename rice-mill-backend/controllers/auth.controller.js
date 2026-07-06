@@ -1,49 +1,228 @@
 const createError = require("http-errors");
-const {  } = require("../models/index");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
-// Register / login / refresh / logout
-// TODO: implement business logic for each handler below.
+const { User, Role, PlantMaster } = require("../models");
+
+const ACCESS_TOKEN_SECRET =
+  process.env.ACCESS_TOKEN_SECRET || "access_secret";
+
+const REFRESH_TOKEN_SECRET =
+  process.env.REFRESH_TOKEN_SECRET || "refresh_secret";
+
 module.exports = {
-  getAll: async (req, res, next) => {
+  // Register
+  register: async (req, res, next) => {
     try {
-      // TODO: list auth with filters / pagination
-      res.status(200).json({ success: true, data: [] });
+      const {
+        username,
+        email,
+        phone,
+        password,
+        role_id,
+        employee_code,
+        plant_id,
+      } = req.body;
+
+      const exists = await User.findOne({
+        where: {
+          email,
+          is_deleted: false,
+        },
+      });
+
+      if (exists) {
+        throw createError.Conflict("Email already exists");
+      }
+
+      const role = await Role.findByPk(role_id);
+
+      if (!role) {
+        throw createError.BadRequest("Invalid Role");
+      }
+
+      if (plant_id) {
+        const plant = await PlantMaster.findByPk(plant_id);
+
+        if (!plant) {
+          throw createError.BadRequest("Invalid Plant");
+        }
+      }
+
+      const password_hash = await bcrypt.hash(password, 10);
+
+      const user = await User.create({
+        username,
+        email,
+        phone,
+        password_hash,
+        role_id,
+        employee_code,
+        plant_id,
+      });
+
+      res.status(201).json({
+        success: true,
+        msg: "User Registered Successfully",
+        data: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+        },
+      });
     } catch (err) {
       next(err);
     }
   },
 
-  getById: async (req, res, next) => {
+  // Login
+  login: async (req, res, next) => {
     try {
-      // TODO: fetch single auth by req.params.id
-      res.status(200).json({ success: true, data: null });
+      const { email, password } = req.body;
+
+      const user = await User.findOne({
+        where: {
+          email,
+          is_deleted: false,
+        },
+      });
+
+      if (!user) {
+        throw createError.Unauthorized("Invalid Email or Password");
+      }
+
+      const match = await bcrypt.compare(
+        password,
+        user.password_hash
+      );
+
+      if (!match) {
+        throw createError.Unauthorized("Invalid Email or Password");
+      }
+
+      if (!user.is_active) {
+        throw createError.Forbidden("Account Disabled");
+      }
+
+      const accessToken = jwt.sign(
+        {
+          id: user.id,
+          role_id: user.role_id,
+          plant_id: user.plant_id,
+        },
+        ACCESS_TOKEN_SECRET,
+        {
+          expiresIn: "15m",
+        }
+      );
+
+      const refreshToken = jwt.sign(
+        {
+          id: user.id,
+        },
+        REFRESH_TOKEN_SECRET,
+        {
+          expiresIn: "7d",
+        }
+      );
+
+      user.refresh_token = refreshToken;
+      await user.save();
+
+      res.json({
+        success: true,
+        accessToken,
+        refreshToken,
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role_id: user.role_id,
+          plant_id: user.plant_id,
+        },
+      });
     } catch (err) {
       next(err);
     }
   },
 
-  create: async (req, res, next) => {
+  // Refresh Token
+  refresh: async (req, res, next) => {
     try {
-      // TODO: create auth from req.body
-      res.status(201).json({ success: true, msg: "Created", data: null });
+      const { refreshToken } = req.body;
+
+      if (!refreshToken) {
+        throw createError.Unauthorized();
+      }
+
+      const user = await User.findOne({
+        where: {
+          refresh_token: refreshToken,
+        },
+      });
+
+      if (!user) {
+        throw createError.Forbidden("Invalid Refresh Token");
+      }
+
+      jwt.verify(
+        refreshToken,
+        REFRESH_TOKEN_SECRET,
+        (err, decoded) => {
+          if (err) {
+            return next(createError.Forbidden("Expired Refresh Token"));
+          }
+
+          const accessToken = jwt.sign(
+            {
+              id: user.id,
+              role_id: user.role_id,
+              plant_id: user.plant_id,
+            },
+            ACCESS_TOKEN_SECRET,
+            {
+              expiresIn: "15m",
+            }
+          );
+
+          res.json({
+            success: true,
+            accessToken,
+          });
+        }
+      );
     } catch (err) {
       next(err);
     }
   },
 
-  update: async (req, res, next) => {
+  // Logout
+  logout: async (req, res, next) => {
     try {
-      // TODO: update auth req.params.id with req.body
-      res.status(200).json({ success: true, msg: "Updated", data: null });
-    } catch (err) {
-      next(err);
-    }
-  },
+      const { refreshToken } = req.body;
 
-  delete: async (req, res, next) => {
-    try {
-      // TODO: soft-delete auth req.params.id (is_deleted = true)
-      res.status(200).json({ success: true, msg: "Deleted" });
+      if (!refreshToken) {
+        return res.json({
+          success: true,
+          msg: "Logged Out",
+        });
+      }
+
+      const user = await User.findOne({
+        where: {
+          refresh_token: refreshToken,
+        },
+      });
+
+      if (user) {
+        user.refresh_token = null;
+        await user.save();
+      }
+
+      res.json({
+        success: true,
+        msg: "Logout Successful",
+      });
     } catch (err) {
       next(err);
     }
