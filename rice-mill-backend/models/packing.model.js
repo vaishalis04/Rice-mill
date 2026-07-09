@@ -1,19 +1,25 @@
 const { DataTypes, Model } = require("sequelize");
 const sequelize = require("../config/db");
 
-// TODO: implement full column definitions. Reference fields (from architecture doc):
-// batch_id (FK), lot_id (FK output), pack_size(5/10/25/50/custom), bag_count, batch_no, qr_code, barcode, production_date, expiry_date, packed_by (FK)
-//
-// Common columns applied to every table per architecture doc section 7 (not repeated per-model):
-// id (PK), created_by (FK->users.id), updated_by (FK->users.id), created_at, updated_at,
-// status (ENUM), is_deleted (BOOLEAN), plant_id (FK, multi-plant scalability)
-
 class Packing extends Model {}
 
 Packing.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    // TODO: add remaining fields listed above
+    batch_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "production_batch", key: "id" } },
+    lot_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "lots", key: "id" } }, // output lot
+    pack_size: { type: DataTypes.ENUM("5", "10", "25", "50", "custom"), allowNull: false },
+    bag_count: { type: DataTypes.INTEGER, allowNull: false },
+    batch_no: { type: DataTypes.STRING(30) },
+    qr_code: { type: DataTypes.STRING(255), unique: true },
+    barcode: { type: DataTypes.STRING(100), unique: true },
+    production_date: { type: DataTypes.DATEONLY },
+    expiry_date: { type: DataTypes.DATEONLY },
+    packed_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    plant_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "plant_master", key: "id" } }, // multi-plant scalability
   },
   {
     sequelize,
@@ -21,6 +27,7 @@ Packing.init(
     tableName: "packing",
     timestamps: true,
     underscored: true,
+    paranoid: false, // using explicit is_deleted flag instead of Sequelize's own soft-delete timestamp
   }
 );
 

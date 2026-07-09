@@ -11,5 +11,7 @@ router.get("/:id",  Controller.getById);
 router.post("/",    Controller.create);
 router.put("/:id",  Controller.update);
 router.delete("/:id", Controller.delete);
+router.post("/convert", Controller.convertToPurchase);
+
 
 module.exports = router;

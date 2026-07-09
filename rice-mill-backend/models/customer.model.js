@@ -1,19 +1,21 @@
 const { DataTypes, Model } = require("sequelize");
 const sequelize = require("../config/db");
 
-// TODO: implement full column definitions. Reference fields (from architecture doc):
-// customer_code, name, gstin, address, credit_limit, customer_type(FG/by-product)
-//
-// Common columns applied to every table per architecture doc section 7 (not repeated per-model):
-// id (PK), created_by (FK->users.id), updated_by (FK->users.id), created_at, updated_at,
-// status (ENUM), is_deleted (BOOLEAN), plant_id (FK, multi-plant scalability)
-
 class Customer extends Model {}
 
 Customer.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    // TODO: add remaining fields listed above
+    customer_code: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    name: { type: DataTypes.STRING(150), allowNull: false },
+    gstin: { type: DataTypes.STRING(15), unique: true, validate: { len: [15, 15] } },
+    address: { type: DataTypes.TEXT },
+    credit_limit: { type: DataTypes.DECIMAL(12, 2), defaultValue: 0 },
+    customer_type: { type: DataTypes.ENUM("fg", "by_product"), defaultValue: "fg" }, // note #25: by-product customers != FG customers
+    created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    plant_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "plant_master", key: "id" } }, // multi-plant scalability
   },
   {
     sequelize,
@@ -21,6 +23,7 @@ Customer.init(
     tableName: "customers",
     timestamps: true,
     underscored: true,
+    paranoid: false, // using explicit is_deleted flag instead of Sequelize's own soft-delete timestamp
   }
 );
 

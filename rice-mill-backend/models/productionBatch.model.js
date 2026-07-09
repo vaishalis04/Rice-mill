@@ -1,19 +1,21 @@
 const { DataTypes, Model } = require("sequelize");
 const sequelize = require("../config/db");
 
-// TODO: implement full column definitions. Reference fields (from architecture doc):
-// batch_no (UNIQUE), lot_id (FK), process_type(dry/wet), input_qty, plant_id (FK), production_date, status
-//
-// Common columns applied to every table per architecture doc section 7 (not repeated per-model):
-// id (PK), created_by (FK->users.id), updated_by (FK->users.id), created_at, updated_at,
-// status (ENUM), is_deleted (BOOLEAN), plant_id (FK, multi-plant scalability)
-
 class ProductionBatch extends Model {}
 
 ProductionBatch.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    // TODO: add remaining fields listed above
+    batch_no: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    lot_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "lots", key: "id" } },
+    process_type: { type: DataTypes.ENUM("dry", "wet"), allowNull: false }, // note #22
+    input_qty: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
+    production_date: { type: DataTypes.DATEONLY, allowNull: false },
+    batch_status: { type: DataTypes.ENUM("pending", "in_progress", "completed", "on_hold"), defaultValue: "pending" }, // renamed from generic "status" to avoid clashing with common record_status
+    created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    plant_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "plant_master", key: "id" } }, // multi-plant scalability
   },
   {
     sequelize,
@@ -21,6 +23,7 @@ ProductionBatch.init(
     tableName: "production_batch",
     timestamps: true,
     underscored: true,
+    paranoid: false, // using explicit is_deleted flag instead of Sequelize's own soft-delete timestamp
   }
 );
 

@@ -1,19 +1,23 @@
 const { DataTypes, Model } = require("sequelize");
 const sequelize = require("../config/db");
 
-// TODO: implement full column definitions. Reference fields (from architecture doc):
-// so_no, customer_id (FK), order_type(FG/by-product), material_id (FK), qty, rate, order_date, status
-//
-// Common columns applied to every table per architecture doc section 7 (not repeated per-model):
-// id (PK), created_by (FK->users.id), updated_by (FK->users.id), created_at, updated_at,
-// status (ENUM), is_deleted (BOOLEAN), plant_id (FK, multi-plant scalability)
-
 class SalesOrder extends Model {}
 
 SalesOrder.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    // TODO: add remaining fields listed above
+    so_no: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    customer_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "customers", key: "id" } },
+    order_type: { type: DataTypes.ENUM("fg", "by_product"), allowNull: false }, // note #25
+    material_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "material_master", key: "id" } },
+    qty: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
+    rate: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
+    order_date: { type: DataTypes.DATEONLY, allowNull: false },
+    so_status: { type: DataTypes.ENUM("pending", "confirmed", "allocated", "dispatched", "closed", "cancelled"), defaultValue: "pending" }, // renamed from generic "status"
+    created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    plant_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "plant_master", key: "id" } }, // multi-plant scalability
   },
   {
     sequelize,
@@ -21,6 +25,7 @@ SalesOrder.init(
     tableName: "sales_order",
     timestamps: true,
     underscored: true,
+    paranoid: false, // using explicit is_deleted flag instead of Sequelize's own soft-delete timestamp
   }
 );
 

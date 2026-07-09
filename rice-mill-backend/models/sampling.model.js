@@ -1,19 +1,20 @@
 const { DataTypes, Model } = require("sequelize");
 const sequelize = require("../config/db");
 
-// TODO: implement full column definitions. Reference fields (from architecture doc):
-// gate_entry_id (FK), sample_code, collected_by (FK users), collected_at, sent_to_lab_at
-//
-// Common columns applied to every table per architecture doc section 7 (not repeated per-model):
-// id (PK), created_by (FK->users.id), updated_by (FK->users.id), created_at, updated_at,
-// status (ENUM), is_deleted (BOOLEAN), plant_id (FK, multi-plant scalability)
-
 class Sampling extends Model {}
 
 Sampling.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    // TODO: add remaining fields listed above
+    gate_entry_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "gate_entry", key: "id" } },
+    sample_code: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    collected_by: { type: DataTypes.BIGINT, allowNull: false, references: { model: "users", key: "id" } },
+    collected_at: { type: DataTypes.DATE },
+    sent_to_lab_at: { type: DataTypes.DATE, allowNull: true },
+    created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    plant_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "plant_master", key: "id" } }, // multi-plant scalability
   },
   {
     sequelize,
@@ -21,6 +22,7 @@ Sampling.init(
     tableName: "sampling",
     timestamps: true,
     underscored: true,
+    paranoid: false, // using explicit is_deleted flag instead of Sequelize's own soft-delete timestamp
   }
 );
 

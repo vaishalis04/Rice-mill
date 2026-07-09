@@ -1,19 +1,26 @@
 const { DataTypes, Model } = require("sequelize");
 const sequelize = require("../config/db");
 
-// TODO: implement full column definitions. Reference fields (from architecture doc):
-// sampling_id (FK), moisture_pct, broken_pct, fm_pct, color, smell, variety_detected, grain_size, verdict, tested_by (FK), tested_at
-//
-// Common columns applied to every table per architecture doc section 7 (not repeated per-model):
-// id (PK), created_by (FK->users.id), updated_by (FK->users.id), created_at, updated_at,
-// status (ENUM), is_deleted (BOOLEAN), plant_id (FK, multi-plant scalability)
-
 class LabTest extends Model {}
 
 LabTest.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    // TODO: add remaining fields listed above
+    sampling_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "sampling", key: "id" } },
+    moisture_pct: { type: DataTypes.DECIMAL(5, 2) },
+    broken_pct: { type: DataTypes.DECIMAL(5, 2) },
+    fm_pct: { type: DataTypes.DECIMAL(5, 2) },
+    color: { type: DataTypes.STRING(30) },
+    smell: { type: DataTypes.STRING(30) },
+    variety_detected: { type: DataTypes.BIGINT, allowNull: true, references: { model: "variety_master", key: "id" } },
+    grain_size: { type: DataTypes.STRING(30) },
+    verdict: { type: DataTypes.ENUM("accepted", "rejected", "negotiation"), allowNull: false },
+    tested_by: { type: DataTypes.BIGINT, allowNull: false, references: { model: "users", key: "id" } },
+    tested_at: { type: DataTypes.DATE },
+    created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
+    is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    plant_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "plant_master", key: "id" } }, // multi-plant scalability
   },
   {
     sequelize,
@@ -21,6 +28,7 @@ LabTest.init(
     tableName: "lab_test",
     timestamps: true,
     underscored: true,
+    paranoid: false, // using explicit is_deleted flag instead of Sequelize's own soft-delete timestamp
   }
 );
 
