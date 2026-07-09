@@ -1,0 +1,46 @@
+.dash-wrapper {
+  min-height: 100vh;
+  background: #f7f5f0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+.dash-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  padding: 20px 32px;
+  border-bottom: 1px solid #e6e1d6;
+}
+
+.dash-header h1 {
+  font-size: 1.25rem;
+  margin: 0 0 4px 0;
+  color: #2b2117;
+}
+
+.dash-user {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #7a6f60;
+}
+
+.dash-logout {
+  background: transparent;
+  border: 1px solid #d8d0c2;
+  color: #3a3128;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.dash-logout:hover {
+  background: #fdecea;
+  border-color: #a83b2b;
+  color: #a83b2b;
+}
+
+.dash-content {
+  padding: 32px;
+}
