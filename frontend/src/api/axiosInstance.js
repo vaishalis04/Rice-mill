@@ -1,7 +1,7 @@
 import axios from "axios";
 
-// EDIT: point this at your real backend, or set VITE_API_BASE_URL in a .env file
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
+// Set VITE_API_BASE_URL in a .env file to override this
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
 
 const axiosInstance = axios.create({
   baseURL: BASE_URL,
@@ -28,6 +28,7 @@ axiosInstance.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem("token");
+      localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
       if (window.location.pathname !== "/login") {
         window.location.href = "/login";

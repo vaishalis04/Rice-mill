@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "../components/ProtectedRoute";
-import { ROLES } from "../constants/roles";
+import { ROLE_ID } from "../constants/roles";
 
 import Login from "../pages/auth/Login";
 import Unauthorized from "../pages/auth/Unauthorized";
@@ -15,6 +15,7 @@ import WarehouseDashboard from "../pages/dashboards/WarehouseDashboard";
 import QualityDashboard from "../pages/dashboards/QualityDashboard";
 import TransportDashboard from "../pages/dashboards/TransportDashboard";
 import HrDashboard from "../pages/dashboards/HrDashboard";
+import GateDashboard from "../pages/dashboards/GateDashboard";
 
 export default function AppRoutes() {
   return (
@@ -26,7 +27,7 @@ export default function AppRoutes() {
       <Route
         path="/admin/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLES.ADMIN]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.ADMIN]}>
             <AdminDashboard />
           </ProtectedRoute>
         }
@@ -34,7 +35,7 @@ export default function AppRoutes() {
       <Route
         path="/owner/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLES.OWNER]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.OWNER]}>
             <OwnerDashboard />
           </ProtectedRoute>
         }
@@ -42,7 +43,7 @@ export default function AppRoutes() {
       <Route
         path="/manager/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLES.MANAGER]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.MANAGER]}>
             <ManagerDashboard />
           </ProtectedRoute>
         }
@@ -50,7 +51,7 @@ export default function AppRoutes() {
       <Route
         path="/accounts/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLES.ACCOUNTANT]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.ACCOUNTANT]}>
             <AccountantDashboard />
           </ProtectedRoute>
         }
@@ -58,7 +59,7 @@ export default function AppRoutes() {
       <Route
         path="/purchase/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLES.PURCHASE]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.PURCHASE]}>
             <PurchaseDashboard />
           </ProtectedRoute>
         }
@@ -66,7 +67,7 @@ export default function AppRoutes() {
       <Route
         path="/sales/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLES.SALES]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.SALES]}>
             <SalesDashboard />
           </ProtectedRoute>
         }
@@ -74,7 +75,7 @@ export default function AppRoutes() {
       <Route
         path="/warehouse/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLES.WAREHOUSE]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.WAREHOUSE]}>
             <WarehouseDashboard />
           </ProtectedRoute>
         }
@@ -82,7 +83,7 @@ export default function AppRoutes() {
       <Route
         path="/quality/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLES.QUALITY]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.QUALITY]}>
             <QualityDashboard />
           </ProtectedRoute>
         }
@@ -90,7 +91,7 @@ export default function AppRoutes() {
       <Route
         path="/transport/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLES.TRANSPORT]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.TRANSPORT]}>
             <TransportDashboard />
           </ProtectedRoute>
         }
@@ -98,8 +99,16 @@ export default function AppRoutes() {
       <Route
         path="/hr/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLES.HR]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.HR]}>
             <HrDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/gate/dashboard"
+        element={
+          <ProtectedRoute allowedRoles={[ROLE_ID.GATE]}>
+            <GateDashboard />
           </ProtectedRoute>
         }
       />
