@@ -11,5 +11,6 @@ router.get("/:id",  Controller.getById);
 router.post("/",    Controller.create);
 router.put("/:id",  Controller.update);
 router.delete("/:id", Controller.delete);
+router.patch("/:id/verdict", Controller.respond);
 
 module.exports = router;

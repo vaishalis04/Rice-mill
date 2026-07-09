@@ -17,7 +17,18 @@ GateEntry.init(
     expected_qty: { type: DataTypes.DECIMAL(12, 2) },
     entry_time: { type: DataTypes.DATE },
     exit_time: { type: DataTypes.DATE, allowNull: true },
-    gate_status: { type: DataTypes.ENUM("waiting_token", "waiting_sampling", "rejected", "in_process", "parked", "exited"), defaultValue: "waiting_token" }, // notes #2,#5,#13
+gate_status: {
+  type: DataTypes.ENUM(
+    "waiting_token",
+    "waiting_sampling",
+    "sampling_done",
+    "rejected",
+    "in_process",
+    "parked",
+    "exited"
+  ),
+  defaultValue: "waiting_token"
+},
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },

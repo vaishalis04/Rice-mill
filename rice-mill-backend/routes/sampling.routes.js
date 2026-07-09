@@ -1,6 +1,8 @@
 const router = require("express").Router();
 const Controller = require("../controllers/sampling.controller");
-const { verifyAccessToken, attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { verifyAccessToken } = require("../helpers/jwt.helper");
+
 
 // Sample collection & chain-of-custody (Module 5)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
