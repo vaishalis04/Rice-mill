@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
  * Wrap any route element with this to require login,
  * and optionally restrict it to specific roles.
  *
- * <ProtectedRoute allowedRoles={["admin"]}>
+ * <ProtectedRoute allowedRoles={[ROLE_ID.ADMIN]}>
  *   <AdminDashboard />
  * </ProtectedRoute>
  */
@@ -16,7 +16,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
 
   if (!user) return <Navigate to="/login" replace />;
 
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
+  if (allowedRoles && !allowedRoles.includes(user.role_id)) {
     return <Navigate to="/unauthorized" replace />;
   }
 

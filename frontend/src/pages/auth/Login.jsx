@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { ROLE_ROUTES, DEFAULT_ROUTE } from "../../constants/roles";
+// NOTE: routes are now keyed by numeric role_id, not a role name string
 import "./Auth.css";
 
 export default function Login() {
@@ -20,7 +21,7 @@ export default function Login() {
 
     try {
       const user = await login(email, password);
-      const redirectTo = ROLE_ROUTES[user.role] || DEFAULT_ROUTE;
+      const redirectTo = ROLE_ROUTES[user.role_id] || DEFAULT_ROUTE;
       navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(

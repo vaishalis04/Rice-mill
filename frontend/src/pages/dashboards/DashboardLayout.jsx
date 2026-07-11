@@ -1,5 +1,6 @@
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { ROLE_NAME } from "../../constants/roles";
 import "./Dashboard.css";
 
 /**
@@ -23,7 +24,9 @@ export default function DashboardLayout({ title, children }) {
         <div>
           <h1>{title}</h1>
           <p className="dash-user">
-            Signed in as <strong>{user?.name}</strong> ({user?.role})
+            Signed in as <strong>{user?.username}</strong> (
+            {ROLE_NAME[user?.role_id] || "Unknown role"})
+            {user?.plant_id ? ` · Plant #${user.plant_id}` : ""}
           </p>
         </div>
         <button className="dash-logout" onClick={handleLogout}>

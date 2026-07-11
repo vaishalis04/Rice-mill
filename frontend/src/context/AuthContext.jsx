@@ -14,7 +14,9 @@ export function AuthProvider({ children }) {
 
     if (token && storedUser) {
       setUser(JSON.parse(storedUser));
-      // Optional: verify token is still valid with the backend
+      // Optional: verify token is still valid with the backend.
+      // EDIT/remove this if your backend has no GET /auth/me route —
+      // it wasn't in the contract you shared, so this may 404 harmlessly.
       getCurrentUserApi()
         .then((res) => {
           const freshUser = res.data.user ?? res.data;
@@ -32,10 +34,12 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     const res = await loginApi(email, password);
-    // EDIT if your backend's response shape differs
-    const { token, user: loggedInUser } = res.data;
+    // Matches your real backend's response shape:
+    // { success, accessToken, refreshToken, user: { id, username, email, role_id, plant_id } }
+    const { accessToken, refreshToken, user: loggedInUser } = res.data;
 
-    localStorage.setItem("token", token);
+    localStorage.setItem("token", accessToken);
+    localStorage.setItem("refreshToken", refreshToken);
     localStorage.setItem("user", JSON.stringify(loggedInUser));
     setUser(loggedInUser);
 
@@ -49,6 +53,7 @@ export function AuthProvider({ children }) {
       // ignore network errors on logout, clear client state anyway
     }
     localStorage.removeItem("token");
+    localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
     setUser(null);
   };

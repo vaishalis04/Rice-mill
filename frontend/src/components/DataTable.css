@@ -1,0 +1,157 @@
+.dt-wrapper {
+  background: #fff;
+  border-radius: 8px;
+  overflow: auto;
+  border: 1px solid #e6e1d6;
+}
+
+.dt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.dt-table th,
+.dt-table td {
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid #eee;
+  white-space: nowrap;
+}
+
+.dt-table th {
+  background: #faf8f4;
+  color: #3a3128;
+  font-weight: 600;
+}
+
+.dt-msg {
+  color: #7a6f60;
+  padding: 16px;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e6e1d6;
+}
+
+.dt-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.dt-btn {
+  border: 1px solid #d8d0c2;
+  background: #fff;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.dt-btn:hover {
+  background: #f4f1ea;
+}
+
+.dt-btn-danger {
+  border-color: #eac6bd;
+  color: #a83b2b;
+}
+
+.dt-btn-danger:hover {
+  background: #fdecea;
+}
+
+/* ---- shared simple form ---- */
+.sf-form {
+  background: #fff;
+  border: 1px solid #e6e1d6;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
+.sf-field label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: #3a3128;
+}
+
+.sf-field input,
+.sf-field select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d8d0c2;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  box-sizing: border-box;
+}
+
+.sf-submit {
+  background: #b5623a;
+  color: #fff;
+  border: none;
+  padding: 9px 18px;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  height: 38px;
+}
+
+.sf-submit:hover {
+  background: #9c5230;
+}
+
+.sf-cancel {
+  background: transparent;
+  border: 1px solid #d8d0c2;
+  padding: 9px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  height: 38px;
+}
+
+.section-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.section-tab {
+  border: 1px solid #d8d0c2;
+  background: #fff;
+  padding: 7px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.section-tab.active {
+  background: #b5623a;
+  color: #fff;
+  border-color: #b5623a;
+}
+
+.dt-error {
+  background: #fdecea;
+  color: #a83b2b;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  margin-bottom: 14px;
+}
+
+.dt-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #f0ece2;
+  color: #6b5f4f;
+}
