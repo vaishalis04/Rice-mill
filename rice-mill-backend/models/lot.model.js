@@ -12,6 +12,7 @@ Lot.init(
     variety_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "variety_master", key: "id" } },
     qty: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
     parent_lot_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "lots", key: "id" } }, // self-FK: traceability backbone
+    destination: { type: DataTypes.ENUM("warehouse", "production"), allowNull: true }, // set via PATCH /api/lots/:id/route
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },

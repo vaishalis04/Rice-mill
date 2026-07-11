@@ -4,7 +4,7 @@ const { Negotiation, LabTest, Sampling, GateEntry, PurchaseOrder, User } = requi
 // Rate revision workflow (Module 7)
 // A negotiation can only be opened against a lab test whose verdict is 'negotiation'.
 // vendor_response = 'accept' -> the negotiated rate is written back onto the PurchaseOrder
-//                                and the gate entry moves to 'lab_accepted'.
+//                                and the gate entry moves to 'accepted'.
 // vendor_response = 'reject' -> the vendor didn't agree to the revised rate; the gate
 //                                entry is moved to 'rejected'.
 
@@ -172,7 +172,7 @@ module.exports = {
             await po.update({ rate: negotiation.proposed_rate, updated_by: req.user ? req.user.id : null });
           }
         }
-        await gateEntry.update({ gate_status: "lab_accepted", updated_by: req.user ? req.user.id : null });
+        await gateEntry.update({ gate_status: "accepted", updated_by: req.user ? req.user.id : null });
       } else {
         await gateEntry.update({ gate_status: "rejected", updated_by: req.user ? req.user.id : null });
       }

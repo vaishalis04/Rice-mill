@@ -2,7 +2,7 @@ const createError = require("http-errors");
 const { Sampling, LabTest, GateEntry, VarietyMaster, User } = require("../models/index");
 
 // Lab test parameters & verdicts (Module 6)
-// verdict = 'accepted'   -> gate entry gate_status = 'lab_accepted'
+// verdict = 'accepted'   -> gate entry gate_status = 'accepted'
 // verdict = 'rejected'   -> gate entry gate_status = 'rejected'
 // verdict = 'negotiation' -> gate entry stays at 'sampling_done' until a Negotiation is resolved
 
@@ -28,7 +28,7 @@ const applyVerdictToGateEntry = async (samplingId, verdict, userId) => {
   if (!gateEntry) return null;
 
   if (verdict === "accepted") {
-    await gateEntry.update({ gate_status: "lab_accepted", updated_by: userId });
+    await gateEntry.update({ gate_status: "accepted", updated_by: userId });
   } else if (verdict === "rejected") {
     await gateEntry.update({ gate_status: "rejected", updated_by: userId });
   }
@@ -104,7 +104,6 @@ module.exports = {
         const variety = await VarietyMaster.findOne({ where: { id: variety_detected, is_deleted: false } });
         if (!variety) throw createError(400, "Invalid variety_detected");
       }
-
       const test = await LabTest.create({
         sampling_id,
         moisture_pct,
@@ -120,7 +119,6 @@ module.exports = {
         plant_id: plant_id || sampling.plant_id || (req.user ? req.user.plant_id : null),
         created_by: req.user ? req.user.id : null,
       });
-
       await applyVerdictToGateEntry(sampling_id, verdict, req.user ? req.user.id : null);
 
       const created = await LabTest.findByPk(test.id, { include: detailIncludes });

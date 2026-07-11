@@ -22,6 +22,7 @@ gate_status: {
     "waiting_token",
     "waiting_sampling",
     "sampling_done",
+    "accepted",
     "rejected",
     "in_process",
     "parked",
