@@ -24,6 +24,8 @@ export default function EntitySelect({
   onChange,
   required = false,
   placeholder = "Type to search…",
+  filter,
+  disabled = false,
 }) {
   const config = ENTITY_OPTIONS[entity];
   const [options, setOptions] = useState([]);
@@ -70,11 +72,21 @@ export default function EntitySelect({
     [options, value]
   );
 
+  // `filter` narrows which rows are pickable (e.g. only gate entries at
+  // "waiting_sampling"). Applied here, not in the fetch effect, so an
+  // inline arrow-function prop doesn't retrigger a network call.
+  const visibleOptions = useMemo(
+    () => (filter ? options.filter(filter) : options),
+    [options, filter]
+  );
+
   const filtered = useMemo(() => {
-    if (!query) return options;
+    if (!query) return visibleOptions;
     const q = query.toLowerCase();
-    return options.filter((o) => config.getLabel(o).toLowerCase().includes(q));
-  }, [options, query, config]);
+    return visibleOptions.filter((o) =>
+      config.getLabel(o).toLowerCase().includes(q)
+    );
+  }, [visibleOptions, query, config]);
 
   const handleSelect = (row) => {
     onChange(row.id);
@@ -98,16 +110,16 @@ export default function EntitySelect({
           type="text"
           value={displayValue}
           placeholder={loading ? "Loading…" : placeholder}
-          onFocus={() => setOpen(true)}
+          onFocus={() => !disabled && setOpen(true)}
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
           }}
           required={required}
-          disabled={loading}
+          disabled={loading || disabled}
           autoComplete="off"
         />
-        {value !== "" && value != null && (
+        {!disabled && value !== "" && value != null && (
           <button
             type="button"
             className="es-clear"

@@ -4,14 +4,14 @@
 // GET /roles if one exists, and replace these guesses).
 
 export const ROLE_ID = {
-  ADMIN: 4,
+  ADMIN: 1,
   OWNER: 2,
   MANAGER: 3,
-  ACCOUNTANT: 1,
+  ACCOUNTANT: 4,
   PURCHASE: 5,
   SALES: 6,
-  WAREHOUSE: 7,
-  QUALITY: 8,
+  WAREHOUSE: 7, // NOTE: backend calls this role "warehouse" (used by Lots, Warehouse/Bin/Stack, Inventory routes)
+  QUALITY: 8, // NOTE: backend calls this role "lab" (used by Sampling & Lab Test routes)
   TRANSPORT: 9,
   HR: 10,
   GATE: 11, // EDIT: confirm real role_id for "gateman" with backend dev

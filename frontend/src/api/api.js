@@ -106,4 +106,137 @@ export const updateGateEntryApi = (id, data) =>
 export const deleteGateEntryApi = (id) =>
   axiosInstance.delete(`/gate/${id}`); // soft delete
 
+// ---------------- SAMPLING (role: lab) ----------------
+// Precondition: gate entry must be at gate_status "waiting_sampling".
+// On success the linked gate entry auto-moves to "sampling_done".
+export const createSamplingApi = (data) =>
+  axiosInstance.post("/sampling", data);
+
+export const getSamplingsApi = (gate_entry_id) =>
+  axiosInstance.get("/sampling", {
+    params: gate_entry_id ? { gate_entry_id } : {},
+  });
+
+export const getSamplingByIdApi = (id) =>
+  axiosInstance.get(`/sampling/${id}`);
+
+export const updateSamplingApi = (id, data) =>
+  axiosInstance.put(`/sampling/${id}`, data);
+
+export const deleteSamplingApi = (id) =>
+  axiosInstance.delete(`/sampling/${id}`); // soft delete
+
+// ---------------- LAB TEST (role: lab) ----------------
+// verdict must be one of: accepted | rejected | negotiation.
+// Submitting (or later revising via /verdict) re-applies the gate-status rule:
+// accepted -> lab_accepted, rejected -> rejected, negotiation -> unchanged (sampling_done)
+export const createLabTestApi = (data) =>
+  axiosInstance.post("/lab-tests", data);
+
+// params can include { sampling_id } and/or { verdict }
+export const getLabTestsApi = (params = {}) =>
+  axiosInstance.get("/lab-tests", { params });
+
+export const getLabTestByIdApi = (id) =>
+  axiosInstance.get(`/lab-tests/${id}`);
+
+export const updateLabTestApi = (id, data) =>
+  axiosInstance.put(`/lab-tests/${id}`, data);
+
+export const updateLabTestVerdictApi = (id, verdict) =>
+  axiosInstance.patch(`/lab-tests/${id}/verdict`, { verdict });
+
+export const deleteLabTestApi = (id) =>
+  axiosInstance.delete(`/lab-tests/${id}`); // soft delete
+
+// ---------------- NEGOTIATION (role: purchase) ----------------
+// Only usable when the linked lab test's verdict is "negotiation".
+// respond(accept) -> updates linked PurchaseOrder.rate to proposed_rate, gate entry -> lab_accepted
+// respond(reject) -> gate entry -> rejected. Can only be responded to once.
+export const createNegotiationApi = (data) =>
+  axiosInstance.post("/negotiations", data);
+
+export const getNegotiationsApi = (lab_test_id) =>
+  axiosInstance.get("/negotiations", {
+    params: lab_test_id ? { lab_test_id } : {},
+  });
+
+export const getNegotiationByIdApi = (id) =>
+  axiosInstance.get(`/negotiations/${id}`);
+
+export const updateNegotiationApi = (id, data) =>
+  axiosInstance.put(`/negotiations/${id}`, data);
+
+export const respondNegotiationApi = (id, vendor_response) =>
+  axiosInstance.patch(`/negotiations/${id}/respond`, { vendor_response });
+
+export const deleteNegotiationApi = (id) =>
+  axiosInstance.delete(`/negotiations/${id}`); // soft delete
+
+// ---------------- WEIGHT SLIPS (role: gate) ----------------
+// Only works when the gate entry is at "accepted". Net weight is computed
+// automatically, a Purchase record is finalized, and the gate entry
+// advances to "in_process". Response includes both weightSlip and purchase.
+export const createWeightSlipApi = (data) =>
+  axiosInstance.post("/weight-slips", data);
+
+export const getWeightSlipsApi = (gate_entry_id) =>
+  axiosInstance.get("/weight-slips", {
+    params: gate_entry_id ? { gate_entry_id } : {},
+  });
+
+export const getWeightSlipByIdApi = (id) =>
+  axiosInstance.get(`/weight-slips/${id}`);
+
+export const updateWeightSlipApi = (id, data) =>
+  axiosInstance.put(`/weight-slips/${id}`, data);
+
+export const deleteWeightSlipApi = (id) =>
+  axiosInstance.delete(`/weight-slips/${id}`); // soft delete
+
+// ---------------- LOTS / UNLOADING (role: warehouse) ----------------
+// Only works once the gate entry is "in_process" with a finalized Purchase.
+// Also opens the lot's Stack + Inventory. Routing advances the gate entry to "unloaded".
+export const createLotApi = (data) => axiosInstance.post("/lots", data);
+
+export const getLotsApi = (params = {}) =>
+  axiosInstance.get("/lots", { params }); // params: { material_id }
+
+export const getLotByIdApi = (id) => axiosInstance.get(`/lots/${id}`); // includes stack placements
+
+export const updateLotApi = (id, data) => axiosInstance.put(`/lots/${id}`, data);
+
+export const routeLotApi = (id, destination) =>
+  axiosInstance.patch(`/lots/${id}/route`, { destination }); // destination: "warehouse" | "production"
+
+export const deleteLotApi = (id) => axiosInstance.delete(`/lots/${id}`); // soft delete
+
+// ---------------- WAREHOUSE / BIN / STACK (role: warehouse) ----------------
+// One module fronting three tables, selected via `type`: warehouse | bin | stack
+export const createWarehouseEntityApi = (data) =>
+  axiosInstance.post("/warehouse", data); // data must include `type`
+
+export const getWarehouseEntitiesApi = (type) =>
+  axiosInstance.get("/warehouse", { params: { type } });
+
+export const getWarehouseEntityByIdApi = (id, type) =>
+  axiosInstance.get(`/warehouse/${id}`, { params: { type } });
+
+export const updateWarehouseEntityApi = (id, data) =>
+  axiosInstance.put(`/warehouse/${id}`, data); // data must include `type`
+
+export const deleteWarehouseEntityApi = (id, type) =>
+  axiosInstance.delete(`/warehouse/${id}`, { params: { type } }); // soft delete
+
+// Live Inventory balances (lot + material + warehouse) — feeds the stock table.
+export const getWarehouseStockApi = (params = {}) =>
+  axiosInstance.get("/warehouse/stock", { params }); // params: { warehouse_id, material_id }
+
+// ---------------- INVENTORY (read-only, role: warehouse) ----------------
+// Rows are written automatically by Lot creation; only getAll/getById exist.
+export const getInventoryApi = (params = {}) =>
+  axiosInstance.get("/inventory", { params }); // params: { warehouse_id, stage }
+
+export const getInventoryByIdApi = (id) => axiosInstance.get(`/inventory/${id}`);
+
 // ---------------- Add more sections below as your backend grows ----------
