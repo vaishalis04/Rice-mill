@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const Controller = require("../controllers/lot.controller");
-const { verifyAccessToken, attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Unloading & Lot traceability (Module 9 workflow entry point)
 router.use(verifyAccessToken, attachUser, authorize("warehouse"));

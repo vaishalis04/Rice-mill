@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const Controller = require("../controllers/weighbridge.controller");
-const { verifyAccessToken, attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Gross / Tare / Net capture, slip printing (Module 8)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
