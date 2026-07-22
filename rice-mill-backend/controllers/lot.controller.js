@@ -80,7 +80,6 @@ module.exports = {
         gate_entry_id, warehouse_id, bin_id, qty, material_id, variety_id,
         parent_lot_id, stacked_at, plant_id,
       } = req.body;
-
       if (!gate_entry_id || !warehouse_id || !bin_id) {
         throw createError(400, "gate_entry_id, warehouse_id and bin_id are required");
       }
