@@ -8,6 +8,7 @@ import {
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyForm = {
   lab_test_id: "",
@@ -18,6 +19,7 @@ const emptyForm = {
 export default function NegotiationsPage() {
   const [negotiations, setNegotiations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const labTests = useEntityLookup("lab_test");
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
@@ -170,7 +172,11 @@ export default function NegotiationsPage() {
         onEdit={handleEdit}
         onDelete={handleDelete}
         columns={[
-          { key: "lab_test_id", label: "Lab Test ID" },
+          {
+            key: "lab_test_id",
+            label: "Lab Test",
+            render: (row) => labTests.getLabel(row.lab_test_id),
+          },
           { key: "old_rate", label: "Old Rate" },
           { key: "proposed_rate", label: "Proposed Rate" },
           {

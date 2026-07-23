@@ -8,6 +8,7 @@ import {
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyForm = {
   sampling_id: "",
@@ -36,6 +37,8 @@ export default function LabTestPage() {
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+
+  const samplings = useEntityLookup("sampling");
 
   const load = (verdict = verdictFilter) => {
     setLoading(true);
@@ -235,7 +238,11 @@ export default function LabTestPage() {
         onEdit={handleEdit}
         onDelete={handleDelete}
         columns={[
-          { key: "sampling_id", label: "Sampling ID" },
+          {
+            key: "sampling_id",
+            label: "Sampling",
+            render: (row) => samplings.getLabel(row.sampling_id),
+          },
           { key: "moisture_pct", label: "Moisture %" },
           { key: "broken_pct", label: "Broken %" },
           {

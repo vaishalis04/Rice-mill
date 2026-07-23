@@ -7,6 +7,7 @@ import {
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const TYPE_CONFIG = {
   vehicle: {
@@ -41,6 +42,12 @@ export default function VehiclesDriversPage() {
   const [form, setForm] = useState(emptyFormFor("vehicle"));
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
+
+  // NOTE: only "vendor" is looked up here because it's the only entity-type
+  // field this page currently has (owner_vendor_id). If you add another
+  // entity-type field to TYPE_CONFIG later, add another useEntityLookup()
+  // call and branch on f.entity in the columns mapping below.
+  const vendors = useEntityLookup("vendor");
 
   const load = (type) => {
     setLoading(true);
@@ -163,7 +170,11 @@ export default function VehiclesDriversPage() {
         rows={rows}
         onEdit={handleEdit}
         onDelete={handleDelete}
-        columns={config.fields.map((f) => ({ key: f.name, label: f.label }))}
+        columns={config.fields.map((f) =>
+          f.type === "entity"
+            ? { key: f.name, label: f.label, render: (row) => vendors.getLabel(row[f.name]) }
+            : { key: f.name, label: f.label }
+        )}
       />
     </div>
   );

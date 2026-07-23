@@ -7,6 +7,7 @@ import {
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyForm = {
   vehicle_id: "",
@@ -25,6 +26,13 @@ const STATUS_FILTERS = [
   { key: "checked_in", label: "Checked In" },
   { key: "parked", label: "Parked" },
   { key: "checked_out", label: "Checked Out" },
+  { key: "waiting_sampling", label: "Waiting Sampling" },
+  { key: "sampling_done", label: "Sampling Done" },
+  { key: "lab_accepted", label: "Lab Accepted" },
+  { key: "rejected", label: "Rejected" },
+  { key: "accepted", label: "Accepted" },
+  { key: "in_process", label: "In Process (Weighed)" },
+  { key: "unloaded", label: "Unloaded" },
 ];
 
 export default function GateEntryPage() {
@@ -34,6 +42,9 @@ export default function GateEntryPage() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+
+  const vehicles = useEntityLookup("vehicle");
+  const drivers = useEntityLookup("driver");
 
   const load = (status = statusFilter) => {
     setLoading(true);
@@ -118,6 +129,7 @@ export default function GateEntryPage() {
           value={form.vehicle_id}
           onChange={setField("vehicle_id")}
           required
+          creatable
         />
         <EntitySelect
           entity="driver"
@@ -125,6 +137,7 @@ export default function GateEntryPage() {
           value={form.driver_id}
           onChange={setField("driver_id")}
           required
+          creatable
         />
         <EntitySelect
           entity="vendor"
@@ -132,13 +145,7 @@ export default function GateEntryPage() {
           value={form.vendor_id}
           onChange={setField("vendor_id")}
           required
-        />
-        <EntitySelect
-          entity="purchase_order"
-          label="Purchase Order"
-          value={form.po_id}
-          onChange={setField("po_id")}
-          required
+          creatable
         />
         <EntitySelect
           entity="material"
@@ -146,6 +153,16 @@ export default function GateEntryPage() {
           value={form.material_id}
           onChange={setField("material_id")}
           required
+          creatable
+        />
+        <EntitySelect
+          entity="purchase_order"
+          label="Purchase Order"
+          value={form.po_id}
+          onChange={setField("po_id")}
+          required
+          creatable
+          context={{ vendor_id: form.vendor_id, material_id: form.material_id }}
         />
         <div className="sf-field">
           <label>Challan No.</label>
@@ -198,8 +215,16 @@ export default function GateEntryPage() {
         columns={[
           { key: "token_no", label: "Token No." },
           { key: "challan_no", label: "Challan No." },
-          { key: "vehicle_id", label: "Vehicle ID" },
-          { key: "driver_id", label: "Driver ID" },
+          {
+            key: "vehicle_id",
+            label: "Vehicle",
+            render: (row) => vehicles.getLabel(row.vehicle_id),
+          },
+          {
+            key: "driver_id",
+            label: "Driver",
+            render: (row) => drivers.getLabel(row.driver_id),
+          },
           {
             key: "gate_status",
             label: "Status",

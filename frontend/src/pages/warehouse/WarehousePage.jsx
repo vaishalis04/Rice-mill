@@ -1,17 +1,16 @@
 import { useState, useEffect } from "react";
 import {
-  getWarehouseEntitiesApi,
-  createWarehouseEntityApi,
-  updateWarehouseEntityApi,
-  deleteWarehouseEntityApi,
+  getWarehouseSettingsApi,
+  createWarehouseSettingApi,
+  updateWarehouseSettingApi,
+  deleteWarehouseSettingApi,
   getWarehouseStockApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import { useEntityLookup } from "../../hooks/useEntityLookup";
 
-// Each sub-type's own fields (besides `type`, which is added automatically).
-// `filterBy` on an entity field narrows its dropdown using another field's
-// current value — e.g. Bin only shows bins belonging to the picked Warehouse.
+// Each sub-type's own fields (besides `type`, which is added automatically)
 const TYPE_CONFIG = {
   warehouse: {
     label: "Warehouse",
@@ -36,24 +35,14 @@ const TYPE_CONFIG = {
       { name: "stack_code", label: "Stack Code" },
       { name: "lot_id", label: "Lot", type: "entity", entity: "lot" },
       { name: "warehouse_id", label: "Warehouse", type: "entity", entity: "warehouse" },
-      {
-        name: "bin_id",
-        label: "Bin",
-        type: "entity",
-        entity: "bin",
-        filterBy: "warehouse_id",
-      },
+      { name: "bin_id", label: "Bin", type: "entity", entity: "bin" },
       { name: "qty", label: "Qty", type: "number" },
-      {
-        name: "stacked_at",
-        label: "Stacked At",
-        placeholder: "e.g. 2026-07-11T12:00:00Z",
-      },
+      { name: "stacked_at", label: "Stacked At", type: "datetime-local" },
     ],
   },
 };
 
-const TABS = [...Object.keys(TYPE_CONFIG), "stock"];
+const TYPES = Object.keys(TYPE_CONFIG);
 
 function emptyFormFor(type) {
   const form = {};
@@ -61,50 +50,116 @@ function emptyFormFor(type) {
   return form;
 }
 
+function StockTab() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [warehouseFilter, setWarehouseFilter] = useState("");
+  const [materialFilter, setMaterialFilter] = useState("");
+
+  const warehouses = useEntityLookup("warehouse");
+  const materials = useEntityLookup("material");
+  const lots = useEntityLookup("lot");
+
+  const load = (warehouse_id = warehouseFilter, material_id = materialFilter) => {
+    setLoading(true);
+    const params = {};
+    if (warehouse_id) params.warehouse_id = warehouse_id;
+    if (material_id) params.material_id = material_id;
+    getWarehouseStockApi(params)
+      .then((res) => setRows(res.data.data ?? res.data))
+      .catch(() => setError("Failed to load stock"))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div>
+      {error && <div className="dt-error">{error}</div>}
+      <form className="sf-form" onSubmit={(e) => e.preventDefault()}>
+        <EntitySelect
+          entity="warehouse"
+          label="Warehouse"
+          value={warehouseFilter}
+          onChange={(id) => {
+            setWarehouseFilter(id);
+            load(id, materialFilter);
+          }}
+        />
+        <EntitySelect
+          entity="material"
+          label="Material"
+          value={materialFilter}
+          onChange={(id) => {
+            setMaterialFilter(id);
+            load(warehouseFilter, id);
+          }}
+        />
+      </form>
+
+      <DataTable
+        loading={loading}
+        rows={rows}
+        columns={[
+          {
+            key: "lot_id",
+            label: "Lot",
+            // Stock rows come back enriched with lot/material/warehouse
+            // details per the API docs — fall back to a plain id lookup if
+            // the backend ever returns bare ids instead.
+            render: (row) => row.lot?.lot_no ?? lots.getLabel(row.lot_id),
+          },
+          {
+            key: "material_id",
+            label: "Material",
+            render: (row) => row.material?.name ?? materials.getLabel(row.material_id),
+          },
+          {
+            key: "warehouse_id",
+            label: "Warehouse",
+            render: (row) => row.warehouse?.name ?? warehouses.getLabel(row.warehouse_id),
+          },
+          { key: "qty", label: "Qty" },
+          { key: "stage", label: "Stage" },
+        ]}
+      />
+    </div>
+  );
+}
+
 export default function WarehousePage() {
-  const [activeTab, setActiveTab] = useState("warehouse");
+  const [activeType, setActiveType] = useState("warehouse");
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyFormFor("warehouse"));
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
+  const [showStock, setShowStock] = useState(false);
 
-  // Stock tab state (read-only)
-  const [stockWarehouse, setStockWarehouse] = useState("");
-  const [stockMaterial, setStockMaterial] = useState("");
-  const [stock, setStock] = useState([]);
-  const [stockLoading, setStockLoading] = useState(false);
+  // Used to render entity-type columns (warehouse_id, bin_id, lot_id) as
+  // names instead of raw ids in the table below.
+  const lookups = {
+    warehouse: useEntityLookup("warehouse"),
+    bin: useEntityLookup("bin"),
+    lot: useEntityLookup("lot"),
+  };
 
-  const loadRows = (type) => {
+  const load = (type) => {
     setLoading(true);
-    getWarehouseEntitiesApi(type)
+    getWarehouseSettingsApi(type)
       .then((res) => setRows(res.data.data ?? res.data))
       .catch(() => setError(`Failed to load ${TYPE_CONFIG[type].label}`))
       .finally(() => setLoading(false));
   };
 
-  const loadStock = (warehouse_id = stockWarehouse, material_id = stockMaterial) => {
-    setStockLoading(true);
-    const params = {};
-    if (warehouse_id) params.warehouse_id = warehouse_id;
-    if (material_id) params.material_id = material_id;
-    getWarehouseStockApi(params)
-      .then((res) => setStock(res.data.data ?? res.data))
-      .catch(() => setError("Failed to load stock"))
-      .finally(() => setStockLoading(false));
-  };
-
   useEffect(() => {
+    if (showStock) return;
+    load(activeType);
+    setForm(emptyFormFor(activeType));
+    setEditingId(null);
     setError("");
-    if (activeTab === "stock") {
-      loadStock();
-    } else {
-      loadRows(activeTab);
-      setForm(emptyFormFor(activeTab));
-      setEditingId(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, [activeType, showStock]);
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -112,16 +167,21 @@ export default function WarehousePage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    const payload = { type: activeTab, ...form };
+    const payload = { type: activeType, ...form };
+    TYPE_CONFIG[activeType].fields
+      .filter((f) => f.type === "number")
+      .forEach((f) => {
+        if (payload[f.name] !== "") payload[f.name] = Number(payload[f.name]);
+      });
     try {
       if (editingId) {
-        await updateWarehouseEntityApi(editingId, payload);
+        await updateWarehouseSettingApi(editingId, payload);
       } else {
-        await createWarehouseEntityApi(payload);
+        await createWarehouseSettingApi(payload);
       }
-      setForm(emptyFormFor(activeTab));
+      setForm(emptyFormFor(activeType));
       setEditingId(null);
-      loadRows(activeTab);
+      load(activeType);
     } catch (err) {
       setError(err.response?.data?.message || "Save failed");
     }
@@ -129,84 +189,61 @@ export default function WarehousePage() {
 
   const handleEdit = (row) => {
     setEditingId(row.id);
-    const next = emptyFormFor(activeTab);
+    const next = emptyFormFor(activeType);
     Object.keys(next).forEach((key) => {
       next[key] = row[key] ?? "";
     });
     setForm(next);
   };
 
-  const handleCancel = () => {
-    setEditingId(null);
-    setForm(emptyFormFor(activeTab));
-  };
-
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this record?")) return;
     try {
-      await deleteWarehouseEntityApi(id, activeTab);
-      loadRows(activeTab);
+      await deleteWarehouseSettingApi(id, activeType);
+      load(activeType);
     } catch {
       setError("Delete failed");
     }
   };
 
-  const config = activeTab === "stock" ? null : TYPE_CONFIG[activeTab];
+  const handleCancel = () => {
+    setEditingId(null);
+    setForm(emptyFormFor(activeType));
+  };
+
+  const config = TYPE_CONFIG[activeType];
 
   return (
     <div>
-      <h2 style={{ marginTop: 0 }}>Warehouse</h2>
+      <h2 style={{ marginTop: 0 }}>Warehouse / Bin / Stack</h2>
 
       <div className="section-tabs">
-        {TABS.map((t) => (
+        {TYPES.map((t) => (
           <button
             key={t}
-            className={`section-tab ${activeTab === t ? "active" : ""}`}
-            onClick={() => setActiveTab(t)}
+            className={`section-tab ${!showStock && activeType === t ? "active" : ""}`}
+            onClick={() => {
+              setShowStock(false);
+              setActiveType(t);
+            }}
           >
-            {t === "stock" ? "Current Stock" : TYPE_CONFIG[t].label}
+            {TYPE_CONFIG[t].label}
           </button>
         ))}
+        <button
+          className={`section-tab ${showStock ? "active" : ""}`}
+          onClick={() => setShowStock(true)}
+        >
+          Stock
+        </button>
       </div>
 
-      {error && <div className="dt-error">{error}</div>}
-
-      {activeTab === "stock" ? (
-        <>
-          <div className="sf-form">
-            <EntitySelect
-              entity="warehouse"
-              label="Warehouse"
-              value={stockWarehouse}
-              onChange={(id) => {
-                setStockWarehouse(id);
-                loadStock(id, stockMaterial);
-              }}
-            />
-            <EntitySelect
-              entity="material"
-              label="Material"
-              value={stockMaterial}
-              onChange={(id) => {
-                setStockMaterial(id);
-                loadStock(stockWarehouse, id);
-              }}
-            />
-          </div>
-          <DataTable
-            loading={stockLoading}
-            rows={stock}
-            columns={[
-              { key: "lot_id", label: "Lot ID" },
-              { key: "warehouse_id", label: "Warehouse ID" },
-              { key: "material_id", label: "Material ID" },
-              { key: "stage", label: "Stage" },
-              { key: "qty", label: "Qty" },
-            ]}
-          />
-        </>
+      {showStock ? (
+        <StockTab />
       ) : (
         <>
+          {error && <div className="dt-error">{error}</div>}
+
           <form className="sf-form" onSubmit={handleSubmit}>
             {config.fields.map((f) =>
               f.type === "entity" ? (
@@ -216,13 +253,9 @@ export default function WarehousePage() {
                   label={f.label}
                   value={form[f.name] ?? ""}
                   onChange={(id) => setForm({ ...form, [f.name]: id })}
-                  filter={
-                    f.filterBy
-                      ? (row) =>
-                          String(row.warehouse_id) === String(form[f.filterBy])
-                      : undefined
-                  }
                   required
+                  creatable={f.entity === "warehouse"}
+                  context={f.entity === "bin" ? { warehouse_id: form.warehouse_id } : undefined}
                 />
               ) : (
                 <div className="sf-field" key={f.name}>
@@ -231,7 +264,6 @@ export default function WarehousePage() {
                     name={f.name}
                     type={f.type || "text"}
                     step={f.type === "number" ? "any" : undefined}
-                    placeholder={f.placeholder}
                     value={form[f.name] ?? ""}
                     onChange={handleChange}
                     required
@@ -256,7 +288,15 @@ export default function WarehousePage() {
             rows={rows}
             onEdit={handleEdit}
             onDelete={handleDelete}
-            columns={config.fields.map((f) => ({ key: f.name, label: f.label }))}
+            columns={config.fields.map((f) =>
+              f.type === "entity"
+                ? {
+                    key: f.name,
+                    label: f.label,
+                    render: (row) => lookups[f.entity].getLabel(row[f.name]),
+                  }
+                : { key: f.name, label: f.label }
+            )}
           />
         </>
       )}

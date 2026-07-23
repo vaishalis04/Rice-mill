@@ -7,6 +7,7 @@ import {
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyForm = {
   gate_entry_id: "",
@@ -26,6 +27,8 @@ export default function SamplingPage() {
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+
+  const gateEntries = useEntityLookup("gate_entry");
 
   const load = () => {
     setLoading(true);
@@ -165,7 +168,11 @@ export default function SamplingPage() {
         onDelete={handleDelete}
         columns={[
           { key: "sample_code", label: "Sample Code" },
-          { key: "gate_entry_id", label: "Gate Entry ID" },
+          {
+            key: "gate_entry_id",
+            label: "Gate Entry",
+            render: (row) => gateEntries.getLabel(row.gate_entry_id),
+          },
           { key: "collected_at", label: "Collected At" },
           { key: "sent_to_lab_at", label: "Sent to Lab At" },
         ]}

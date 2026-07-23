@@ -16,6 +16,12 @@ import "./EntitySelect.css";
  * The user types to search by name/code, clicks a row, and onChange
  * fires with that row's numeric id — the payload still just gets an id,
  * the person just never has to know or type it.
+ *
+ * Pass `creatable` to also let the user create a brand-new row on the spot
+ * (e.g. a gateman registering a truck that was never added by Admin) when
+ * ENTITY_OPTIONS[entity].quickCreate is configured. If that entity's
+ * quickCreate declares `requiresContext` (e.g. purchase_order needs a
+ * vendor + material already chosen), pass those values in via `context`.
  */
 export default function EntitySelect({
   entity,
@@ -26,6 +32,8 @@ export default function EntitySelect({
   placeholder = "Type to search…",
   filter,
   disabled = false,
+  creatable = false,
+  context = {},
 }) {
   const config = ENTITY_OPTIONS[entity];
   const [options, setOptions] = useState([]);
@@ -34,6 +42,16 @@ export default function EntitySelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const boxRef = useRef(null);
+
+  const quickCreate = creatable ? config.quickCreate : null;
+  const [creating, setCreating] = useState(false);
+  const [createValues, setCreateValues] = useState({});
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+  const [createError, setCreateError] = useState("");
+
+  const missingContext = (quickCreate?.requiresContext || []).filter(
+    (key) => context[key] === "" || context[key] == null
+  );
 
   useEffect(() => {
     let alive = true;
@@ -59,13 +77,18 @@ export default function EntitySelect({
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (boxRef.current && !boxRef.current.contains(e.target)) {
+        // Don't silently wipe out a half-filled "+ Add new" form just
+        // because the click landed outside the box — that was destroying
+        // whatever the person had already typed. Require an explicit
+        // Save or Cancel instead.
+        if (creating) return;
         setOpen(false);
         setQuery("");
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [creating]);
 
   const selected = useMemo(
     () => options.find((o) => String(o.id) === String(value)),
@@ -100,6 +123,82 @@ export default function EntitySelect({
     setQuery("");
   };
 
+  const startCreating = () => {
+    // Prefill the first field with whatever the user already typed, so
+    // e.g. typing a truck number that doesn't exist and hitting "+ Add new"
+    // doesn't make them retype it.
+    const firstField = quickCreate.fields[0]?.name;
+    setCreateValues(firstField ? { [firstField]: query } : {});
+    setCreateError("");
+    setCreating(true);
+  };
+
+  const handleCreateFieldChange = (name, val) =>
+    setCreateValues((prev) => ({ ...prev, [name]: val }));
+
+  const handleCreateSubmit = async (e) => {
+    e.preventDefault();
+    setCreateError("");
+    const missingField = quickCreate.fields.find(
+      (f) => f.required && !String(createValues[f.name] ?? "").trim()
+    );
+    if (missingField) {
+      setCreateError(`${missingField.label} is required`);
+      return;
+    }
+    setCreateSubmitting(true);
+    try {
+      const payload = { ...createValues };
+      quickCreate.fields
+        .filter((f) => f.type === "number")
+        .forEach((f) => {
+          if (payload[f.name] !== "" && payload[f.name] != null) {
+            payload[f.name] = Number(payload[f.name]);
+          }
+        });
+      let newRow = await quickCreate.create(payload, context);
+
+      // Defensive: if the backend's create response isn't shaped the way
+      // `unwrap` expects (e.g. it comes back nested under a different key
+      // than `data`), newRow.id can end up undefined. Rather than silently
+      // clearing the field with nothing selected, refetch the real list and
+      // try to find the row we just created by matching the first field the
+      // person typed (e.g. vehicle_no). This is what stops a *successful*
+      // save from looking like the details "disappeared".
+      if (!newRow || newRow.id == null) {
+        const freshList = await config.fetch();
+        const matchField = quickCreate.fields[0]?.name;
+        const typedValue = payload[matchField];
+        newRow =
+          freshList.find((r) => String(r[matchField]) === String(typedValue)) ||
+          freshList[freshList.length - 1];
+        setOptions(freshList || []);
+      } else {
+        setOptions((prev) => [...prev, newRow]);
+      }
+
+      if (!newRow || newRow.id == null) {
+        throw new Error(
+          "Created it, but couldn't confirm the new record — please refresh and pick it from the list."
+        );
+      }
+
+      onChange(newRow.id);
+      setCreating(false);
+      setCreateValues({});
+      setQuery("");
+      setOpen(false);
+    } catch (err) {
+      setCreateError(
+        err.response?.data?.message ||
+          err.message ||
+          "Couldn't create — check the details"
+      );
+    } finally {
+      setCreateSubmitting(false);
+    }
+  };
+
   const displayValue = open ? query : selected ? config.getLabel(selected) : "";
 
   return (
@@ -114,6 +213,7 @@ export default function EntitySelect({
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
+            setCreating(false);
           }}
           required={required}
           disabled={loading || disabled}
@@ -132,25 +232,90 @@ export default function EntitySelect({
         )}
         {open && (
           <div className="es-dropdown">
-            {loadError && (
-              <div className="es-msg">Failed to load options</div>
-            )}
-            {!loadError && !loading && filtered.length === 0 && (
-              <div className="es-msg">No matches</div>
-            )}
-            {!loadError &&
-              filtered.map((row) => (
-                <div
-                  key={row.id}
-                  className={`es-option${
-                    String(row.id) === String(value) ? " active" : ""
-                  }`}
-                  onMouseDown={() => handleSelect(row)}
-                >
-                  <span>{config.getLabel(row)}</span>
-                  <span className="es-id">#{row.id}</span>
+            {creating ? (
+              <div className="es-create-panel">
+                <div className="es-create-title">
+                  New {quickCreate.label}
                 </div>
-              ))}
+                {quickCreate.fields.map((f) => (
+                  <div className="es-create-field" key={f.name}>
+                    <label>
+                      {f.label}
+                      {f.required ? " *" : ""}
+                    </label>
+                    <input
+                      type={f.type === "number" ? "number" : f.type || "text"}
+                      value={createValues[f.name] ?? ""}
+                      onChange={(e) =>
+                        handleCreateFieldChange(f.name, e.target.value)
+                      }
+                      autoFocus={f === quickCreate.fields[0]}
+                    />
+                  </div>
+                ))}
+                {createError && <div className="es-msg es-msg-error">{createError}</div>}
+                <div className="es-create-actions">
+                  <button
+                    type="button"
+                    className="es-create-save"
+                    disabled={createSubmitting}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={handleCreateSubmit}
+                  >
+                    {createSubmitting ? "Saving…" : `Save ${quickCreate.label}`}
+                  </button>
+                  <button
+                    type="button"
+                    className="es-create-cancel"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      setCreating(false);
+                      setCreateError("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {loadError && (
+                  <div className="es-msg">Failed to load options</div>
+                )}
+                {!loadError && !loading && filtered.length === 0 && (
+                  <div className="es-msg">No matches</div>
+                )}
+                {!loadError &&
+                  filtered.map((row) => (
+                    <div
+                      key={row.id}
+                      className={`es-option${
+                        String(row.id) === String(value) ? " active" : ""
+                      }`}
+                      onMouseDown={() => handleSelect(row)}
+                    >
+                      <span>{config.getLabel(row)}</span>
+                      <span className="es-id">#{row.id}</span>
+                    </div>
+                  ))}
+                {quickCreate && !loadError && !loading && (
+                  missingContext.length > 0 ? (
+                    <div className="es-msg">
+                      {quickCreate.requiresContextMessage ||
+                        "Fill the required fields above first"}
+                    </div>
+                  ) : (
+                    <div
+                      className="es-option es-option-create"
+                      onMouseDown={startCreating}
+                    >
+                      + Add new {quickCreate.label}
+                      {query ? ` "${query}"` : ""}
+                    </div>
+                  )
+                )}
+              </>
+            )}
           </div>
         )}
       </div>

@@ -8,36 +8,40 @@ import {
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyForm = {
   gate_entry_id: "",
   warehouse_id: "",
   bin_id: "",
+  // Optional overrides — left blank, the backend infers/defaults these
+  // from the weight slip and gate entry / PO.
   qty: "",
   material_id: "",
   variety_id: "",
-  parent_lot_id: "",
 };
 
 export default function LotsPage() {
   const [lots, setLots] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [materialFilter, setMaterialFilter] = useState("");
   const [form, setForm] = useState(emptyForm);
-  const [editingId, setEditingId] = useState(null);
-  const [showOverrides, setShowOverrides] = useState(false);
+  const [showOptional, setShowOptional] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
-  const load = (material_id = materialFilter) => {
+  const gateEntries = useEntityLookup("gate_entry");
+  const warehouses = useEntityLookup("warehouse");
+  const bins = useEntityLookup("bin");
+
+  const load = () => {
     setLoading(true);
-    getLotsApi(material_id ? { material_id } : {})
+    getLotsApi()
       .then((res) => setLots(res.data.data ?? res.data))
       .catch(() => setError("Failed to load lots"))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => load(), []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(load, []);
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -47,27 +51,20 @@ export default function LotsPage() {
     setError("");
     setInfo("");
     try {
-      if (editingId) {
-        await updateLotApi(editingId, { qty: Number(form.qty) });
-      } else {
-        const payload = {
-          gate_entry_id: Number(form.gate_entry_id),
-          warehouse_id: Number(form.warehouse_id),
-          bin_id: Number(form.bin_id),
-        };
-        if (form.qty) payload.qty = Number(form.qty);
-        if (form.material_id) payload.material_id = Number(form.material_id);
-        if (form.variety_id) payload.variety_id = Number(form.variety_id);
-        if (form.parent_lot_id) payload.parent_lot_id = Number(form.parent_lot_id);
-        const res = await createLotApi(payload);
-        const body = res.data.data ?? res.data;
-        setInfo(
-          `Lot created: ${body?.lot?.lot_no || "(check response)"} — stack + inventory opened.`
-        );
-      }
+      const payload = {
+        gate_entry_id: Number(form.gate_entry_id),
+        warehouse_id: Number(form.warehouse_id),
+        bin_id: Number(form.bin_id),
+      };
+      if (form.qty !== "") payload.qty = Number(form.qty);
+      if (form.material_id !== "") payload.material_id = Number(form.material_id);
+      if (form.variety_id !== "") payload.variety_id = Number(form.variety_id);
+
+      const res = await createLotApi(payload);
+      const lotNo = res.data.lot?.lot_no ?? res.data.data?.lot?.lot_no;
+      setInfo(`Lot created${lotNo ? ` (${lotNo})` : ""} — stack and inventory opened.`);
       setForm(emptyForm);
-      setEditingId(null);
-      setShowOverrides(false);
+      setShowOptional(false);
       load();
     } catch (err) {
       setError(
@@ -75,26 +72,6 @@ export default function LotsPage() {
           "Save failed — gate entry may not be weighed (in_process) yet."
       );
     }
-  };
-
-  const handleEdit = (row) => {
-    setEditingId(row.id);
-    setForm({
-      gate_entry_id: row.gate_entry_id || "",
-      warehouse_id: row.warehouse_id || "",
-      bin_id: row.bin_id || "",
-      qty: row.qty ?? "",
-      material_id: row.material_id || "",
-      variety_id: row.variety_id || "",
-      parent_lot_id: row.parent_lot_id || "",
-    });
-    setShowOverrides(true);
-  };
-
-  const handleCancel = () => {
-    setEditingId(null);
-    setForm(emptyForm);
-    setShowOverrides(false);
   };
 
   const handleDelete = async (id) => {
@@ -112,7 +89,7 @@ export default function LotsPage() {
     setInfo("");
     try {
       await routeLotApi(id, destination);
-      setInfo(`Lot routed to ${destination} — gate entry moved to unloaded.`);
+      setInfo(`Lot routed to ${destination} — linked gate entry moved to unloaded.`);
       load();
     } catch (err) {
       setError(err.response?.data?.message || "Routing failed");
@@ -136,120 +113,114 @@ export default function LotsPage() {
           value={form.gate_entry_id}
           onChange={(id) => setForm({ ...form, gate_entry_id: id })}
           filter={(row) => row.gate_status === "in_process"}
-          disabled={!!editingId}
-          required={!editingId}
+          required
         />
         <EntitySelect
           entity="warehouse"
           label="Warehouse"
           value={form.warehouse_id}
-          onChange={(id) => setForm({ ...form, warehouse_id: id, bin_id: "" })}
-          disabled={!!editingId}
-          required={!editingId}
+          onChange={(id) => setForm({ ...form, warehouse_id: id })}
+          required
+          creatable
         />
         <EntitySelect
           entity="bin"
           label="Bin"
           value={form.bin_id}
           onChange={(id) => setForm({ ...form, bin_id: id })}
-          filter={(row) => String(row.warehouse_id) === String(form.warehouse_id)}
-          disabled={!!editingId}
-          required={!editingId}
+          required
+          creatable
+          context={{ warehouse_id: form.warehouse_id }}
         />
-        <div className="sf-field">
-          <label>Qty {!editingId && "(optional — defaults to net weight)"}</label>
-          <input
-            name="qty"
-            type="number"
-            value={form.qty}
-            onChange={handleChange}
-            required={!!editingId}
-          />
-        </div>
 
-        {!editingId && (
+        <button
+          type="button"
+          className="sf-cancel"
+          style={{ marginBottom: 10 }}
+          onClick={() => setShowOptional((v) => !v)}
+        >
+          {showOptional ? "Hide" : "Show"} optional overrides
+        </button>
+
+        {showOptional && (
           <>
-            <button
-              type="button"
-              className="sf-cancel"
-              style={{ gridColumn: "1 / -1", justifySelf: "start" }}
-              onClick={() => setShowOverrides((v) => !v)}
-            >
-              {showOverrides ? "Hide" : "Show"} optional overrides
-            </button>
-            {showOverrides && (
-              <>
-                <EntitySelect
-                  entity="material"
-                  label="Material (override)"
-                  value={form.material_id}
-                  onChange={(id) => setForm({ ...form, material_id: id })}
-                />
-                <EntitySelect
-                  entity="variety"
-                  label="Variety (override)"
-                  value={form.variety_id}
-                  onChange={(id) => setForm({ ...form, variety_id: id })}
-                />
-                <EntitySelect
-                  entity="lot"
-                  label="Parent Lot (optional)"
-                  value={form.parent_lot_id}
-                  onChange={(id) => setForm({ ...form, parent_lot_id: id })}
-                />
-              </>
-            )}
+            <div className="sf-field">
+              <label>Qty (defaults to weight slip's net weight)</label>
+              <input
+                name="qty"
+                type="number"
+                value={form.qty}
+                onChange={handleChange}
+              />
+            </div>
+            <EntitySelect
+              entity="material"
+              label="Material (defaults from gate entry / PO)"
+              value={form.material_id}
+              onChange={(id) => setForm({ ...form, material_id: id })}
+            />
+            <EntitySelect
+              entity="variety"
+              label="Variety"
+              value={form.variety_id}
+              onChange={(id) => setForm({ ...form, variety_id: id })}
+            />
           </>
         )}
 
         <div style={{ display: "flex", gap: 8 }}>
           <button className="sf-submit" type="submit">
-            {editingId ? "Update Lot" : "Create Lot"}
+            Create Lot
           </button>
-          {editingId && (
-            <button type="button" className="sf-cancel" onClick={handleCancel}>
-              Cancel
-            </button>
-          )}
         </div>
       </form>
-
-      <div className="sf-form" style={{ gridTemplateColumns: "260px" }}>
-        <EntitySelect
-          entity="material"
-          label="Filter by Material"
-          value={materialFilter}
-          onChange={(id) => {
-            setMaterialFilter(id);
-            load(id);
-          }}
-        />
-      </div>
 
       <DataTable
         loading={loading}
         rows={lots}
-        onEdit={handleEdit}
         onDelete={handleDelete}
         columns={[
           { key: "lot_no", label: "Lot No." },
-          { key: "gate_entry_id", label: "Gate Entry ID" },
-          { key: "warehouse_id", label: "Warehouse ID" },
-          { key: "bin_id", label: "Bin ID" },
+          {
+            key: "gate_entry_id",
+            label: "Gate Entry",
+            render: (row) => gateEntries.getLabel(row.gate_entry_id),
+          },
+          {
+            key: "warehouse_id",
+            label: "Warehouse",
+            render: (row) => warehouses.getLabel(row.warehouse_id),
+          },
+          {
+            key: "bin_id",
+            label: "Bin",
+            render: (row) => bins.getLabel(row.bin_id),
+          },
           { key: "qty", label: "Qty" },
           {
-            key: "route",
+            key: "destination",
+            label: "Destination",
+            render: (row) =>
+              row.destination ? (
+                <span className="dt-badge">{row.destination}</span>
+              ) : (
+                <span style={{ color: "#a08c6b" }}>Not routed</span>
+              ),
+          },
+          {
+            key: "route_actions",
             label: "Route",
-            render: (row) => (
-              <div style={{ display: "flex", gap: 6 }}>
-                <button className="dt-btn" onClick={() => handleRoute(row.id, "warehouse")}>
-                  To Warehouse
-                </button>
-                <button className="dt-btn" onClick={() => handleRoute(row.id, "production")}>
-                  To Production
-                </button>
-              </div>
-            ),
+            render: (row) =>
+              row.destination ? null : (
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="dt-btn" onClick={() => handleRoute(row.id, "warehouse")}>
+                    To Warehouse
+                  </button>
+                  <button className="dt-btn" onClick={() => handleRoute(row.id, "production")}>
+                    To Production
+                  </button>
+                </div>
+              ),
           },
         ]}
       />
