@@ -12,10 +12,20 @@ ProductionBatch.init(
     input_qty: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
     production_date: { type: DataTypes.DATEONLY, allowNull: false },
     batch_status: { type: DataTypes.ENUM("pending", "in_progress", "completed", "on_hold"), defaultValue: "pending" }, // renamed from generic "status" to avoid clashing with common record_status
+    current_stage: {
+      type: DataTypes.ENUM("dryer", "milling", "separator", "shiner", "color_sorter", "length_grading", "completed"),
+      allowNull: false,
+      defaultValue: "milling",
+    }, // drives the FE stage tracker / "completing a stage unlocks the next"
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     plant_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "plant_master", key: "id" } }, // multi-plant scalability
+  is_final: {
+  type: DataTypes.BOOLEAN,
+  allowNull: false,
+  defaultValue: false,
+},
   },
   {
     sequelize,

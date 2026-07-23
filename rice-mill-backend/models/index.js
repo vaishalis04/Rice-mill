@@ -50,7 +50,7 @@ const Payment = require("./payment.model");
 const MachineMaintenance = require("./machineMaintenance.model");
 const AuditLog = require("./auditLog.model");
 const Notification = require("./notification.model");
-// const ProcessTimeLog = require("./processTimeLog.model");
+const ProcessTimeLog = require("./processTimeLog.model");
 
 // -- Associations -------------------------------------------------------------
 // Every belongsTo below has an implicit inverse (hasMany/hasOne) that callers
@@ -93,6 +93,7 @@ Lot.belongsTo(MaterialMaster, { foreignKey: "material_id", as: "material" });
 Lot.belongsTo(VarietyMaster, { foreignKey: "variety_id", as: "variety" });
 Lot.belongsTo(Lot, { foreignKey: "parent_lot_id", as: "parentLot" });
 Stack.belongsTo(Lot, { foreignKey: "lot_id", as: "lot" });
+Lot.hasMany(Stack, { foreignKey: "lot_id", as: "stacks" });
 Stack.belongsTo(WarehouseMaster, { foreignKey: "warehouse_id", as: "warehouse" });
 Stack.belongsTo(BinStackMaster, { foreignKey: "bin_id", as: "bin" });
 Inventory.belongsTo(Lot, { foreignKey: "lot_id", as: "lot" });
@@ -113,7 +114,13 @@ ShinerProcess.belongsTo(ProductionBatch, { foreignKey: "batch_id", as: "batch" }
 ShinerProcess.belongsTo(MachineMaster, { foreignKey: "machine_id", as: "machine" });
 ColorSorter.belongsTo(ProductionBatch, { foreignKey: "batch_id", as: "batch" });
 LengthGrading.belongsTo(ProductionBatch, { foreignKey: "batch_id", as: "batch" });
-// ProcessTimeLog.belongsTo(ProductionBatch, { foreignKey: "batch_id", as: "batch" });
+ProductionBatch.hasOne(Dryer, { foreignKey: "batch_id", as: "dryer" });
+ProductionBatch.hasMany(MachineLog, { foreignKey: "batch_id", as: "machineLogs" });
+ProductionBatch.hasOne(SeparatorOutput, { foreignKey: "batch_id", as: "separatorOutput" });
+ProductionBatch.hasMany(ShinerProcess, { foreignKey: "batch_id", as: "shinerStages" });
+ProductionBatch.hasOne(ColorSorter, { foreignKey: "batch_id", as: "colorSorter" });
+ProductionBatch.hasOne(LengthGrading, { foreignKey: "batch_id", as: "lengthGrading" });
+ProcessTimeLog.belongsTo(ProductionBatch, { foreignKey: "batch_id", as: "batch" });
 Packing.belongsTo(ProductionBatch, { foreignKey: "batch_id", as: "batch" });
 Packing.belongsTo(Lot, { foreignKey: "lot_id", as: "outputLot" });
 Packing.belongsTo(User, { foreignKey: "packed_by", as: "packer" });
@@ -181,7 +188,7 @@ StockMovement.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 Invoice.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 Payment.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 MachineMaintenance.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
-// ProcessTimeLog.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
+ProcessTimeLog.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 
 module.exports = {
   sequelize,
@@ -234,4 +241,5 @@ module.exports = {
   MachineMaintenance,
   AuditLog,
   Notification,
+  ProcessTimeLog,
 };
