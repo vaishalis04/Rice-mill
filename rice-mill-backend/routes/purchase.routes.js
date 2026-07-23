@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const Controller = require("../controllers/purchase.controller");
-const { verifyAccessToken, attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // PO creation, rate negotiation, final purchase (Module 4)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).

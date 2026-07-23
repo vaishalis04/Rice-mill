@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const Controller = require("../controllers/gpsTracking.controller");
-const { verifyAccessToken, attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Live vehicle location (Module 21, optional)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
