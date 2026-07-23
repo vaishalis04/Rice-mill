@@ -12,6 +12,10 @@ import {
   getMasterSettingsApi,
   getPurchaseOrdersApi,
   getGateEntriesApi,
+  getSamplingsApi,
+  getLabTestsApi,
+  getWarehouseEntitiesApi,
+  getLotsApi,
 } from "../api/api";
 
 const unwrap = (res) => res.data.data ?? res.data;
@@ -53,6 +57,37 @@ export const ENTITY_OPTIONS = {
     getLabel: (row) =>
       `${row.token_no || row.challan_no || `Entry #${row.id}`}${
         row.gate_status ? ` (${row.gate_status})` : ""
+      }`,
+  },
+  sampling: {
+    fetch: () => getSamplingsApi().then(unwrap),
+    getLabel: (row) =>
+      `${row.sample_code}${
+        row.gate_entry_id ? ` — Gate Entry #${row.gate_entry_id}` : ""
+      }`,
+  },
+  lab_test: {
+    fetch: () => getLabTestsApi().then(unwrap),
+    getLabel: (row) =>
+      `Test #${row.id}${
+        row.sampling_id ? ` — Sampling #${row.sampling_id}` : ""
+      }${row.verdict ? ` (${row.verdict})` : ""}`,
+  },
+  warehouse: {
+    fetch: () => getWarehouseEntitiesApi("warehouse").then(unwrap),
+    getLabel: (row) =>
+      `${row.name}${row.warehouse_code ? ` (${row.warehouse_code})` : ""}`,
+  },
+  bin: {
+    fetch: () => getWarehouseEntitiesApi("bin").then(unwrap),
+    getLabel: (row) =>
+      `${row.bin_code}${row.warehouse_id ? ` — WH #${row.warehouse_id}` : ""}`,
+  },
+  lot: {
+    fetch: () => getLotsApi().then(unwrap),
+    getLabel: (row) =>
+      `${row.lot_no || `Lot #${row.id}`}${
+        row.material_id ? ` — Material #${row.material_id}` : ""
       }`,
   },
 };
