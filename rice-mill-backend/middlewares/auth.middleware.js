@@ -23,7 +23,6 @@ const { User ,Role } = require("../models/index");
 
 const attachUser = async (req, res, next) => {
   try {
-    console.log("attachUser middleware: req.userId =", req.userId); // temp debug
     if (!req.userId) return next(createError.Unauthorized());
     const user = await User.findByPk(req.userId, {
       attributes: { exclude: ["password"] },

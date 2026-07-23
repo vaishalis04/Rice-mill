@@ -64,4 +64,32 @@ const computeAgeDays = (fromDate) => {
   // TODO
 };
 
-module.exports = { generateTokenNo, generateLotNo, computeAgeDays };
+const generateBatchNo = async () => {
+  const { ProductionBatch } = require("../models/index");
+  const { Op } = require("sequelize");
+
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const datePart = `${yyyy}${mm}${dd}`;
+  const prefix = `BATCH-${datePart}-`;
+
+  const startOfDay = new Date(yyyy, now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const endOfDay = new Date(yyyy, now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  const lastToday = await ProductionBatch.findOne({
+    where: { batch_no: { [Op.like]: `${prefix}%` }, created_at: { [Op.between]: [startOfDay, endOfDay] } },
+    order: [["id", "DESC"]],
+  });
+
+  let nextSeq = 1;
+  if (lastToday) {
+    const lastSeq = parseInt(lastToday.batch_no.split("-").pop(), 10);
+    if (!Number.isNaN(lastSeq)) nextSeq = lastSeq + 1;
+  }
+
+  return `${prefix}${String(nextSeq).padStart(3, "0")}`;
+};
+
+module.exports = { generateTokenNo, generateLotNo, computeAgeDays, generateBatchNo };

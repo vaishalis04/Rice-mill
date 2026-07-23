@@ -17,6 +17,7 @@ MachineLog.init(
     recovery_pct: { type: DataTypes.DECIMAL(5, 2) },
     downtime_minutes: { type: DataTypes.INTEGER, defaultValue: 0 },
     downtime_reason_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "reason_code_master", key: "id" } }, // note #1: why it stops
+    stage: { type: DataTypes.ENUM("dryer","milling", "separator", "shiner", "color_sorter", "length_grading"), allowNull: true }, // which production stage this run belongs to
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
