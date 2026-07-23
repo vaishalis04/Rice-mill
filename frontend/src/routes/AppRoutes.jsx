@@ -16,6 +16,7 @@ import QualityDashboard from "../pages/dashboards/QualityDashboard";
 import TransportDashboard from "../pages/dashboards/TransportDashboard";
 import HrDashboard from "../pages/dashboards/HrDashboard";
 import GateDashboard from "../pages/dashboards/GateDashboard";
+import ProductionDashboard from "../pages/dashboards/ProductionDashboard";
 
 export default function AppRoutes() {
   return (
@@ -27,98 +28,96 @@ export default function AppRoutes() {
       <Route
         path="/admin/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.admin]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.ADMIN]}>
             <AdminDashboard />
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/owner/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.owner]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.OWNER]}>
             <OwnerDashboard />
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/manager/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.manager]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.MANAGER]}>
             <ManagerDashboard />
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/accounts/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.accountant]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.ACCOUNTANT]}>
             <AccountantDashboard />
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/purchase/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.purchase]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.PURCHASE]}>
             <PurchaseDashboard />
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/sales/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.sales]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.SALES]}>
             <SalesDashboard />
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/warehouse/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.warehouse]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.WAREHOUSE]}>
             <WarehouseDashboard />
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/quality/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.quality, ROLE_ID.lab]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.QUALITY, ROLE_ID.LAB]}>
             <QualityDashboard />
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/transport/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.transport]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.TRANSPORT]}>
             <TransportDashboard />
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/hr/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.hr]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.HR]}>
             <HrDashboard />
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/gate/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.gate]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.GATE]}>
             <GateDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/production/dashboard"
+        element={
+          <ProtectedRoute allowedRoles={[ROLE_ID.production]}>
+            <ProductionDashboard />
           </ProtectedRoute>
         }
       />

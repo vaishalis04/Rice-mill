@@ -175,27 +175,85 @@ export const deleteNegotiationApi = (id) =>
 
 // ---------------- Add more sections below as your backend grows ----------
 
+// ---------------- MACHINES (role: production) ----------------
+// Fronts three tables via `type`: master (default) | log (read-only) | maintenance
+export const getMachinesApi = (params = {}) =>
+  axiosInstance.get("/machines", { params });
+
+export const getMachineByIdApi = (id, type = "master") =>
+  axiosInstance.get(`/machines/${id}`, { params: { type } });
+
+export const createMachineApi = (data) =>
+  axiosInstance.post("/machines", data); // data must include `type`
+
+export const updateMachineApi = (id, data) =>
+  axiosInstance.put(`/machines/${id}`, data); // data must include `type`
+
+export const deleteMachineApi = (id, type) =>
+  axiosInstance.delete(`/machines/${id}`, { params: { type } }); // soft delete
+
+// ---------------- PRODUCTION BATCHES (role: production) ----------------
+// Precondition: needs an existing Lot (from the Weight & Warehouse module).
+export const createProductionBatchApi = (data) =>
+  axiosInstance.post("/production/batches", data); // { lot_id, process_type }
+
+export const getProductionBatchesApi = (params = {}) =>
+  axiosInstance.get("/production/batches", { params });
+
+export const getProductionBatchByIdApi = (id) =>
+  axiosInstance.get(`/production/batches/${id}`);
+
+export const updateProductionBatchApi = (id, data) =>
+  axiosInstance.put(`/production/batches/${id}`, data);
+
+export const deleteProductionBatchApi = (id) =>
+  axiosInstance.delete(`/production/batches/${id}`); // soft delete
+
+// Stage-gated PATCH endpoints. Each checks the batch's current_stage
+// server-side and 400s if called out of order — dryer only applies to
+// "wet" batches ("dry" batches start straight at milling).
+export const patchDryerStageApi = (id, data) =>
+  axiosInstance.patch(`/production/batches/${id}/dryer`, data);
+
+export const patchMillingStageApi = (id, data) =>
+  axiosInstance.patch(`/production/batches/${id}/milling`, data);
+
+export const patchSeparatorStageApi = (id, data) =>
+  axiosInstance.patch(`/production/batches/${id}/separator`, data);
+
+// Up to 5 passes — pass stage_no (1-5); add is_final: true (or use
+// stage_no: 5) on the last pass to advance to color_sorter.
+export const patchShinerStageApi = (id, data) =>
+  axiosInstance.patch(`/production/batches/${id}/shiner`, data);
+
+export const patchColorSorterStageApi = (id, data) =>
+  axiosInstance.patch(`/production/batches/${id}/color-sorter`, data);
+
+// Terminal stage — advances current_stage/batch_status to "completed".
+export const patchLengthGradingStageApi = (id, data) =>
+  axiosInstance.patch(`/production/batches/${id}/length-grading`, data);
+
 // ---------------- WEIGHBRIDGE / WEIGHT SLIPS (role: gate) ----------------
 // Only works when the gate entry is at "accepted". Net weight is computed
 // automatically, a Purchase record gets finalized, and the gate entry
 // advances to "in_process". Pass final_rate in the body if the gate entry
 // has no linked PO.
 export const createWeightSlipApi = (data) =>
-  axiosInstance.post("/weighbridge", data);
+  axiosInstance.post("/weight-slips", data);
 
 export const getWeightSlipsApi = (gate_entry_id) =>
-  axiosInstance.get("/weighbridge", {
+  axiosInstance.get("/weight-slips", {
     params: gate_entry_id ? { gate_entry_id } : {},
   });
 
 export const getWeightSlipByIdApi = (id) =>
-  axiosInstance.get(`/weighbridge/${id}`);
+  axiosInstance.get(`/weight-slips/${id}`);
 
 export const updateWeightSlipApi = (id, data) =>
-  axiosInstance.put(`/weighbridge/${id}`, data);
+  axiosInstance.put(`/weight-slips/${id}`, data);
 
 export const deleteWeightSlipApi = (id) =>
-  axiosInstance.delete(`/weighbridge/${id}`); // soft delete
+  axiosInstance.delete(`/weight-slips/${id}`); // soft delete
 
 // ---------------- LOTS / UNLOADING (role: warehouse) ----------------
 // Only works once the gate entry is "in_process" (weighed) with a
