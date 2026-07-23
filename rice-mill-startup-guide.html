@@ -636,7 +636,7 @@ module.exports = (sequelize) => {<br>
       <div class="day-body">
         <ul class="task-list">
           <li><span class="pill db">DB</span><div class="task-text">Models: WeightSlip (gate_entry_id, slip_no, gross_weight, tare_weight, net_weight, weighed_at), Warehouse (code, name, type, capacity), Lot (lot_no auto-gen, purchase linked, material_id, qty, variety, parent_lot_id self-ref), Stack (stack_code, lot_id, warehouse_id, qty, stacked_at).</div></li>
-          <li><span class="pill be">BE</span><div class="task-text">Weighbridge: POST /api/weight-slips (only allowed for 'lab_accepted' gate entries). Auto-calc net = gross - tare. Creates Purchase record finalizing qty and rate from PO.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Weighbridge: POST /api/weighbridge (only allowed for 'lab_accepted' gate entries). Auto-calc net = gross - tare. Creates Purchase record finalizing qty and rate from PO.</div></li>
           <li><span class="pill be">BE</span><div class="task-text">Unloading + Lot: POST /api/lots (links to gate entry/purchase, generates lot_no "LOT-YYYYMMDD-001", creates Stack record). PATCH /api/lots/:id/route → { destination: 'warehouse' | 'production' }. Updates gate entry to 'unloaded'.</div></li>
           <li><span class="pill be">BE</span><div class="task-text">Inventory service: on lot creation, write to inventory table (lot_id, qty_in, stage='raw_material', warehouse_id).</div></li>
           <li><span class="pill fe">FE</span><div class="task-text">Weighbridge page: list of 'lab_accepted' trucks. Select one → enter gross weight (tare as default config). Preview net weight. Submit → show slip number.</div></li>

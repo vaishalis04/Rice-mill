@@ -27,87 +27,97 @@ export default function AppRoutes() {
       <Route
         path="/admin/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.ADMIN]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.admin]}>
             <AdminDashboard />
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/owner/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.OWNER]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.owner]}>
             <OwnerDashboard />
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/manager/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.MANAGER]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.manager]}>
             <ManagerDashboard />
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/accounts/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.ACCOUNTANT]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.accountant]}>
             <AccountantDashboard />
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/purchase/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.PURCHASE]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.purchase]}>
             <PurchaseDashboard />
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/sales/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.SALES]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.sales]}>
             <SalesDashboard />
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/warehouse/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.WAREHOUSE]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.warehouse]}>
             <WarehouseDashboard />
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/quality/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.QUALITY]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.quality, ROLE_ID.lab]}>
             <QualityDashboard />
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/transport/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.TRANSPORT]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.transport]}>
             <TransportDashboard />
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/hr/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.HR]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.hr]}>
             <HrDashboard />
           </ProtectedRoute>
         }
       />
+
       <Route
         path="/gate/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.GATE]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.gate]}>
             <GateDashboard />
           </ProtectedRoute>
         }

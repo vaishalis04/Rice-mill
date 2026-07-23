@@ -173,70 +173,77 @@ export const respondNegotiationApi = (id, vendor_response) =>
 export const deleteNegotiationApi = (id) =>
   axiosInstance.delete(`/negotiations/${id}`); // soft delete
 
-// ---------------- WEIGHT SLIPS (role: gate) ----------------
+// ---------------- Add more sections below as your backend grows ----------
+
+// ---------------- WEIGHBRIDGE / WEIGHT SLIPS (role: gate) ----------------
 // Only works when the gate entry is at "accepted". Net weight is computed
-// automatically, a Purchase record is finalized, and the gate entry
-// advances to "in_process". Response includes both weightSlip and purchase.
+// automatically, a Purchase record gets finalized, and the gate entry
+// advances to "in_process". Pass final_rate in the body if the gate entry
+// has no linked PO.
 export const createWeightSlipApi = (data) =>
-  axiosInstance.post("/weight-slips", data);
+  axiosInstance.post("/weighbridge", data);
 
 export const getWeightSlipsApi = (gate_entry_id) =>
-  axiosInstance.get("/weight-slips", {
+  axiosInstance.get("/weighbridge", {
     params: gate_entry_id ? { gate_entry_id } : {},
   });
 
 export const getWeightSlipByIdApi = (id) =>
-  axiosInstance.get(`/weight-slips/${id}`);
+  axiosInstance.get(`/weighbridge/${id}`);
 
 export const updateWeightSlipApi = (id, data) =>
-  axiosInstance.put(`/weight-slips/${id}`, data);
+  axiosInstance.put(`/weighbridge/${id}`, data);
 
 export const deleteWeightSlipApi = (id) =>
-  axiosInstance.delete(`/weight-slips/${id}`); // soft delete
+  axiosInstance.delete(`/weighbridge/${id}`); // soft delete
 
 // ---------------- LOTS / UNLOADING (role: warehouse) ----------------
-// Only works once the gate entry is "in_process" with a finalized Purchase.
-// Also opens the lot's Stack + Inventory. Routing advances the gate entry to "unloaded".
+// Only works once the gate entry is "in_process" (weighed) with a
+// finalized Purchase. Creating a lot also opens its Stack + Inventory.
 export const createLotApi = (data) => axiosInstance.post("/lots", data);
 
 export const getLotsApi = (params = {}) =>
-  axiosInstance.get("/lots", { params }); // params: { material_id }
+  axiosInstance.get("/lots", { params });
 
-export const getLotByIdApi = (id) => axiosInstance.get(`/lots/${id}`); // includes stack placements
+export const getLotByIdApi = (id) => axiosInstance.get(`/lots/${id}`);
 
-export const updateLotApi = (id, data) => axiosInstance.put(`/lots/${id}`, data);
+export const updateLotApi = (id, data) =>
+  axiosInstance.put(`/lots/${id}`, data);
 
+// destination: "warehouse" | "production" — either advances the linked
+// gate entry to "unloaded".
 export const routeLotApi = (id, destination) =>
-  axiosInstance.patch(`/lots/${id}/route`, { destination }); // destination: "warehouse" | "production"
+  axiosInstance.patch(`/lots/${id}/route`, { destination });
 
 export const deleteLotApi = (id) => axiosInstance.delete(`/lots/${id}`); // soft delete
 
 // ---------------- WAREHOUSE / BIN / STACK (role: warehouse) ----------------
 // One module fronting three tables, selected via `type`: warehouse | bin | stack
-export const createWarehouseEntityApi = (data) =>
+export const createWarehouseSettingApi = (data) =>
   axiosInstance.post("/warehouse", data); // data must include `type`
 
-export const getWarehouseEntitiesApi = (type) =>
+export const getWarehouseSettingsApi = (type) =>
   axiosInstance.get("/warehouse", { params: { type } });
 
-export const getWarehouseEntityByIdApi = (id, type) =>
+export const getWarehouseSettingByIdApi = (id, type) =>
   axiosInstance.get(`/warehouse/${id}`, { params: { type } });
 
-export const updateWarehouseEntityApi = (id, data) =>
+export const updateWarehouseSettingApi = (id, data) =>
   axiosInstance.put(`/warehouse/${id}`, data); // data must include `type`
 
-export const deleteWarehouseEntityApi = (id, type) =>
+export const deleteWarehouseSettingApi = (id, type) =>
   axiosInstance.delete(`/warehouse/${id}`, { params: { type } }); // soft delete
 
-// Live Inventory balances (lot + material + warehouse) — feeds the stock table.
+// Live Inventory balances joined with lot/material/warehouse — feeds the
+// Warehouse page's stock table.
 export const getWarehouseStockApi = (params = {}) =>
-  axiosInstance.get("/warehouse/stock", { params }); // params: { warehouse_id, material_id }
+  axiosInstance.get("/warehouse/stock", { params });
 
 // ---------------- INVENTORY (read-only, role: warehouse) ----------------
-// Rows are written automatically by Lot creation; only getAll/getById exist.
+// create/update/delete/ledger are backend stubs for a later module — only
+// list/get are wired up here.
 export const getInventoryApi = (params = {}) =>
-  axiosInstance.get("/inventory", { params }); // params: { warehouse_id, stage }
+  axiosInstance.get("/inventory", { params });
 
-export const getInventoryByIdApi = (id) => axiosInstance.get(`/inventory/${id}`);
-
-// ---------------- Add more sections below as your backend grows ----------
+export const getInventoryByIdApi = (id) =>
+  axiosInstance.get(`/inventory/${id}`);

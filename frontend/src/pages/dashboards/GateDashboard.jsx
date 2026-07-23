@@ -1,15 +1,15 @@
 import { useState } from "react";
 import DashboardLayout from "./DashboardLayout";
 import GateEntryPage from "../gate/GateEntryPage";
-import WeightSlipsPage from "../gate/WeightSlipsPage";
+import WeighbridgePage from "../gate/WeighbridgePage";
 
 const TABS = [
-  { key: "gate-entry", label: "Gate Entry" },
-  { key: "weight-slips", label: "Weight Slips" },
+  { key: "entry", label: "Gate Entry" },
+  { key: "weighbridge", label: "Weighbridge" },
 ];
 
 export default function GateDashboard() {
-  const [tab, setTab] = useState("gate-entry");
+  const [tab, setTab] = useState("entry");
 
   return (
     <DashboardLayout title="Gate Dashboard">
@@ -25,8 +25,8 @@ export default function GateDashboard() {
         ))}
       </div>
 
-      {tab === "gate-entry" && <GateEntryPage />}
-      {tab === "weight-slips" && <WeightSlipsPage />}
+      {tab === "entry" && <GateEntryPage />}
+      {tab === "weighbridge" && <WeighbridgePage />}
     </DashboardLayout>
   );
 }
