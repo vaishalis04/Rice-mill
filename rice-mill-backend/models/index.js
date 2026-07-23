@@ -126,6 +126,8 @@ Packing.belongsTo(Lot, { foreignKey: "lot_id", as: "outputLot" });
 Packing.belongsTo(User, { foreignKey: "packed_by", as: "packer" });
 FinishedGoods.belongsTo(Packing, { foreignKey: "packing_id", as: "packing" });
 FinishedGoods.belongsTo(WarehouseMaster, { foreignKey: "warehouse_id", as: "warehouse" });
+ProductionBatch.hasMany(Packing, { foreignKey: "batch_id", as: "packings" });
+Packing.hasMany(FinishedGoods, { foreignKey: "packing_id", as: "finishedGoodsRecords" });
 RejectMaterial.belongsTo(ProductionBatch, { foreignKey: "batch_id", as: "batch" });
 RejectMaterial.belongsTo(ReasonCodeMaster, { foreignKey: "reason_code_id", as: "reasonCode" });
 WasteManagement.belongsTo(ProductionBatch, { foreignKey: "batch_id", as: "batch" });

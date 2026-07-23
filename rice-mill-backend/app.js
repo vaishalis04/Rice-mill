@@ -5,6 +5,7 @@ dotenv.config();
 const cors = require("cors");
 const path = require("path");
 const { sequelize } = require("./models/index");
+const { scheduleAgingJob } = require("./jobs/agingJob");
 
 // ── Route Imports (grouped per ERP module — see Rice-Mill-ERP-Design.html Section 5) ──
 const authRoutes           = require("./routes/auth.routes");
@@ -65,7 +66,7 @@ app.use("/api/purchases",        purchaseRoutes);
 app.use("/api/sampling",         samplingRoutes);
 app.use("/api/lab-tests",        labTestRoutes);
 app.use("/api/negotiations",     negotiationRoutes);
-app.use("/api/weighbridge",      weighbridgeRoutes);
+app.use("/api/weight-slips",    weighbridgeRoutes);
 app.use("/api/warehouse",        warehouseRoutes);
 app.use("/api/lots",             lotRoutes);
 app.use("/api/inventory",        inventoryRoutes);
@@ -97,6 +98,7 @@ const PORT = process.env.PORT || 3000;
 sequelize.authenticate()
   .then(() => {
     console.log("✅ MySQL connected");
+    scheduleAgingJob();
     app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Rice Mill ERP running on port ${PORT}`));
   })
   .catch((err) => {

@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const Controller = require("../controllers/qualityControl.controller");
-const { verifyAccessToken, attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Bag/lot-level QC, rejection/replace/refund workflow (Module 14)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
