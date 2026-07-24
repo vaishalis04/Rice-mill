@@ -2,10 +2,12 @@ import { useState } from "react";
 import DashboardLayout from "./DashboardLayout";
 import ProductionBatchPage from "../production/ProductionBatchPage";
 import MachinesPage from "../production/MachinesPage";
+import PackingPage from "../production/PackingPage";
 
 const TABS = [
   { key: "batches", label: "Production Batches" },
   { key: "machines", label: "Machines" },
+  { key: "packing", label: "Packing" },
 ];
 
 export default function ProductionDashboard() {
@@ -27,6 +29,7 @@ export default function ProductionDashboard() {
 
       {tab === "batches" && <ProductionBatchPage />}
       {tab === "machines" && <MachinesPage />}
+      {tab === "packing" && <PackingPage />}
     </DashboardLayout>
   );
 }

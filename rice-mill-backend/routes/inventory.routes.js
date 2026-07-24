@@ -5,7 +5,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Real-time stock ledger across all stages (Module 10)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorize("warehouse"));
+router.use(verifyAccessToken, attachUser, authorize("warehouse","production","gate"));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

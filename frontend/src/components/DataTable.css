@@ -155,3 +155,8 @@
   background: #f0ece2;
   color: #6b5f4f;
 }
+
+.dt-badge-danger {
+  background: #fdecea;
+  color: #a83b2b;
+}

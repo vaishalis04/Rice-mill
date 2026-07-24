@@ -1,6 +1,7 @@
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { ROLE_NAME } from "../../constants/roles";
+import KpiBar from "../../components/KpiBar";
 import "./Dashboard.css";
 
 /**
@@ -35,6 +36,7 @@ export default function DashboardLayout({ title, children }) {
       </header>
 
       <main className="dash-content">
+        <KpiBar />
         {children ?? (
           <p style={{ color: "#7a6f60" }}>
             This dashboard is ready — start adding widgets here.

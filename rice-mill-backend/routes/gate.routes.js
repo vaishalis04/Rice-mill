@@ -5,7 +5,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Gate entry/exit, token & queue, driver photo capture (Module 1)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorize("gate"));
+router.use(verifyAccessToken, attachUser, authorize("gate","warehouse","production"));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

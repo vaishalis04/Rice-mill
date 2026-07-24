@@ -24,6 +24,11 @@ import {
   getMachinesApi,
   createMachineApi,
   getProductionBatchesApi,
+  getPackingsApi,
+  getCustomersApi,
+  createCustomerApi,
+  getSalesOrdersApi,
+  getFinishedGoodsApi,
 } from "../api/api";
 
 const unwrap = (res) => res.data.data ?? res.data;
@@ -208,5 +213,39 @@ export const ENTITY_OPTIONS = {
       `${row.batch_no || `Batch #${row.id}`}${
         row.current_stage ? ` (${row.current_stage})` : ""
       }`,
+  },
+  packing: {
+    fetch: () => getPackingsApi().then(unwrap),
+    getLabel: (row) =>
+      `${row.batch_no || `Packing #${row.id}`}${
+        row.pack_size ? ` — ${row.pack_size}kg x${row.bag_count ?? "?"}` : ""
+      }`,
+  },
+  customer: {
+    fetch: () => getCustomersApi().then(unwrap),
+    getLabel: (row) =>
+      `${row.name}${row.customer_code ? ` (${row.customer_code})` : ""}`,
+    quickCreate: {
+      label: "Customer",
+      fields: [
+        { name: "name", label: "Name", required: true },
+        { name: "customer_code", label: "Customer Code", required: true },
+        { name: "gstin", label: "GSTIN" },
+        { name: "address", label: "Address" },
+      ],
+      create: (values) => createCustomerApi(values).then(unwrap),
+    },
+  },
+  sales_order: {
+    fetch: () => getSalesOrdersApi().then(unwrap),
+    getLabel: (row) =>
+      `${row.so_no || `SO #${row.id}`}${row.so_status ? ` (${row.so_status})` : ""}`,
+  },
+  // Only "ready" FG rows are ever pickable for dispatch — see DispatchPage,
+  // which fetches this filtered rather than through useEntityLookup.
+  finished_good: {
+    fetch: () => getFinishedGoodsApi({ status: "ready" }).then(unwrap),
+    getLabel: (row) =>
+      `FG #${row.id} — ${row.qty ?? "?"}kg (${row.pack_size ?? "?"})`,
   },
 };
