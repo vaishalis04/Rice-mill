@@ -7,10 +7,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
 router.use(verifyAccessToken, attachUser, authorize("admin"));
 
-router.get("/",     Controller.getAll);
-router.get("/:id",  Controller.getById);
-router.post("/",    Controller.create);
-router.put("/:id",  Controller.update);
-router.delete("/:id", Controller.delete);
+router.get("/gate-register", Controller.gateRegister);
+router.get("/production-summary", Controller.productionSummary);
 
 module.exports = router;

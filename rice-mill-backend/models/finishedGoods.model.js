@@ -12,6 +12,7 @@ FinishedGoods.init(
     pallet_id: { type: DataTypes.STRING(30) },
     qty: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
     fg_status: { type: DataTypes.ENUM("ready", "on_hold", "aging", "dispatched"), defaultValue: "ready" }, // renamed from generic "status"
+    dispatch_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "dispatch", key: "id" } }, // set when allocated to a Dispatch (Module 19)
     ready_since: { type: DataTypes.DATE }, // drives the aged_days virtual below — note #24
     aged_days: { type: DataTypes.VIRTUAL, get() { const s = this.getDataValue("ready_since"); return s ? Math.floor((Date.now() - new Date(s)) / 86400000) : null; } },
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },

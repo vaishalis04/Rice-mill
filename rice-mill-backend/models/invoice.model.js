@@ -12,6 +12,7 @@ Invoice.init(
     amount: { type: DataTypes.DECIMAL(14, 2), allowNull: false },
     tax: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
     invoice_date: { type: DataTypes.DATEONLY, allowNull: false },
+    invoice_status: { type: DataTypes.ENUM("unpaid", "paid", "cancelled"), defaultValue: "unpaid" },
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },

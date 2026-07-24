@@ -9,6 +9,7 @@ router.use(verifyAccessToken, attachUser, authorize("dispatch"));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);
+router.get("/:id/challan", Controller.getChallanPdf);
 router.post("/",    Controller.create);
 router.put("/:id",  Controller.update);
 router.delete("/:id", Controller.delete);
