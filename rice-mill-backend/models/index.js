@@ -138,6 +138,8 @@ Dispatch.belongsTo(SalesOrder, { foreignKey: "so_id", as: "salesOrder" });
 Dispatch.belongsTo(Invoice, { foreignKey: "invoice_id", as: "invoice" });
 Dispatch.belongsTo(Vehicle, { foreignKey: "vehicle_id", as: "vehicle" });
 Dispatch.belongsTo(Driver, { foreignKey: "driver_id", as: "driver" });
+Dispatch.hasMany(FinishedGoods, { foreignKey: "dispatch_id", as: "allocatedStock" });
+FinishedGoods.belongsTo(Dispatch, { foreignKey: "dispatch_id", as: "dispatch" });
 StockMovement.belongsTo(MaterialMaster, { foreignKey: "material_id", as: "material" });
 StockMovement.belongsTo(Lot, { foreignKey: "lot_id", as: "lot" });
 Invoice.belongsTo(Dispatch, { foreignKey: "dispatch_id", as: "dispatch" });

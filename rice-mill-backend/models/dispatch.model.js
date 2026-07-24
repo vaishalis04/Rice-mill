@@ -14,6 +14,7 @@ Dispatch.init(
     dispatch_weight: { type: DataTypes.DECIMAL(12, 2) },
     dispatch_time: { type: DataTypes.DATE },
     dispatch_type: { type: DataTypes.ENUM("normal", "direct_outward"), defaultValue: "normal" }, // note #23: direct outward skips FG warehouse
+    dispatch_status: { type: DataTypes.ENUM("pending", "dispatched", "delivered", "cancelled"), defaultValue: "pending" },
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },

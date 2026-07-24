@@ -141,7 +141,48 @@ const generateEAN13 = async () => {
   return `${base12}${check}`;
 };
 
+const generateDailySequence = async (Model, field, prefixLabel, padLength) => {
+  const { Op } = require("sequelize");
+
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const datePart = `${yyyy}${mm}${dd}`;
+  const prefix = `${prefixLabel}-${datePart}-`;
+
+  const startOfDay = new Date(yyyy, now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const endOfDay = new Date(yyyy, now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  const lastToday = await Model.findOne({
+    where: { [field]: { [Op.like]: `${prefix}%` }, created_at: { [Op.between]: [startOfDay, endOfDay] } },
+    order: [["id", "DESC"]],
+  });
+
+  let nextSeq = 1;
+  if (lastToday) {
+    const lastSeq = parseInt(lastToday[field].split("-").pop(), 10);
+    if (!Number.isNaN(lastSeq)) nextSeq = lastSeq + 1;
+  }
+
+  return `${prefix}${String(nextSeq).padStart(padLength, "0")}`;
+};
+
+// Generate sequential daily sales order numbers (Module 18)
+// Format: SO-YYYYMMDD-001
+const generateSoNo = async () => {
+  const { SalesOrder } = require("../models/index");
+  return generateDailySequence(SalesOrder, "so_no", "SO", 3);
+};
+
+// Generate sequential daily delivery challan numbers (Module 19)
+// Format: CH-YYYYMMDD-001
+const generateChallanNo = async () => {
+  const { Dispatch } = require("../models/index");
+  return generateDailySequence(Dispatch, "challan_no", "CH", 3);
+};
+
 module.exports = {
   generateTokenNo, generateLotNo, generateBatchNo, computeAgeDays,
-  generatePackingBatchNo, generateEAN13,
+  generatePackingBatchNo, generateEAN13, generateSoNo, generateChallanNo,
 };

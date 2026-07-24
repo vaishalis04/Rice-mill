@@ -3,14 +3,12 @@ const Controller = require("../controllers/dashboard.controller");
 const { attachUser, authorize } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
-// Real-time KPIs (Module 24)
-// TODO: split public vs protected routes as needed; adjust authorize() role(s).
-// Public or shared-auth route group — apply middleware per-route if needed.
 
-router.get("/",     Controller.getAll);
-router.get("/:id",  Controller.getById);
-router.post("/",    Controller.create);
-router.put("/:id",  Controller.update);
-router.delete("/:id", Controller.delete);
+// Real-time KPIs (Module 24)
+// Any authenticated role can view the dashboard.
+router.use(verifyAccessToken, attachUser, authorize("admin", "gate", "lab", "purchase", "warehouse", "production", "sales", "dispatch"));
+
+router.get("/kpis", Controller.getKpis);
+router.get("/daily-intake-trend", Controller.getDailyIntakeTrend);
 
 module.exports = router;
