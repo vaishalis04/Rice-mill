@@ -4,7 +4,7 @@ const { attachUser, authorize } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Unloading & Lot traceability (Module 9 workflow entry point)
-router.use(verifyAccessToken, attachUser, authorize("warehouse"));
+router.use(verifyAccessToken, attachUser, authorize("warehouse","production"));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

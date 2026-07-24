@@ -21,6 +21,9 @@ import {
   getWarehouseSettingsApi,
   createWarehouseSettingApi,
   getLotsApi,
+  getMachinesApi,
+  createMachineApi,
+  getProductionBatchesApi,
 } from "../api/api";
 
 const unwrap = (res) => res.data.data ?? res.data;
@@ -182,5 +185,28 @@ export const ENTITY_OPTIONS = {
     fetch: () => getLotsApi().then(unwrap),
     getLabel: (row) =>
       `${row.lot_no || `Lot #${row.id}`}${row.qty ? ` — ${row.qty}` : ""}`,
+  },
+  machine: {
+    fetch: () => getMachinesApi({ type: "master" }).then(unwrap),
+    getLabel: (row) =>
+      `${row.name}${row.machine_code ? ` (${row.machine_code})` : ""}`,
+    quickCreate: {
+      label: "Machine",
+      fields: [
+        { name: "machine_code", label: "Machine Code", required: true },
+        { name: "name", label: "Name", required: true },
+        { name: "machine_type", label: "Machine Type" },
+        { name: "capacity_per_hr", label: "Capacity / hr", type: "number" },
+      ],
+      create: (values) =>
+        createMachineApi({ type: "master", ...values }).then(unwrap),
+    },
+  },
+  production_batch: {
+    fetch: () => getProductionBatchesApi().then(unwrap),
+    getLabel: (row) =>
+      `${row.batch_no || `Batch #${row.id}`}${
+        row.current_stage ? ` (${row.current_stage})` : ""
+      }`,
   },
 };
