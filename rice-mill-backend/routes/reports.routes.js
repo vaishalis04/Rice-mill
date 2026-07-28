@@ -9,5 +9,6 @@ router.use(verifyAccessToken, attachUser, authorize("admin"));
 
 router.get("/gate-register", Controller.gateRegister);
 router.get("/production-summary", Controller.productionSummary);
+router.get("/material-flow", Controller.materialFlow);
 
 module.exports = router;
