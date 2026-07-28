@@ -19,11 +19,11 @@
 .auth-card h1 {
   font-size: 1.5rem;
   margin-bottom: 4px;
-  color: #2b2117;
+  color: #0f172a;
 }
 
 .auth-card p.subtitle {
-  color: #7a6f60;
+  color: #64748b;
   margin-bottom: 24px;
   font-size: 0.9rem;
 }
@@ -37,13 +37,13 @@
   font-size: 0.85rem;
   font-weight: 600;
   margin-bottom: 6px;
-  color: #3a3128;
+  color: #1e293b;
 }
 
 .auth-field input {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid #d8d0c2;
+  border: 1px solid #cbd5e1;
   border-radius: 6px;
   font-size: 0.95rem;
   box-sizing: border-box;
@@ -51,12 +51,12 @@
 
 .auth-field input:focus {
   outline: none;
-  border-color: #b5623a;
+  border-color: #1d4ed8;
 }
 
 .auth-error {
-  background: #fdecea;
-  color: #a83b2b;
+  background: #fee2e2;
+  color: #dc2626;
   padding: 10px 12px;
   border-radius: 6px;
   font-size: 0.85rem;
@@ -66,7 +66,7 @@
 .auth-submit {
   width: 100%;
   padding: 11px;
-  background: #b5623a;
+  background: #1d4ed8;
   color: #fff;
   border: none;
   border-radius: 6px;
@@ -81,5 +81,5 @@
 }
 
 .auth-submit:hover:not(:disabled) {
-  background: #9c5230;
+  background: #1e40af;
 }

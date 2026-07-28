@@ -212,23 +212,23 @@ export const deleteSalesOrderApi = (id) =>
 // any that aren't. On success those FG rows flip to "dispatched", the SO
 // flips to "dispatched", and a challan_no is generated.
 export const createDispatchApi = (data) =>
-  axiosInstance.post("/dispatches", data);
+  axiosInstance.post("/dispatch", data);
 
 export const getDispatchesApi = (params = {}) =>
-  axiosInstance.get("/dispatches", { params });
+  axiosInstance.get("/dispatch", { params });
 
 export const getDispatchByIdApi = (id) => axiosInstance.get(`/dispatches/${id}`);
 
 export const updateDispatchApi = (id, data) =>
-  axiosInstance.put(`/dispatches/${id}`, data); // e.g. { dispatch_status: "delivered" }
+  axiosInstance.put(`/dispatch/${id}`, data); // e.g. { dispatch_status: "delivered" }
 
 export const deleteDispatchApi = (id) =>
-  axiosInstance.delete(`/dispatches/${id}`); // soft delete
+  axiosInstance.delete(`/dispatch/${id}`); // soft delete
 
 // Binary PDF — responseType "blob" so axios doesn't try to JSON-parse it.
 // Pair with a small helper in the page to trigger a browser download.
 export const getDispatchChallanPdfApi = (id) =>
-  axiosInstance.get(`/dispatches/${id}/challan`, { responseType: "blob" });
+  axiosInstance.get(`/dispatch/${id}/challan`, { responseType: "blob" });
 
 // ---------------- DASHBOARD (any logged-in role) ----------------
 export const getDashboardKpisApi = () => axiosInstance.get("/dashboard/kpis");
@@ -239,11 +239,28 @@ export const getDailyIntakeTrendApi = (days) =>
   });
 
 // ---------------- REPORTS (role: admin) ----------------
+// Pass { format: "csv" } to any of these three to get a file download
+// instead of JSON — see downloadReportCsv() helper used by ReportsPage.
 export const getGateRegisterReportApi = (params = {}) =>
-  axiosInstance.get("/reports/gate-register", { params });
+  axiosInstance.get("/reports/gate-register", {
+    params,
+    responseType: params.format === "csv" ? "blob" : "json",
+  });
 
 export const getProductionSummaryReportApi = (params = {}) =>
-  axiosInstance.get("/reports/production-summary", { params });
+  axiosInstance.get("/reports/production-summary", {
+    params,
+    responseType: params.format === "csv" ? "blob" : "json",
+  });
+
+// Inward / processed / warehouse-stock snapshot. `period`: today | week |
+// month (rolling), or pass explicit from/to instead (overrides period).
+// Warehouse-stock rows are always a live snapshot regardless of period.
+export const getMaterialFlowReportApi = (params = {}) =>
+  axiosInstance.get("/reports/material-flow", {
+    params,
+    responseType: params.format === "csv" ? "blob" : "json",
+  });
 
 // ---------------- PACKING (role: production) ----------------
 // Precondition: batch_id must belong to a Production Batch that's finished

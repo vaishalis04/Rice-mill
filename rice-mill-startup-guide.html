@@ -402,7 +402,7 @@ npm run dev
 │   ├── <span class="t-file">auth.routes.js</span><br>
 │   ├── <span class="t-file">gate.routes.js</span><br>
 │   ├── <span class="t-file">lab.routes.js</span><br>
-│   ├── <span class="t-file">production.routes.js</span><br>
+│   ├── <span class="t-file">Production.routes.js</span><br>
 │   └── <span class="t-file">dispatch.routes.js</span><br>
 ├── <span class="t-dir">controllers/</span>  <span class="t-note">← business logic</span><br>
 ├── <span class="t-dir">middleware/</span><br>
@@ -433,7 +433,7 @@ npm run dev
 │   ├── <span class="t-dir">gate/</span><br>
 │   ├── <span class="t-dir">lab/</span><br>
 │   ├── <span class="t-dir">warehouse/</span><br>
-│   ├── <span class="t-dir">production/</span><br>
+│   ├── <span class="t-dir">Production/</span><br>
 │   ├── <span class="t-dir">packing/</span><br>
 │   ├── <span class="t-dir">dispatch/</span><br>
 │   └── <span class="t-dir">dashboard/</span><br>
@@ -476,7 +476,7 @@ module.exports = sequelize;
   <h3 style="color:var(--text-dim);font-size:.9rem;margin-bottom:8px;">Sync strategy for prototype (Day 1–2)</h3>
   <div class="code-block">
 <span class="c-comment">// server.js — use sync for rapid prototyping</span><br>
-<span class="c-comment">// NEVER use force:true in production — it drops tables</span><br>
+<span class="c-comment">// NEVER use force:true in Production — it drops tables</span><br>
 await sequelize.sync({ alter: <span class="c-key">true</span> });<br>
 <br>
 <span class="c-comment">// From Day 3+ switch to proper migrations:</span><br>
@@ -540,7 +540,7 @@ module.exports = (sequelize) => {<br>
       <tr><td>Dashboard</td><td>5–6 live KPI cards + 1 chart</td><td><span class="badge badge-must">MUST</span></td></tr>
       <tr><td>Vendor Management</td><td>Basic vendor list + create (no portal yet)</td><td><span class="badge badge-nice">NICE</span></td></tr>
       <tr><td>Machine Logs</td><td>Simple log entry (no maintenance module yet)</td><td><span class="badge badge-nice">NICE</span></td></tr>
-      <tr><td>Reports</td><td>1 gate report + 1 production report as tables</td><td><span class="badge badge-nice">NICE</span></td></tr>
+      <tr><td>Reports</td><td>1 gate report + 1 Production report as tables</td><td><span class="badge badge-nice">NICE</span></td></tr>
       <tr><td>WhatsApp / GPS</td><td>Stub only — show the button, explain it later</td><td><span class="badge badge-later">LATER</span></td></tr>
       <tr><td>Accounts / Payments</td><td>Invoice generated, payment entry — basic only</td><td><span class="badge badge-later">LATER</span></td></tr>
       <tr><td>Notifications / Audit</td><td>Backend logging only, no UI</td><td><span class="badge badge-later">LATER</span></td></tr>
@@ -637,7 +637,7 @@ module.exports = (sequelize) => {<br>
         <ul class="task-list">
           <li><span class="pill db">DB</span><div class="task-text">Models: WeightSlip (gate_entry_id, slip_no, gross_weight, tare_weight, net_weight, weighed_at), Warehouse (code, name, type, capacity), Lot (lot_no auto-gen, purchase linked, material_id, qty, variety, parent_lot_id self-ref), Stack (stack_code, lot_id, warehouse_id, qty, stacked_at).</div></li>
           <li><span class="pill be">BE</span><div class="task-text">Weighbridge: POST /api/weighbridge (only allowed for 'lab_accepted' gate entries). Auto-calc net = gross - tare. Creates Purchase record finalizing qty and rate from PO.</div></li>
-          <li><span class="pill be">BE</span><div class="task-text">Unloading + Lot: POST /api/lots (links to gate entry/purchase, generates lot_no "LOT-YYYYMMDD-001", creates Stack record). PATCH /api/lots/:id/route → { destination: 'warehouse' | 'production' }. Updates gate entry to 'unloaded'.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Unloading + Lot: POST /api/lots (links to gate entry/purchase, generates lot_no "LOT-YYYYMMDD-001", creates Stack record). PATCH /api/lots/:id/route → { destination: 'warehouse' | 'Production' }. Updates gate entry to 'unloaded'.</div></li>
           <li><span class="pill be">BE</span><div class="task-text">Inventory service: on lot creation, write to inventory table (lot_id, qty_in, stage='raw_material', warehouse_id).</div></li>
           <li><span class="pill fe">FE</span><div class="task-text">Weighbridge page: list of 'lab_accepted' trucks. Select one → enter gross weight (tare as default config). Preview net weight. Submit → show slip number.</div></li>
           <li><span class="pill fe">FE</span><div class="task-text">Warehouse page: Lot list with warehouse/stack info. "Send to Production" button per lot. Current stock table.</div></li>
@@ -660,7 +660,7 @@ module.exports = (sequelize) => {<br>
       <div class="day-body">
         <ul class="task-list">
           <li><span class="pill db">DB</span><div class="task-text">Models: ProductionBatch (batch_no, lot_id, process_type dry/wet, input_qty, status), Dryer (batch_id, moisture_before, moisture_after, start/end), MachineLog (batch_id, machine_id, input/output/recovery_pct, operator, start/end), SeparatorOutput, ShinerProcess (stage 1-5), ColorSorter, LengthGrading. Machine master with 10 seed machines.</div></li>
-          <li><span class="pill be">BE</span><div class="task-text">POST /api/production/batches — create batch from lot. Returns batch with stage checklist. PATCH /api/production/batches/:id/dryer, /milling, /separator, /shiner, /color-sorter, /length-grading — each stage saves output qty and advances batch status.</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">POST /api/Production/batches — create batch from lot. Returns batch with stage checklist. PATCH /api/Production/batches/:id/dryer, /milling, /separator, /shiner, /color-sorter, /length-grading — each stage saves output qty and advances batch status.</div></li>
           <li><span class="pill be">BE</span><div class="task-text">Recovery % calculated automatically: output_qty / input_qty * 100. Store on machine log. Emit by-product inventory entries (husk, bran, broken) on milling/shiner stage save.</div></li>
           <li><span class="pill fe">FE</span><div class="task-text">Production Batch page: card-based stage tracker. Each stage = a collapsible card with form inputs. Completing a stage unlocks the next. Visual progress bar across stages.</div></li>
           <li><span class="pill fe">FE</span><div class="task-text">Active batch dashboard: show all in-progress batches with current stage highlighted. Which machine is running, operator name, start time.</div></li>
@@ -668,7 +668,7 @@ module.exports = (sequelize) => {<br>
         </ul>
         <div class="deliverable-box">
           <div class="dl-title">✓ Day 5 Deliverable</div>
-          <ul><li>Full production pipeline working stage by stage</li><li>Recovery % calculated and shown</li><li>By-products auto-created in inventory</li><li>Batch can be traced from lot → all stages</li></ul>
+          <ul><li>Full Production pipeline working stage by stage</li><li>Recovery % calculated and shown</li><li>By-products auto-created in inventory</li><li>Batch can be traced from lot → all stages</li></ul>
         </div>
       </div>
     </div>
@@ -686,8 +686,8 @@ module.exports = (sequelize) => {<br>
           <li><span class="pill db">DB</span><div class="task-text">Models: Packing (batch_id, lot_id output, pack_size ENUM 5/10/25/50, bag_count, batch_no, barcode, qr_code, production_date, expiry_date), FinishedGoods (packing_id, warehouse_id, qty, status, aged_days).</div></li>
           <li><span class="pill be">BE</span><div class="task-text">POST /api/packing — create packing record from length grader output. Auto-generate batch_no (PCK-YYYYMMDD-001), barcode (EAN-13 format string), QR code (JSON string with lot/batch/date). Create FinishedGoods record with status='ready'.</div></li>
           <li><span class="pill be">BE</span><div class="task-text">GET /api/finished-goods — list with filters: status, pack_size, warehouse, date range. Include aged_days (computed: today - production_date). node-cron job: every night update aged_days and flag stock >30 days as 'aging'.</div></li>
-          <li><span class="pill fe">FE</span><div class="task-text">Packing form: select batch → show graded outputs → enter pack size, bag count per grade, production date. Generate barcode display (use a simple barcode renderer library or just show the number).</div></li>
-          <li><span class="pill fe">FE</span><div class="task-text">Finished Goods warehouse page: table with columns for SKU, pack size, qty, production date, aged days (highlight red if >30), status badge. Filter bar by pack size and status.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Packing form: select batch → show graded outputs → enter pack size, bag count per grade, Production date. Generate barcode display (use a simple barcode renderer library or just show the number).</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Finished Goods warehouse page: table with columns for SKU, pack size, qty, Production date, aged days (highlight red if >30), status badge. Filter bar by pack size and status.</div></li>
         </ul>
         <div class="deliverable-box">
           <div class="dl-title">✓ Day 6 Deliverable</div>
@@ -709,7 +709,7 @@ module.exports = (sequelize) => {<br>
           <li><span class="pill db">DB</span><div class="task-text">Models: Customer, SalesOrder (customer_id, material_id, qty, rate, status), Dispatch (so_id, challan_no, vehicle_id, dispatch_weight, dispatch_time, status), Invoice (dispatch_id, amount, tax, status).</div></li>
           <li><span class="pill be">BE</span><div class="task-text">POST /api/sales-orders → POST /api/dispatches (allocate FG stock, update FG status to 'dispatched', generate challan_no). GET /api/dispatches/:id/challan → return JSON for PDF. Use pdfkit (npm install pdfkit) to generate a basic Delivery Challan PDF.</div></li>
           <li><span class="pill be">BE</span><div class="task-text">Dashboard API: GET /api/dashboard/kpis → { trucks_at_gate, today_intake_qty, lab_rejection_rate, active_batches, fg_stock_qty, pending_dispatch_count, today_dispatch_value }. Single aggregation query joining multiple tables.</div></li>
-          <li><span class="pill be">BE</span><div class="task-text">Reports: GET /api/reports/gate-register?from=&to= → paginated gate entries with all details. GET /api/reports/production-summary?from=&to= → batch-wise input/output/recovery. Both return JSON (rendered as tables in FE).</div></li>
+          <li><span class="pill be">BE</span><div class="task-text">Reports: GET /api/reports/gate-register?from=&to= → paginated gate entries with all details. GET /api/reports/Production-summary?from=&to= → batch-wise input/output/recovery. Both return JSON (rendered as tables in FE).</div></li>
           <li><span class="pill fe">FE</span><div class="task-text">Dashboard page: 6 KPI stat cards (Ant Design Statistic). 1 Recharts BarChart (daily intake last 7 days). Auto-refresh every 60 seconds using TanStack Query refetchInterval.</div></li>
           <li><span class="pill fe">FE</span><div class="task-text">Dispatch page: create sales order → select FG stock to allocate → confirm dispatch → show challan number + "Download Challan PDF" button (calls /api/dispatches/:id/challan, triggers file download).</div></li>
           <li><span class="pill fe">FE</span><div class="task-text">Reports page: tab between Gate Register and Production Summary. Date range picker → fetch → display in Ant Design Table with export to CSV button.</div></li>
@@ -736,7 +736,7 @@ module.exports = (sequelize) => {<br>
           <li><span class="pill fe">FE</span><div class="task-text">UI polish: consistent color scheme, loading spinners on all API calls, error messages for failed requests, empty states for empty tables ("No gate entries today — create one →").</div></li>
           <li><span class="pill fe">FE</span><div class="task-text">Role-based sidebar: hide menu items the logged-in user's role can't access. Gate Security sees only Gate + Queue. Lab Technician sees only Lab. Etc.</div></li>
           <li><span class="pill inf">INFRA</span><div class="task-text">Build frontend: npm run build. Serve via Express static or deploy to Vercel (frontend) + Render.com free tier (backend + Postgres). Or run both locally with PM2 for the demo.</div></li>
-          <li><span class="pill inf">INFRA</span><div class="task-text">Prepare demo credentials: admin@ricemill.com / admin123, gate@ricemill.com, lab@ricemill.com, production@ricemill.com. Print or share before demo.</div></li>
+          <li><span class="pill inf">INFRA</span><div class="task-text">Prepare demo credentials: admin@ricemill.com / admin123, gate@ricemill.com, lab@ricemill.com, Production@ricemill.com. Print or share before demo.</div></li>
           <li><span class="pill fe">FE</span><div class="task-text">Print/save this as your pitch: "This prototype covers the full Gate-to-Dispatch flow in 8 days. Phase 2 adds Accounts, WhatsApp notifications, vendor portal, and mobile app over the next 3–4 weeks."</div></li>
         </ul>
         <div class="deliverable-box">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   getPackingsApi,
   createPackingApi,
@@ -7,6 +7,7 @@ import {
   getGradedOutputsApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
+import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
@@ -23,6 +24,40 @@ const emptyForm = {
   pallet_id: "",
 };
 
+// The backend response for graded-outputs isn't 100% pinned down, so this
+// tries several common shapes/casings instead of only ever reading
+// long_qty/medium_qty/broken_qty/small_broken_qty off the top level. If
+// NONE of these match, `matched` comes back false and the UI shows the raw
+// JSON instead of silently rendering blank dashes — that's the fastest way
+// to see the real field names and fix this for good.
+function extractGraded(raw) {
+  if (!raw) return null;
+  const envelopes = [raw, raw.graded_output, raw.gradedOutput, raw.output, raw.length_grading, raw.lengthGrading, raw.data].filter(
+    (x) => x && typeof x === "object"
+  );
+
+  for (const c of envelopes) {
+    const long_qty = c.long_qty ?? c.longQty ?? c.long;
+    const medium_qty = c.medium_qty ?? c.mediumQty ?? c.medium;
+    const broken_qty = c.broken_qty ?? c.brokenQty ?? c.broken;
+    const small_broken_qty = c.small_broken_qty ?? c.smallBrokenQty ?? c.small_broken;
+    if ([long_qty, medium_qty, broken_qty, small_broken_qty].some((v) => v != null)) {
+      return {
+        matched: true,
+        long_qty,
+        medium_qty,
+        broken_qty,
+        small_broken_qty,
+        bags_packed_so_far:
+          raw.bags_packed_so_far ?? raw.bagsPackedSoFar ?? c.bags_packed_so_far ?? c.bagsPackedSoFar,
+        remaining_qty: raw.remaining_qty ?? raw.remainingQty ?? c.remaining_qty ?? c.remainingQty,
+        raw,
+      };
+    }
+  }
+  return { matched: false, raw };
+}
+
 export default function PackingPage() {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +70,7 @@ export default function PackingPage() {
   const [gradedOutputs, setGradedOutputs] = useState(null);
   const [gradedLoading, setGradedLoading] = useState(false);
   const [gradedError, setGradedError] = useState("");
+  const [showRawGraded, setShowRawGraded] = useState(false);
 
   const batches = useEntityLookup("production_batch");
   const warehouses = useEntityLookup("warehouse");
@@ -58,8 +94,9 @@ export default function PackingPage() {
     }
     setGradedLoading(true);
     setGradedError("");
+    setShowRawGraded(false);
     getGradedOutputsApi(form.batch_id)
-      .then((res) => setGradedOutputs(res.data.data ?? res.data))
+      .then((res) => setGradedOutputs(extractGraded(res.data.data ?? res.data)))
       .catch(() =>
         setGradedError(
           "Couldn't load graded outputs — this batch may not have finished Length Grading yet."
@@ -67,6 +104,39 @@ export default function PackingPage() {
       )
       .finally(() => setGradedLoading(false));
   }, [form.batch_id]);
+
+  // Total graded qty = sum of the 4 grading buckets. Remaining = whatever
+  // the backend explicitly reports as remaining/available, or — if it
+  // doesn't send that — the full graded total (best guess when nothing
+  // has been packed against this batch yet).
+  const totalGraded = useMemo(() => {
+    if (!gradedOutputs?.matched) return null;
+    const vals = [
+      gradedOutputs.long_qty,
+      gradedOutputs.medium_qty,
+      gradedOutputs.broken_qty,
+      gradedOutputs.small_broken_qty,
+    ]
+      .map(Number)
+      .filter((n) => !Number.isNaN(n));
+    return vals.length ? vals.reduce((a, b) => a + b, 0) : null;
+  }, [gradedOutputs]);
+
+  const remainingQty = useMemo(() => {
+    if (gradedOutputs?.remaining_qty != null) return Number(gradedOutputs.remaining_qty);
+    return totalGraded;
+  }, [gradedOutputs, totalGraded]);
+
+  // Auto-suggest bag count from remaining qty ÷ pack size. Still editable —
+  // this just saves the "get out a calculator" step.
+  useEffect(() => {
+    if (remainingQty == null || form.pack_size === "custom") return;
+    const size = Number(form.pack_size);
+    if (!size) return;
+    const bags = Math.max(0, Math.floor(remainingQty / size));
+    setForm((prev) => ({ ...prev, bag_count: String(bags) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remainingQty, form.pack_size]);
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -140,11 +210,7 @@ export default function PackingPage() {
     <div>
       <h2 style={{ marginTop: 0 }}>Packing</h2>
       {error && <div className="dt-error">{error}</div>}
-      {info && (
-        <div className="dt-error" style={{ background: "#eaf7ea", color: "#2b7a2b" }}>
-          {info}
-        </div>
-      )}
+      {info && <div className="dt-success">{info}</div>}
 
       {editingId ? (
         <form className="sf-form" onSubmit={handleUpdate}>
@@ -195,7 +261,9 @@ export default function PackingPage() {
             </select>
           </div>
           <div className="sf-field">
-            <label>Bag Count</label>
+            <label>
+              Bag Count {form.pack_size !== "custom" && remainingQty != null && "(auto-suggested)"}
+            </label>
             <input
               name="bag_count"
               type="number"
@@ -203,6 +271,11 @@ export default function PackingPage() {
               onChange={handleChange}
               required
             />
+            {form.pack_size !== "custom" && remainingQty != null && (
+              <p className="field-hint">
+                Calculated as remaining qty ÷ pack size — adjust if needed.
+              </p>
+            )}
           </div>
           {form.pack_size === "custom" && (
             <div className="sf-field">
@@ -238,7 +311,7 @@ export default function PackingPage() {
             <div style={{ gridColumn: "1 / -1" }}>
               {gradedLoading && <p className="dt-msg">Loading graded outputs…</p>}
               {gradedError && <div className="dt-error">{gradedError}</div>}
-              {gradedOutputs && (
+              {gradedOutputs?.matched && (
                 <div className="dt-wrapper" style={{ padding: 12 }}>
                   <strong>Graded output for this batch:</strong>
                   <div style={{ display: "flex", gap: 18, marginTop: 8, flexWrap: "wrap" }}>
@@ -249,7 +322,42 @@ export default function PackingPage() {
                     {gradedOutputs.bags_packed_so_far != null && (
                       <span>Already packed: {gradedOutputs.bags_packed_so_far} bags</span>
                     )}
+                    {remainingQty != null && (
+                      <span style={{ fontWeight: 700, color: "#1d4ed8" }}>
+                        Remaining to pack: {remainingQty} kg
+                      </span>
+                    )}
                   </div>
+                </div>
+              )}
+              {gradedOutputs && !gradedOutputs.matched && (
+                <div className="dt-error">
+                  The batch loaded, but none of the expected field names (long_qty, medium_qty,
+                  broken_qty, small_broken_qty — or camelCase variants) were found in the
+                  response, so nothing can be shown here yet.{" "}
+                  <button
+                    type="button"
+                    className="dt-btn"
+                    style={{ marginLeft: 6 }}
+                    onClick={() => setShowRawGraded((v) => !v)}
+                  >
+                    {showRawGraded ? "Hide" : "Show"} raw response
+                  </button>
+                  {showRawGraded && (
+                    <pre
+                      style={{
+                        marginTop: 8,
+                        background: "#0f172a",
+                        color: "#e2e8f0",
+                        padding: 10,
+                        borderRadius: 6,
+                        fontSize: "0.75rem",
+                        overflowX: "auto",
+                      }}
+                    >
+                      {JSON.stringify(gradedOutputs.raw, null, 2)}
+                    </pre>
+                  )}
                 </div>
               )}
             </div>
@@ -281,6 +389,15 @@ export default function PackingPage() {
           { key: "pack_size", label: "Pack Size" },
           { key: "bag_count", label: "Bags" },
           { key: "barcode", label: "Barcode" },
+        ]}
+      />
+      <ModuleGuide
+        title="Packing"
+        steps={[
+          "Pick a Production Batch that's finished Length Grading — its graded breakdown and remaining quantity show up automatically.",
+          "Choose a pack size; the bag count is worked out for you (remaining qty ÷ pack size) — adjust it if needed.",
+          "Submitting generates a packing number and barcode, and opens a matching Finished Goods record with status 'ready'.",
+          "From there, Sales can book an order against it and Dispatch can allocate it to a delivery.",
         ]}
       />
     </div>

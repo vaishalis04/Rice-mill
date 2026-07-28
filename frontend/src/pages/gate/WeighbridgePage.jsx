@@ -7,6 +7,7 @@ import {
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import ModuleGuide from "../../components/ModuleGuide";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyForm = {
@@ -31,6 +32,13 @@ export default function WeighbridgePage() {
   const [info, setInfo] = useState("");
 
   const gateEntries = useEntityLookup("gate_entry");
+  const vehicles = useEntityLookup("vehicle");
+  const drivers = useEntityLookup("driver");
+
+  // Weight slips only store gate_entry_id — resolve vehicle/driver by
+  // looking that gate entry up first, then its vehicle_id/driver_id.
+  const getGateEntryRow = (gate_entry_id) =>
+    gateEntries.rows.find((r) => String(r.id) === String(gate_entry_id));
 
   const load = () => {
     setLoading(true);
@@ -116,11 +124,7 @@ export default function WeighbridgePage() {
     <div>
       <h2 style={{ marginTop: 0 }}>Weighbridge</h2>
       {error && <div className="dt-error">{error}</div>}
-      {info && (
-        <div className="dt-error" style={{ background: "#eaf7ea", color: "#2b7a2b" }}>
-          {info}
-        </div>
-      )}
+      {info && <div className="dt-success">{info}</div>}
 
       <form className="sf-form" onSubmit={handleSubmit}>
         <EntitySelect
@@ -209,14 +213,54 @@ export default function WeighbridgePage() {
             label: "Gate Entry",
             render: (row) => gateEntries.getLabel(row.gate_entry_id),
           },
+          {
+            key: "vehicle",
+            label: "Vehicle No.",
+            render: (row) => {
+              const ge = getGateEntryRow(row.gate_entry_id);
+              return ge ? vehicles.getLabel(ge.vehicle_id) : "—";
+            },
+          },
+          {
+            key: "driver",
+            label: "Driver Name",
+            render: (row) => {
+              const ge = getGateEntryRow(row.gate_entry_id);
+              return ge ? drivers.getLabel(ge.driver_id) : "—";
+            },
+          },
           { key: "gross_weight", label: "Gross Wt." },
           { key: "tare_weight", label: "Tare Wt." },
           {
             key: "net_weight",
             label: "Net Wt.",
-            render: (row) =>
-              row.net_weight ?? row.gross_weight - row.tare_weight,
+            render: (row) => (
+              <strong style={{ color: "#1d4ed8" }}>
+                {row.net_weight ?? row.gross_weight - row.tare_weight}
+              </strong>
+            ),
           },
+          {
+            key: "weighed_at",
+            label: "Weighed At",
+            render: (row) => (row.weighed_at ? new Date(row.weighed_at).toLocaleString() : "—"),
+          },
+          {
+            key: "final_rate",
+            label: "Final Rate",
+            render: (row) => (row.final_rate != null ? `₹${row.final_rate}` : "— (from PO)"),
+          },
+        ]}
+      />
+
+      <ModuleGuide
+        title="Weighbridge"
+        steps={[
+          "A truck must already be marked 'accepted' by Quality before it can be weighed — pick it from the Gate Entry dropdown above.",
+          "Enter the gross weight (truck + load) and tare weight (empty truck) from the weighbridge readout.",
+          "Net weight is calculated automatically (gross − tare) — you don't need to work it out yourself.",
+          "Submitting finalizes the Purchase record and moves the gate entry on to 'in_process', ready for unloading in the Warehouse module.",
+          "If this particular delivery has no linked Purchase Order, fill in Final Rate so the purchase can still be priced.",
         ]}
       />
     </div>

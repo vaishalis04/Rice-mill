@@ -12,63 +12,61 @@ import {
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import ModuleGuide from "../../components/ModuleGuide";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
-const toIso = (local) => (local ? new Date(local).toISOString() : "");
-
 // One entry per possible `current_stage` value. `apply` calls the right
-// PATCH endpoint. Fields marked `type: "checkbox"` render as a checkbox;
-// everything else follows the same convention used elsewhere in this app.
+// PATCH endpoint. start_time/end_time are NOT listed as fields here — they
+// come from the Start/Done timer instead (see StageForm). `machineHints`
+// are lowercase keywords matched against each machine's machine_type, used
+// to auto-suggest the right machine for this stage — the person can still
+// change the pick, this just saves them hunting for it every time.
 const STAGE_CONFIG = {
   dryer: {
     label: "Dryer",
     apply: patchDryerStageApi,
+    machineHints: ["dryer", "dry"],
     fields: [
       { name: "machine_id", label: "Machine", type: "entity", entity: "machine", required: true },
       { name: "moisture_before", label: "Moisture Before (%)", type: "number", required: true },
       { name: "moisture_after", label: "Moisture After (%)", type: "number", required: true },
-      { name: "start_time", label: "Start Time", type: "datetime-local" },
-      { name: "end_time", label: "End Time", type: "datetime-local" },
     ],
     note: "Pass = moisture_after ≤ 14% (unless a target_moisture override applies). Fail keeps the batch here and sets it on_hold — just resubmit after re-drying.",
   },
   milling: {
     label: "Milling",
     apply: patchMillingStageApi,
+    machineHints: ["hull", "mill"],
     fields: [
       { name: "machine_id", label: "Machine", type: "entity", entity: "machine", required: true },
       { name: "output_qty", label: "Output Qty", type: "number", required: true },
       { name: "husk_qty", label: "Husk Qty", type: "number" },
       { name: "broken_qty", label: "Broken Qty", type: "number" },
-      { name: "start_time", label: "Start Time", type: "datetime-local" },
-      { name: "end_time", label: "End Time", type: "datetime-local" },
     ],
     note: "husk_qty/broken_qty also write by-product Inventory — needs Material Master rows with category husk/broken to exist first, or that write is silently skipped.",
   },
   separator: {
     label: "Separator",
     apply: patchSeparatorStageApi,
+    machineHints: ["separat"],
     fields: [
       { name: "machine_id", label: "Machine (optional)", type: "entity", entity: "machine" },
       { name: "cleaned_qty", label: "Cleaned Qty", type: "number", required: true },
       { name: "impurity_qty", label: "Impurity Qty", type: "number" },
       { name: "stone_qty", label: "Stone Qty", type: "number" },
       { name: "dust_qty", label: "Dust Qty", type: "number" },
-      { name: "start_time", label: "Start Time", type: "datetime-local" },
-      { name: "end_time", label: "End Time", type: "datetime-local" },
     ],
   },
   shiner: {
     label: "Shiner",
     apply: patchShinerStageApi,
+    machineHints: ["shin"],
     fields: [
       { name: "stage_no", label: "Pass No. (1–5)", type: "number", required: true },
       { name: "machine_id", label: "Machine", type: "entity", entity: "machine", required: true },
       { name: "output_qty", label: "Output Qty", type: "number", required: true },
       { name: "loss_qty", label: "Loss Qty", type: "number" },
       { name: "bran_qty", label: "Bran Qty", type: "number" },
-      { name: "start_time", label: "Start Time", type: "datetime-local" },
-      { name: "end_time", label: "End Time", type: "datetime-local" },
       { name: "is_final", label: "This is the final pass (advances to Color Sorter)", type: "checkbox" },
     ],
     note: "Batch stays at shiner between passes — submit again with the next stage_no. Mark is_final (or use stage_no 5) on the last one.",
@@ -76,25 +74,23 @@ const STAGE_CONFIG = {
   color_sorter: {
     label: "Color Sorter",
     apply: patchColorSorterStageApi,
+    machineHints: ["color", "sort"],
     fields: [
       { name: "machine_id", label: "Machine", type: "entity", entity: "machine", required: true },
       { name: "good_qty", label: "Good Qty", type: "number", required: true },
       { name: "rejected_qty", label: "Rejected Qty", type: "number" },
-      { name: "start_time", label: "Start Time", type: "datetime-local" },
-      { name: "end_time", label: "End Time", type: "datetime-local" },
     ],
   },
   length_grading: {
     label: "Length Grading (final stage)",
     apply: patchLengthGradingStageApi,
+    machineHints: ["grad", "length"],
     fields: [
       { name: "machine_id", label: "Machine", type: "entity", entity: "machine", required: true },
       { name: "long_qty", label: "Long Qty", type: "number", required: true },
       { name: "medium_qty", label: "Medium Qty", type: "number" },
       { name: "broken_qty", label: "Broken Qty", type: "number" },
       { name: "small_broken_qty", label: "Small Broken Qty", type: "number" },
-      { name: "start_time", label: "Start Time", type: "datetime-local" },
-      { name: "end_time", label: "End Time", type: "datetime-local" },
     ],
     note: "This is the terminal stage — submitting it marks the batch completed.",
   },
@@ -108,20 +104,67 @@ function emptyStageForm(stage) {
   return form;
 }
 
-function StageForm({ batch, onDone }) {
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+// Auto-select-machine + Start/Timer/Done stage form. Keyed by
+// batch.current_stage from the parent so it fully remounts (fresh timer,
+// fresh auto-pick) every time the stage advances.
+function StageForm({ batch, machineRows, onDone }) {
   const stage = STAGE_CONFIG[batch.current_stage];
-  const [form, setForm] = useState(emptyStageForm(batch.current_stage));
+  const [form, setForm] = useState(() => emptyStageForm(batch.current_stage));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [startedAt, setStartedAt] = useState(null);
+  const [finishedAt, setFinishedAt] = useState(null);
+  const [now, setNow] = useState(Date.now());
+
+  // Auto-suggest the machine for this stage as soon as the machine list is
+  // available — matches machine_type against this stage's keyword hints.
+  // The dropdown stays fully editable if the guess is wrong.
+  useEffect(() => {
+    if (!stage) return;
+    const machineField = stage.fields.find((f) => f.type === "entity" && f.entity === "machine");
+    if (!machineField || form[machineField.name]) return;
+    const hints = stage.machineHints || [];
+    const match = machineRows.find((m) =>
+      hints.some((h) => (m.machine_type || m.name || "").toLowerCase().includes(h))
+    );
+    if (match) setForm((prev) => ({ ...prev, [machineField.name]: match.id }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machineRows]);
+
+  // Live ticking clock while running.
+  useEffect(() => {
+    if (!startedAt || finishedAt) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [startedAt, finishedAt]);
 
   if (!stage) return null; // e.g. current_stage === "completed" — nothing to submit
+
+  const elapsedSec = startedAt ? Math.floor(((finishedAt ?? now) - startedAt) / 1000) : 0;
+  const clock = `${pad2(Math.floor(elapsedSec / 60))}:${pad2(elapsedSec % 60)}`;
 
   const handleFieldChange = (name, value) =>
     setForm((prev) => ({ ...prev, [name]: value }));
 
+  const handleStart = () => {
+    setError("");
+    setStartedAt(Date.now());
+    setFinishedAt(null);
+  };
+
+  const handleMarkDone = () => setFinishedAt(Date.now());
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    if (!startedAt) {
+      setError("Click Start first — the run needs a start time before it can be submitted.");
+      return;
+    }
     setSubmitting(true);
     try {
       const payload = {};
@@ -132,10 +175,10 @@ function StageForm({ batch, onDone }) {
           return;
         }
         if (v === "" || v == null) return; // skip blank optionals
-        if (f.type === "number") payload[f.name] = Number(v);
-        else if (f.type === "datetime-local") payload[f.name] = toIso(v);
-        else payload[f.name] = v;
+        payload[f.name] = f.type === "number" ? Number(v) : v;
       });
+      payload.start_time = new Date(startedAt).toISOString();
+      payload.end_time = new Date(finishedAt ?? Date.now()).toISOString();
       await stage.apply(batch.id, payload);
       onDone();
     } catch (err) {
@@ -150,11 +193,34 @@ function StageForm({ batch, onDone }) {
 
   return (
     <form className="sf-form" onSubmit={handleSubmit}>
-      <h3 style={{ marginTop: 0 }}>Stage: {stage.label}</h3>
+      <h3 style={{ marginTop: 0, gridColumn: "1 / -1" }}>Stage: {stage.label}</h3>
       {stage.note && (
-        <p style={{ color: "#7a6f60", fontSize: "0.85rem", marginTop: -6 }}>{stage.note}</p>
+        <p style={{ color: "#64748b", fontSize: "0.85rem", marginTop: -6, gridColumn: "1 / -1" }}>
+          {stage.note}
+        </p>
       )}
-      {error && <div className="dt-error">{error}</div>}
+      {error && <div className="dt-error" style={{ gridColumn: "1 / -1" }}>{error}</div>}
+
+      <div className="stage-timer" style={{ gridColumn: "1 / -1" }}>
+        {!startedAt && (
+          <button type="button" className="stage-start-btn" onClick={handleStart}>
+            ▶ Start {stage.label}
+          </button>
+        )}
+        {startedAt && !finishedAt && (
+          <>
+            <span className="stage-clock running">{clock}</span>
+            <button type="button" className="stage-done-btn" onClick={handleMarkDone}>
+              ✔ Done — stop timer
+            </button>
+          </>
+        )}
+        {startedAt && finishedAt && (
+          <span className="stage-clock finished">
+            Finished in {clock} — fill in the results below and submit.
+          </span>
+        )}
+      </div>
 
       {stage.fields.map((f) =>
         f.type === "entity" ? (
@@ -190,14 +256,14 @@ function StageForm({ batch, onDone }) {
         )
       )}
 
-      <button className="sf-submit" type="submit" disabled={submitting}>
+      <button className="sf-submit" type="submit" disabled={submitting} style={{ gridColumn: "1 / -1" }}>
         {submitting ? "Submitting…" : `Submit ${stage.label}`}
       </button>
     </form>
   );
 }
 
-function BatchDetail({ batchId, onClose, onChanged }) {
+function BatchDetail({ batchId, machineRows, onClose, onChanged }) {
   const [batch, setBatch] = useState(null);
   const [error, setError] = useState("");
 
@@ -213,7 +279,7 @@ function BatchDetail({ batchId, onClose, onChanged }) {
   if (!batch) return <p className="dt-msg">Loading…</p>;
 
   return (
-    <div className="sf-form" style={{ marginBottom: 20 }}>
+    <div style={{ marginBottom: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h3 style={{ margin: 0 }}>
           {batch.batch_no || `Batch #${batch.id}`}{" "}
@@ -223,17 +289,19 @@ function BatchDetail({ batchId, onClose, onChanged }) {
           Close
         </button>
       </div>
-      <p style={{ color: "#7a6f60", fontSize: "0.85rem" }}>
+      <p style={{ color: "#64748b", fontSize: "0.85rem" }}>
         Process: {batch.process_type} · Status: {batch.batch_status}
       </p>
 
       {batch.current_stage === "completed" ? (
-        <p style={{ color: "#2b7a2b" }}>
+        <p style={{ color: "#15803d" }}>
           ✓ This batch is complete — full stage history is in the batch record from the backend.
         </p>
       ) : (
         <StageForm
+          key={batch.current_stage}
           batch={batch}
+          machineRows={machineRows}
           onDone={() => {
             reload();
             onChanged();
@@ -255,6 +323,7 @@ export default function ProductionBatchPage() {
   const [processType, setProcessType] = useState("wet");
 
   const lots = useEntityLookup("lot");
+  const machines = useEntityLookup("machine");
 
   const load = () => {
     setLoading(true);
@@ -292,11 +361,7 @@ export default function ProductionBatchPage() {
     <div>
       <h2 style={{ marginTop: 0 }}>Production Batches</h2>
       {error && <div className="dt-error">{error}</div>}
-      {info && (
-        <div className="dt-error" style={{ background: "#eaf7ea", color: "#2b7a2b" }}>
-          {info}
-        </div>
-      )}
+      {info && <div className="dt-success">{info}</div>}
 
       <form className="sf-form" onSubmit={handleCreate}>
         <EntitySelect
@@ -321,6 +386,7 @@ export default function ProductionBatchPage() {
       {selectedId && (
         <BatchDetail
           batchId={selectedId}
+          machineRows={machines.rows}
           onClose={() => setSelectedId(null)}
           onChanged={load}
         />
@@ -352,6 +418,15 @@ export default function ProductionBatchPage() {
               </button>
             ),
           },
+        ]}
+      />
+      <ModuleGuide
+        title="Production Batches"
+        steps={[
+          "Create a batch from a Lot. Wet grain starts at Dryer; dry grain skips straight to Milling.",
+          "Click Continue on a batch to open its current stage — the machine is pre-picked for you, click Start when work begins, and Done when it finishes to record the run time automatically.",
+          "Fill in the stage's results and Submit — the batch moves to the next stage on its own, and the next stage's machine gets pre-picked too.",
+          "Once Length Grading is submitted the batch is 'completed' and ready to appear in Packing.",
         ]}
       />
     </div>

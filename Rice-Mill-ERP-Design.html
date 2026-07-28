@@ -242,7 +242,7 @@
       <a href="#1-business-process-flow" class="nav-link">1. Business Process Flow</a>
       <a href="#2-swimlane-flowchart" class="nav-link">2. Swimlane Flowchart</a>
       <a href="#3-decision-tree" class="nav-link">3. Decision Tree</a>
-      <a href="#4-production-flow-diagram-material-by-product-trace" class="nav-link">4. Production Flow Diagram (Material &amp; By-Product Trace)</a>
+      <a href="#4-Production-flow-diagram-material-by-product-trace" class="nav-link">4. Production Flow Diagram (Material &amp; By-Product Trace)</a>
       <a href="#5-erp-module-architecture" class="nav-link">5. ERP Module Architecture</a>
       <a href="#6-er-diagram" class="nav-link">6. ER Diagram</a>
       <a href="#7-complete-database-schema" class="nav-link">7. Complete Database Schema</a>
@@ -252,7 +252,7 @@
       <a href="#11-user-permission-matrix" class="nav-link">11. User Permission Matrix</a>
       <a href="#12-approval-workflow" class="nav-link">12. Approval Workflow</a>
       <a href="#13-inventory-movement-flow" class="nav-link">13. Inventory Movement Flow</a>
-      <a href="#14-production-tracking-flow" class="nav-link">14. Production Tracking Flow</a>
+      <a href="#14-Production-tracking-flow" class="nav-link">14. Production Tracking Flow</a>
       <a href="#15-material-traceability-flow" class="nav-link">15. Material Traceability Flow</a>
       <a href="#16-reports-required" class="nav-link">16. Reports Required</a>
       <a href="#17-dashboard-kpis" class="nav-link">17. Dashboard KPIs</a>
@@ -263,7 +263,7 @@
   </aside>
 
   <main>
-    <h1 id="rice-mill-inventory-procurement-production-dispatch-management-system">Rice Mill Inventory, Procurement, Production &amp; Dispatch Management System</h1>
+    <h1 id="rice-mill-inventory-procurement-Production-dispatch-management-system">Rice Mill Inventory, Procurement, Production &amp; Dispatch Management System</h1>
 <h3 id="enterprise-erp-design-document-v10">Enterprise ERP Design Document — v1.0</h3>
 <p><strong>Prepared as:</strong> Solution Architecture / Business Analysis / Database Design Blueprint
 <strong>Scope:</strong> Gate Entry → Procurement → Lab QC → Production → Packing → Finished Goods → Dispatch, with full traceability, approvals, and audit.</p>
@@ -543,7 +543,7 @@
  classDef pause fill:#fff3cd,stroke:#856404
 </pre>
 <hr />
-<h2 id="4-production-flow-diagram-material-by-product-trace">4. Production Flow Diagram (Material &amp; By-Product Trace)</h2>
+<h2 id="4-Production-flow-diagram-material-by-product-trace">4. Production Flow Diagram (Material &amp; By-Product Trace)</h2>
 <pre class="mermaid">flowchart LR
  RM[Raw Paddy] --> MIL[Milling]
  MIL --> BR[Brown Rice]
@@ -863,7 +863,7 @@
 <strong>negotiation</strong> — lab_test_id (FK), old_rate, proposed_rate, vendor_response(accept/reject), negotiated_by (FK), negotiated_at
 <strong>weight_slip</strong> — gate_entry_id (FK), slip_no, gross_weight, tare_weight, net_weight, weighed_at, weighbridge_operator_id (FK)
 <strong>purchase</strong> — po_id (FK), gate_entry_id (FK), weight_slip_id (FK), final_rate, final_qty, amount, purchase_date
-<strong>lots</strong> — lot_no (UNIQUE), purchase_id (FK, nullable for production-generated lots), material_id (FK), variety_id (FK), qty, parent_lot_id (FK self, for derived lots) <em>(traceability backbone)</em>
+<strong>lots</strong> — lot_no (UNIQUE), purchase_id (FK, nullable for Production-generated lots), material_id (FK), variety_id (FK), qty, parent_lot_id (FK self, for derived lots) <em>(traceability backbone)</em>
 <strong>stacks</strong> — stack_code, lot_id (FK), warehouse_id (FK), bin_id (FK), qty, stacked_at, age_days (computed) <em>(note #24: aging)</em>
 <strong>inventory</strong> — lot_id (FK), material_id (FK), warehouse_id (FK)/stage, qty_in, qty_out, balance_qty, as_of
 <strong>quality_check</strong> — batch_id (FK), check_level(bag/lot), accepted_qty, rejected_qty, reason_code_id (FK), action(replace/refund/scrap), checked_by (FK) <em>(notes #6,#7,#16,#17)</em>
@@ -1332,7 +1332,7 @@ purchase_order, gate_entry, sampling, lab_test, negotiation, weight_slip, purcha
 </code></pre>
 <p>Every line above corresponds to a write to <strong><code>inventory</code></strong> and <strong><code>stock_movement</code></strong>, ensuring the sum of all "qty_out" at any node equals "qty_in" (mass-balance reconciliation report — see Section 17).</p>
 <hr />
-<h2 id="14-production-tracking-flow">14. Production Tracking Flow</h2>
+<h2 id="14-Production-tracking-flow">14. Production Tracking Flow</h2>
 <p>For every <code>production_batch</code>:
 1. Batch created from <code>lots</code> with <code>process_type</code> = Dry or Wet (field note #22).
 2. Each stage (<code>machine_logs</code>, <code>dryer</code>, <code>separator_output</code>, <code>shiner_process</code>, <code>color_sorter</code>, <code>length_grading</code>) logs <strong>input qty, output qty, loss/recovery %, operator, machine, start/end time</strong>.
@@ -1373,7 +1373,7 @@ purchase_order, gate_entry, sampling, lab_test, negotiation, weight_slip, purcha
 <li>Trucks waiting at gate (live token queue) / Avg. waiting time</li>
 <li>Today's intake vs. target (qty)</li>
 <li>Lab rejection rate % (today / MTD)</li>
-<li>Active production batches &amp; stage-wise WIP</li>
+<li>Active Production batches &amp; stage-wise WIP</li>
 <li>Machine OEE / uptime % (live)</li>
 <li>Recovery % (today vs. standard)</li>
 <li>FG stock by SKU &amp; age buckets</li>
@@ -1403,14 +1403,14 @@ GET    /api/v1/lots/{id}/trace                Full backward/forward trace
 POST   /api/v1/stacks
 GET    /api/v1/inventory?stage=&amp;warehouse=&amp;material=
 
-POST   /api/v1/production-batches
-POST   /api/v1/production-batches/{id}/quality-check
-POST   /api/v1/production-batches/{id}/dryer
+POST   /api/v1/Production-batches
+POST   /api/v1/Production-batches/{id}/quality-check
+POST   /api/v1/Production-batches/{id}/dryer
 POST   /api/v1/machine-logs
-POST   /api/v1/production-batches/{id}/separator
-POST   /api/v1/production-batches/{id}/shiner
-POST   /api/v1/production-batches/{id}/color-sorter
-POST   /api/v1/production-batches/{id}/length-grading
+POST   /api/v1/Production-batches/{id}/separator
+POST   /api/v1/Production-batches/{id}/shiner
+POST   /api/v1/Production-batches/{id}/color-sorter
+POST   /api/v1/Production-batches/{id}/length-grading
 
 POST   /api/v1/packing
 GET    /api/v1/finished-goods?status=ready_for_dispatch
@@ -1481,7 +1481,7 @@ POST   /api/v1/vendor-portal/po-do-upload      Vendor uploads PO/DO for gate ver
 </tr>
 <tr>
 <td>9</td>
-<td>Direct-to-production after unload</td>
+<td>Direct-to-Production after unload</td>
 <td><code>gate_entry</code>/<code>stacks</code> decision point already modeled (Sec. 1, Step 6)</td>
 </tr>
 <tr>

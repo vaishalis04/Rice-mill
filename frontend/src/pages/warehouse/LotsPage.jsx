@@ -7,6 +7,7 @@ import {
   deleteLotApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
+import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
@@ -222,6 +223,15 @@ export default function LotsPage() {
                 </div>
               ),
           },
+        ]}
+      />
+      <ModuleGuide
+        title="Lots / Unloading"
+        steps={[
+          "Only gate entries at 'in_process' (already weighed) show up here — pick one, then choose which Warehouse and Bin the truck is unloading into.",
+          "This opens a Lot — the traceable batch of grain from that one truck — plus a Stack and Inventory row automatically.",
+          "Route the lot to Warehouse (stays as raw stock) or Production (goes straight into a batch) using the buttons on each unrouted row.",
+          "Routing moves the linked gate entry on to 'unloaded', closing out the gate-to-warehouse journey for that truck.",
         ]}
       />
     </div>

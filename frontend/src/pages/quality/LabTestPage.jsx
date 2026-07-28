@@ -7,6 +7,7 @@ import {
   deleteLabTestApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
+import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
@@ -270,6 +271,14 @@ export default function LabTestPage() {
               </select>
             ),
           },
+        ]}
+      />
+      <ModuleGuide
+        title="Lab Tests"
+        steps={[
+          "Pick a sample that's finished Sampling, run the quality checks, and record a verdict: accepted, rejected, or negotiation.",
+          "Accepted moves the gate entry on to Weighbridge. Rejected stops the load there. Negotiation sends it to Sales for a rate discussion.",
+          "You can revise a verdict afterwards using the dropdown in the Actions column if a mistake was made.",
         ]}
       />
     </div>

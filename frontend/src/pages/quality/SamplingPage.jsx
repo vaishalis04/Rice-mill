@@ -6,6 +6,7 @@ import {
   deleteSamplingApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
+import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
@@ -175,6 +176,14 @@ export default function SamplingPage() {
           },
           { key: "collected_at", label: "Collected At" },
           { key: "sent_to_lab_at", label: "Sent to Lab At" },
+        ]}
+      />
+      <ModuleGuide
+        title="Sampling"
+        steps={[
+          "Only gate entries at 'waiting_sampling' show up in the picker — that means the truck has already checked out at the gate.",
+          "Record when the sample was collected, then send it to the lab.",
+          "Once sent, the entry moves on to Lab Tests for a verdict.",
         ]}
       />
     </div>

@@ -2,8 +2,24 @@ import { useState, useEffect } from "react";
 import {
   getGateRegisterReportApi,
   getProductionSummaryReportApi,
+  getMaterialFlowReportApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
+import EntitySelect from "../../components/EntitySelect";
+import ModuleGuide from "../../components/ModuleGuide";
+
+// Triggers a real browser download from a blob response. filenameFallback
+// is used if the backend doesn't send a Content-Disposition header.
+function downloadBlob(blobData, filenameFallback) {
+  const url = window.URL.createObjectURL(new Blob([blobData], { type: "text/csv" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filenameFallback;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
 
 function useReport(fetcher) {
   const [rows, setRows] = useState([]);
@@ -36,9 +52,51 @@ function useReport(fetcher) {
       .finally(() => setLoading(false));
   };
 
+  const exportCsv = async (filename) => {
+    setError("");
+    try {
+      const params = {};
+      if (from) params.from = from;
+      if (to) params.to = to;
+      params.format = "csv";
+      const res = await fetcher(params);
+      downloadBlob(res.data, filename);
+    } catch {
+      setError("CSV export failed");
+    }
+  };
+
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  return { rows, meta, loading, error, from, setFrom, to, setTo, page, setPage, load };
+  return { rows, meta, loading, error, from, setFrom, to, setTo, page, setPage, load, exportCsv };
+}
+
+function DateFilterBar({ r, onExport }) {
+  return (
+    <form
+      className="sf-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        r.setPage(1);
+        r.load({ page: 1 });
+      }}
+    >
+      <div className="sf-field">
+        <label>From</label>
+        <input type="date" value={r.from} onChange={(e) => r.setFrom(e.target.value)} />
+      </div>
+      <div className="sf-field">
+        <label>To</label>
+        <input type="date" value={r.to} onChange={(e) => r.setTo(e.target.value)} />
+      </div>
+      <button className="sf-submit" type="submit">
+        Apply
+      </button>
+      <button type="button" className="dt-btn" onClick={onExport}>
+        ⬇ Export CSV
+      </button>
+    </form>
+  );
 }
 
 function GateRegisterTab() {
@@ -46,27 +104,7 @@ function GateRegisterTab() {
 
   return (
     <div>
-      <form
-        className="sf-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          r.setPage(1);
-          r.load({ page: 1 });
-        }}
-      >
-        <div className="sf-field">
-          <label>From</label>
-          <input type="date" value={r.from} onChange={(e) => r.setFrom(e.target.value)} />
-        </div>
-        <div className="sf-field">
-          <label>To</label>
-          <input type="date" value={r.to} onChange={(e) => r.setTo(e.target.value)} />
-        </div>
-        <button className="sf-submit" type="submit">
-          Apply
-        </button>
-      </form>
-
+      <DateFilterBar r={r} onExport={() => r.exportCsv("gate-register.csv")} />
       {r.error && <div className="dt-error">{r.error}</div>}
 
       <DataTable
@@ -93,27 +131,7 @@ function ProductionSummaryTab() {
 
   return (
     <div>
-      <form
-        className="sf-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          r.setPage(1);
-          r.load({ page: 1 });
-        }}
-      >
-        <div className="sf-field">
-          <label>From</label>
-          <input type="date" value={r.from} onChange={(e) => r.setFrom(e.target.value)} />
-        </div>
-        <div className="sf-field">
-          <label>To</label>
-          <input type="date" value={r.to} onChange={(e) => r.setTo(e.target.value)} />
-        </div>
-        <button className="sf-submit" type="submit">
-          Apply
-        </button>
-      </form>
-
+      <DateFilterBar r={r} onExport={() => r.exportCsv("production-summary.csv")} />
       {r.error && <div className="dt-error">{r.error}</div>}
 
       <DataTable
@@ -138,6 +156,147 @@ function ProductionSummaryTab() {
   );
 }
 
+const SUMMARY_FIELDS = [
+  { key: "total_inward_qty", label: "Total Inward" },
+  { key: "total_processed_input_qty", label: "Processed (Input)" },
+  { key: "total_processed_output_qty", label: "Processed (Output)" },
+  { key: "total_raw_stock_qty", label: "Raw Stock" },
+  { key: "total_by_product_stock_qty", label: "By-Product Stock" },
+  { key: "total_finished_goods_stock_qty", label: "Finished Goods Stock" },
+];
+
+function MaterialFlowTab() {
+  const [period, setPeriod] = useState("today");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [materialId, setMaterialId] = useState("");
+  const [summary, setSummary] = useState(null);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const buildParams = (overrides = {}) => {
+    const f = { period, from, to, material_id: materialId, ...overrides };
+    const params = {};
+    // Explicit date range overrides period, per the API.
+    if (f.from || f.to) {
+      if (f.from) params.from = f.from;
+      if (f.to) params.to = f.to;
+    } else if (f.period) {
+      params.period = f.period;
+    }
+    if (f.material_id) params.material_id = f.material_id;
+    return params;
+  };
+
+  const load = (overrides = {}) => {
+    setLoading(true);
+    setError("");
+    getMaterialFlowReportApi(buildParams(overrides))
+      .then((res) => {
+        const body = res.data.data ?? res.data;
+        setSummary(body.summary ?? null);
+        setRows(body.rows ?? []);
+      })
+      .catch(() => setError("Failed to load material flow report"))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handlePeriod = (p) => {
+    setPeriod(p);
+    setFrom("");
+    setTo("");
+    load({ period: p, from: "", to: "" });
+  };
+
+  const handleExport = async () => {
+    setError("");
+    try {
+      const res = await getMaterialFlowReportApi({ ...buildParams(), format: "csv" });
+      downloadBlob(res.data, `material-flow-${from || to ? "range" : period}.csv`);
+    } catch {
+      setError("CSV export failed");
+    }
+  };
+
+  return (
+    <div>
+      <div className="section-tabs" style={{ marginBottom: 10 }}>
+        {["today", "week", "month"].map((p) => (
+          <button
+            key={p}
+            className={`section-tab ${period === p && !from && !to ? "active" : ""}`}
+            onClick={() => handlePeriod(p)}
+          >
+            {p === "today" ? "Today" : p === "week" ? "Last 7 Days" : "Last 30 Days"}
+          </button>
+        ))}
+      </div>
+
+      <form
+        className="sf-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          load();
+        }}
+      >
+        <div className="sf-field">
+          <label>From (overrides period)</label>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </div>
+        <div className="sf-field">
+          <label>To</label>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </div>
+        <EntitySelect
+          entity="material"
+          label="Material (optional)"
+          value={materialId}
+          onChange={(id) => {
+            setMaterialId(id);
+            load({ material_id: id });
+          }}
+        />
+        <button className="sf-submit" type="submit">
+          Apply
+        </button>
+        <button type="button" className="dt-btn" onClick={handleExport}>
+          ⬇ Export CSV
+        </button>
+      </form>
+
+      {error && <div className="dt-error">{error}</div>}
+
+      {summary && (
+        <div className="kpi-cards" style={{ marginBottom: 16 }}>
+          {SUMMARY_FIELDS.map((f) => (
+            <div className="kpi-card" key={f.key}>
+              <div className="kpi-value">{summary[f.key] ?? "—"}</div>
+              <div className="kpi-label">{f.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <DataTable
+        loading={loading}
+        rows={rows}
+        columns={[
+          { key: "section", label: "Section" },
+          { key: "material", label: "Material" },
+          { key: "qty", label: "Qty" },
+        ]}
+      />
+      <p className="field-hint" style={{ marginTop: 8 }}>
+        Warehouse Stock rows are always a live snapshot — they don't change with the date
+        range, only Inward and Processed rows do.
+      </p>
+    </div>
+  );
+}
+
 function Pager({ meta, onPage }) {
   if (!meta.totalPages || meta.totalPages <= 1) return null;
   return (
@@ -149,7 +308,7 @@ function Pager({ meta, onPage }) {
       >
         Prev
       </button>
-      <span style={{ fontSize: "0.85rem", color: "#7a6f60" }}>
+      <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
         Page {meta.page} of {meta.totalPages}
       </span>
       <button
@@ -166,6 +325,7 @@ function Pager({ meta, onPage }) {
 const TABS = [
   { key: "gate_register", label: "Gate Register" },
   { key: "production_summary", label: "Production Summary" },
+  { key: "material_flow", label: "Material Flow" },
 ];
 
 export default function ReportsPage() {
@@ -188,6 +348,17 @@ export default function ReportsPage() {
 
       {tab === "gate_register" && <GateRegisterTab />}
       {tab === "production_summary" && <ProductionSummaryTab />}
+      {tab === "material_flow" && <MaterialFlowTab />}
+
+      <ModuleGuide
+        title="Reports"
+        steps={[
+          "Gate Register — every truck that's come through the gate, with vehicle/driver/vendor/material details, filterable by date.",
+          "Production Summary — every batch run, with input/output quantities and recovery %, filterable by production date.",
+          "Material Flow — the big picture: how much came in, how much got processed, and how much is sitting in the warehouse right now. Pick a rolling period (today/week/month) or an exact date range.",
+          "Every report has an Export CSV button for opening the same data in Excel or Sheets.",
+        ]}
+      />
     </div>
   );
 }

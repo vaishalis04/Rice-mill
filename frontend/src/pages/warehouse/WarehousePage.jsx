@@ -8,6 +8,7 @@ import {
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import ModuleGuide from "../../components/ModuleGuide";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 // Each sub-type's own fields (besides `type`, which is added automatically)
@@ -300,6 +301,14 @@ export default function WarehousePage() {
           />
         </>
       )}
+      <ModuleGuide
+        title="Warehouse / Bin / Stack"
+        steps={[
+          "Set up your Warehouses and the Bins inside them once — after that they're just picked from a dropdown every time a Lot is unloaded.",
+          "Stacks (the physical pile in a bin) are normally opened automatically when a Lot is created — manual entry here is only for corrections.",
+          "The Stock tab shows a live snapshot of what's actually sitting in each warehouse right now.",
+        ]}
+      />
     </div>
   );
 }

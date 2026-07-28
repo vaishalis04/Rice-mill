@@ -7,6 +7,7 @@ import {
   getFinishedGoodsApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
+import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
@@ -255,6 +256,14 @@ export default function DispatchPage() {
               </div>
             ),
           },
+        ]}
+      />
+      <ModuleGuide
+        title="Dispatch"
+        steps={[
+          "Pick a confirmed Sales Order, a Vehicle and Driver, then tick which 'ready' Finished Goods records to allocate to this delivery.",
+          "Submitting generates a challan number, flips those FG rows to 'dispatched', and marks the sales order dispatched too.",
+          "Download the Challan PDF to hand to the driver, and mark it Delivered once it's confirmed at the customer's end.",
         ]}
       />
     </div>
