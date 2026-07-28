@@ -17,6 +17,7 @@ import TransportDashboard from "../pages/dashboards/TransportDashboard";
 import HrDashboard from "../pages/dashboards/HrDashboard";
 import GateDashboard from "../pages/dashboards/GateDashboard";
 import ProductionDashboard from "../pages/dashboards/ProductionDashboard";
+import DispatchDashboard from "../pages/dashboards/DispatchDashboard";
 
 export default function AppRoutes() {
   return (
@@ -68,7 +69,7 @@ export default function AppRoutes() {
       <Route
         path="/sales/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.SALES]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.Sales]}>
             <SalesDashboard />
           </ProtectedRoute>
         }
@@ -116,8 +117,16 @@ export default function AppRoutes() {
       <Route
         path="/production/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.production]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.PRODUCTION]}>
             <ProductionDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/dispatch/dashboard"
+        element={
+          <ProtectedRoute allowedRoles={[ROLE_ID.DISPATCH]}>
+            <DispatchDashboard />
           </ProtectedRoute>
         }
       />

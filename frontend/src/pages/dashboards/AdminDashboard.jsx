@@ -2,10 +2,12 @@ import { useState } from "react";
 import DashboardLayout from "./DashboardLayout";
 import MasterSettingsPage from "../admin/MasterSettingsPage";
 import VehiclesDriversPage from "../admin/VehiclesDriversPage";
+import ReportsPage from "../admin/ReportsPage";
 
 const TABS = [
   { key: "master", label: "Master Settings" },
   { key: "vehicles", label: "Vehicles & Drivers" },
+  { key: "reports", label: "Reports" },
 ];
 
 export default function AdminDashboard() {
@@ -27,6 +29,7 @@ export default function AdminDashboard() {
 
       {tab === "master" && <MasterSettingsPage />}
       {tab === "vehicles" && <VehiclesDriversPage />}
+      {tab === "reports" && <ReportsPage />}
     </DashboardLayout>
   );
 }

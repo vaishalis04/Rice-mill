@@ -175,6 +175,121 @@ export const deleteNegotiationApi = (id) =>
 
 // ---------------- Add more sections below as your backend grows ----------
 
+// ---------------- CUSTOMERS (role: sales) ----------------
+export const createCustomerApi = (data) =>
+  axiosInstance.post("/customers", data);
+
+export const getCustomersApi = (params = {}) =>
+  axiosInstance.get("/customers", { params });
+
+export const getCustomerByIdApi = (id) => axiosInstance.get(`/customers/${id}`);
+
+export const updateCustomerApi = (id, data) =>
+  axiosInstance.put(`/customers/${id}`, data);
+
+export const deleteCustomerApi = (id) =>
+  axiosInstance.delete(`/customers/${id}`); // soft delete
+
+// ---------------- SALES ORDERS (role: sales) ----------------
+// Books immediately as so_status: "confirmed" and generates a so_no.
+export const createSalesOrderApi = (data) =>
+  axiosInstance.post("/sales-orders", data);
+
+export const getSalesOrdersApi = (params = {}) =>
+  axiosInstance.get("/sales-orders", { params });
+
+export const getSalesOrderByIdApi = (id) =>
+  axiosInstance.get(`/sales-orders/${id}`);
+
+export const updateSalesOrderApi = (id, data) =>
+  axiosInstance.put(`/sales-orders/${id}`, data);
+
+export const deleteSalesOrderApi = (id) =>
+  axiosInstance.delete(`/sales-orders/${id}`); // soft delete
+
+// ---------------- DISPATCH (role: dispatch) ----------------
+// Every id in finished_goods_ids must be fg_status: "ready" — a 400 lists
+// any that aren't. On success those FG rows flip to "dispatched", the SO
+// flips to "dispatched", and a challan_no is generated.
+export const createDispatchApi = (data) =>
+  axiosInstance.post("/dispatches", data);
+
+export const getDispatchesApi = (params = {}) =>
+  axiosInstance.get("/dispatches", { params });
+
+export const getDispatchByIdApi = (id) => axiosInstance.get(`/dispatches/${id}`);
+
+export const updateDispatchApi = (id, data) =>
+  axiosInstance.put(`/dispatches/${id}`, data); // e.g. { dispatch_status: "delivered" }
+
+export const deleteDispatchApi = (id) =>
+  axiosInstance.delete(`/dispatches/${id}`); // soft delete
+
+// Binary PDF — responseType "blob" so axios doesn't try to JSON-parse it.
+// Pair with a small helper in the page to trigger a browser download.
+export const getDispatchChallanPdfApi = (id) =>
+  axiosInstance.get(`/dispatches/${id}/challan`, { responseType: "blob" });
+
+// ---------------- DASHBOARD (any logged-in role) ----------------
+export const getDashboardKpisApi = () => axiosInstance.get("/dashboard/kpis");
+
+export const getDailyIntakeTrendApi = (days) =>
+  axiosInstance.get("/dashboard/daily-intake-trend", {
+    params: days ? { days } : {},
+  });
+
+// ---------------- REPORTS (role: admin) ----------------
+export const getGateRegisterReportApi = (params = {}) =>
+  axiosInstance.get("/reports/gate-register", { params });
+
+export const getProductionSummaryReportApi = (params = {}) =>
+  axiosInstance.get("/reports/production-summary", { params });
+
+// ---------------- PACKING (role: production) ----------------
+// Precondition: batch_id must belong to a Production Batch that's finished
+// length_grading (batch_status: "completed"), else a 400 comes back.
+export const getGradedOutputsApi = (batch_id) =>
+  axiosInstance.get(`/packing/graded-outputs/${batch_id}`);
+
+export const createPackingApi = (data) =>
+  axiosInstance.post("/packing", data); // response includes both packing + finishedGoods
+
+export const getPackingsApi = (params = {}) =>
+  axiosInstance.get("/packing", { params });
+
+export const getPackingByIdApi = (id) => axiosInstance.get(`/packing/${id}`);
+
+export const updatePackingApi = (id, data) =>
+  axiosInstance.put(`/packing/${id}`, data);
+
+export const deletePackingApi = (id) =>
+  axiosInstance.delete(`/packing/${id}`); // soft delete
+
+// ---------------- FINISHED GOODS (role: warehouse) ----------------
+// Rows are normally created automatically by POST /packing — manual
+// create/delete exist but are rare.
+export const getFinishedGoodsApi = (params = {}) =>
+  axiosInstance.get("/finished-goods", { params });
+
+export const getFinishedGoodByIdApi = (id) =>
+  axiosInstance.get(`/finished-goods/${id}`);
+
+// e.g. { fg_status: "dispatched" | "hold" | "ready" }. Setting "ready" on a
+// row that wasn't already ready resets ready_since (restarts aging clock).
+export const updateFinishedGoodApi = (id, data) =>
+  axiosInstance.put(`/finished-goods/${id}`, data);
+
+export const createFinishedGoodApi = (data) =>
+  axiosInstance.post("/finished-goods", data); // rare — manual override
+
+export const deleteFinishedGoodApi = (id) =>
+  axiosInstance.delete(`/finished-goods/${id}`); // soft delete
+
+// Runs the same sweep as the nightly 00:30 cron: flips any "ready" row
+// older than 30 days to "aging". Lets you test aging on demand.
+export const flagAgingApi = () =>
+  axiosInstance.post("/finished-goods/flag-aging");
+
 // ---------------- MACHINES (role: production) ----------------
 // Fronts three tables via `type`: master (default) | log (read-only) | maintenance
 export const getMachinesApi = (params = {}) =>

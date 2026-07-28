@@ -5,7 +5,11 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Order booking, allocation (Module 18)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
+<<<<<<< HEAD
 router.use(verifyAccessToken, attachUser, authorize("sales","admin","gate","warehouse","lab")); // Protected routes
+=======
+router.use(verifyAccessToken, attachUser, authorize("Sales"));
+>>>>>>> 46b2f643364081a7c6d365a09f3d10eb849c3470
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

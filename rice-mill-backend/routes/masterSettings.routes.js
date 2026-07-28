@@ -5,7 +5,11 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Org / plant / UOM / variety / rate / reason-code masters (Module 25)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
+<<<<<<< HEAD
 router.use(verifyAccessToken, attachUser, authorize("admin","production","warehouse","gate","dispatch","sales","lab","purchase")); // Protected routes
+=======
+router.use(verifyAccessToken, attachUser, authorize("admin","Sales","Purchase","Warehouse","Quality","Lab","Gate","Transport","Production","Dispatch"));
+>>>>>>> 46b2f643364081a7c6d365a09f3d10eb849c3470
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);
