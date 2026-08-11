@@ -23,6 +23,12 @@ const detailIncludes = [
   },
   { model: Lot, as: "outputLot", attributes: ["id", "lot_no", "material_id"] },
   { model: User, as: "packer", attributes: ["id", "username", "email"] },
+  {
+    model: FinishedGoods,
+    as: "finishedGoodsRecords",
+    attributes: ["id", "warehouse_id", "qty", "fg_status"],
+    include: [{ model: WarehouseMaster, as: "warehouse", attributes: ["id", "warehouse_code", "name"] }],
+  },
 ];
 
 module.exports = {
@@ -62,7 +68,7 @@ module.exports = {
     try {
       const packing = await Packing.findOne({
         where: { id: req.params.id, is_deleted: false },
-        include: [...detailIncludes, { model: FinishedGoods, as: "finishedGoodsRecords" }],
+        include: detailIncludes,
       });
       if (!packing) throw createError(404, "Packing record not found");
       res.status(200).json({ success: true, data: packing });
@@ -175,7 +181,7 @@ module.exports = {
         created_by: req.user ? req.user.id : null,
       });
 
-      const created = await Packing.findByPk(packing.id, { include: [...detailIncludes, { model: FinishedGoods, as: "finishedGoodsRecords" }] });
+      const created = await Packing.findByPk(packing.id, { include: detailIncludes });
       res.status(201).json({
         success: true,
         msg: `Packing ${batch_no} created (barcode ${barcode}); ${qty} kg added to finished goods as 'ready'`,

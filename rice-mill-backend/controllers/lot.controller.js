@@ -16,6 +16,15 @@ const lotIncludes = [
   { model: MaterialMaster, as: "material", attributes: ["id", "material_code", "name"] },
   { model: VarietyMaster, as: "variety", attributes: ["id", "variety_name"] },
   { model: Lot, as: "parentLot", attributes: ["id", "lot_no"] },
+  {
+    model: Stack,
+    as: "stacks",
+    attributes: ["id", "warehouse_id", "bin_id", "qty"],
+    include: [
+      { model: WarehouseMaster, as: "warehouse", attributes: ["id", "warehouse_code", "name"] },
+      { model: BinStackMaster, as: "bin", attributes: ["id", "bin_code"] },
+    ],
+  },
 ];
 
 module.exports = {
@@ -92,6 +101,9 @@ module.exports = {
 
       const purchase = await Purchase.findOne({ where: { gate_entry_id, is_deleted: false } });
       if (!purchase) throw createError(400, "No finalized purchase found for this gate entry; complete the weighbridge step first");
+
+      const existingLot = await Lot.findOne({ where: { purchase_id: purchase.id, is_deleted: false } });
+      if (existingLot) throw createError(409, `A lot (${existingLot.lot_no}) already exists for this gate entry's purchase`);
 
       const warehouse = await WarehouseMaster.findOne({ where: { id: warehouse_id, is_deleted: false } });
       if (!warehouse) throw createError(400, "Invalid warehouse_id");

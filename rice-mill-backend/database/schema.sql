@@ -3,6 +3,20 @@
 -- NOTE: user.role_id and plant_master's own plant_id are intentionally NOT
 -- foreign-keyed here to avoid circular creation-order issues; add via ALTER
 -- TABLE after both tables exist if you need that constraint enforced in MySQL.
+--
+-- MIGRATION (2026-07-31): material_master.category changed from a fixed
+-- 6-value ENUM to a free-text VARCHAR(30) so new categories can be added
+-- from the app (Purchase Orders quick-add, Admin > Master Settings) instead
+-- of only the original paddy/rice/husk/bran/broken/other. If you already
+-- have a live database from before this change, run this once instead of
+-- recreating the table (existing enum values are valid strings already, so
+-- no data is lost or needs converting):
+--
+--   ALTER TABLE material_master MODIFY COLUMN category VARCHAR(30) NOT NULL;
+--
+-- Or just run `npm run db:sync` (sequelize.sync({ alter: true })) from
+-- rice-mill-backend — it reads the updated model and alters the column the
+-- same way.
 
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -106,7 +120,7 @@ CREATE TABLE `material_master` (
   `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `material_code` VARCHAR(30) NOT NULL UNIQUE,
   `name` VARCHAR(100) NOT NULL,
-  `category` ENUM('paddy', 'rice', 'husk', 'bran', 'broken', 'other') NOT NULL,
+  `category` VARCHAR(30) NOT NULL, -- free text, e.g. 'paddy'/'rice'/'husk'/'bran'/'broken'/'other' by default — not a DB-enforced enum
   `uom_id` BIGINT NULL,  -- normalized from raw "uom" string
   `variety_id` BIGINT NULL,
   `hsn_code` VARCHAR(15) NULL,

@@ -384,7 +384,10 @@ export default function PackingPage() {
           {
             key: "warehouse_id",
             label: "Warehouse",
-            render: (row) => warehouses.getLabel(row.warehouse_id),
+            render: (row) =>
+              row.finishedGoodsRecords?.[0]?.warehouse
+                ? `${row.finishedGoodsRecords[0].warehouse.name} (${row.finishedGoodsRecords[0].warehouse.warehouse_code})`
+                : "—",
           },
           { key: "pack_size", label: "Pack Size" },
           { key: "bag_count", label: "Bags" },

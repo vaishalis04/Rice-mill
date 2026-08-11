@@ -18,8 +18,12 @@ const TYPE_CONFIG = {
     fields: [
       { name: "warehouse_code", label: "Warehouse Code" },
       { name: "name", label: "Name" },
-      { name: "warehouse_type", label: "Warehouse Type" },
+      // Backend expects "warehouse_type" in the request body but the
+      // WarehouseMaster column — and therefore GET responses — is just
+      // "type". dbField lets Edit/table read the response correctly.
+      { name: "warehouse_type", dbField: "type", label: "Warehouse Type" },
       { name: "capacity", label: "Capacity", type: "number" },
+      { name: "location", label: "Location" },
     ],
   },
   bin: {
@@ -191,8 +195,8 @@ export default function WarehousePage() {
   const handleEdit = (row) => {
     setEditingId(row.id);
     const next = emptyFormFor(activeType);
-    Object.keys(next).forEach((key) => {
-      next[key] = row[key] ?? "";
+    config.fields.forEach((f) => {
+      next[f.name] = row[f.dbField || f.name] ?? "";
     });
     setForm(next);
   };
@@ -296,7 +300,7 @@ export default function WarehousePage() {
                     label: f.label,
                     render: (row) => lookups[f.entity].getLabel(row[f.name]),
                   }
-                : { key: f.name, label: f.label }
+                : { key: f.dbField || f.name, label: f.label }
             )}
           />
         </>

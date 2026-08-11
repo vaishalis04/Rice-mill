@@ -2,12 +2,10 @@ import { useState } from "react";
 import DashboardLayout from "./DashboardLayout";
 import SamplingPage from "../quality/SamplingPage";
 import LabTestPage from "../quality/LabTestPage";
-import WeighbridgePage from "../gate/WeighbridgePage";
 
 const TABS = [
   { key: "sampling", label: "Sampling" },
   { key: "lab-tests", label: "Lab Tests" },
-  { key: "weighbridge", label: "Weighbridge" },
 ];
 
 export default function QualityDashboard() {
@@ -29,7 +27,6 @@ export default function QualityDashboard() {
 
       {tab === "sampling" && <SamplingPage />}
       {tab === "lab-tests" && <LabTestPage />}
-      {tab === "weighbridge" && <WeighbridgePage />}
     </DashboardLayout>
   );
 }

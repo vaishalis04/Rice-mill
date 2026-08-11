@@ -13,13 +13,18 @@ import { ENTITY_OPTIONS } from "../config/entityOptions";
  *   const vehicles = useEntityLookup("vehicle");
  *   ...
  *   { key: "vehicle_id", label: "Vehicle", render: (row) => vehicles.getLabel(row.vehicle_id) }
+ *
+ * Returns `refetch()` too — call it after a sibling <EntitySelect creatable
+ * onCreated={...}> on the same page adds a new row via quick-create, so
+ * table columns using this lookup show the real label right away instead
+ * of a "#id" fallback until the page is next reloaded.
  */
 export function useEntityLookup(entity) {
   const config = ENTITY_OPTIONS[entity];
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = () => {
     let alive = true;
     setLoading(true);
     config
@@ -36,8 +41,11 @@ export function useEntityLookup(entity) {
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entity]);
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(load, [entity]);
+  const refetch = () => load();
 
   const getLabel = (id) => {
     if (id === null || id === undefined || id === "") return "—";
@@ -46,5 +54,5 @@ export function useEntityLookup(entity) {
     return loading ? "…" : `#${id}`;
   };
 
-  return { getLabel, loading, rows };
+  return { getLabel, loading, rows, refetch };
 }

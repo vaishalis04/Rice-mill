@@ -192,6 +192,7 @@ export default function LabTestPage() {
           value={form.variety_detected}
           onChange={(id) => setForm({ ...form, variety_detected: id })}
           required
+          creatable
         />
         <div className="sf-field">
           <label>Grain Size</label>

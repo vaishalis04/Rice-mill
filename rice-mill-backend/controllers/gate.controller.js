@@ -23,6 +23,8 @@ const detailIncludes = [
 ];
 
 // Shared existence/validity checks for the entities a gate entry references.
+// Returns the fetched rows so callers don't have to re-query (e.g. token
+// generation needs vehicle.vehicle_no right after this runs).
 const validateReferences = async ({ vehicle_id, driver_id, vendor_id, material_id, po_id }) => {
   const [vehicle, driver, vendor, material] = await Promise.all([
     Vehicle.findOne({ where: { id: vehicle_id, is_deleted: false } }),
@@ -36,13 +38,16 @@ const validateReferences = async ({ vehicle_id, driver_id, vendor_id, material_i
   if (!vendor) throw createError(400, "Invalid vendor_id");
   if (!material) throw createError(400, "Invalid material_id");
 
+  let po = null;
   if (po_id) {
-    const po = await PurchaseOrder.findOne({ where: { id: po_id, is_deleted: false } });
+    po = await PurchaseOrder.findOne({ where: { id: po_id, is_deleted: false } });
     if (!po) throw createError(400, "Invalid po_id");
     if (Number(po.vendor_id) !== Number(vendor_id)) {
       throw createError(400, "po_id does not belong to the given vendor_id");
     }
   }
+
+  return { vehicle, driver, vendor, material, po };
 };
 
 module.exports = {
@@ -110,9 +115,9 @@ module.exports = {
         throw createError(400, "vehicle_id, driver_id, vendor_id and material_id are required");
       }
 
-      await validateReferences({ vehicle_id, driver_id, vendor_id, material_id, po_id });
+      const { vehicle } = await validateReferences({ vehicle_id, driver_id, vendor_id, material_id, po_id });
 
-      const token_no = await generateTokenNo();
+      const token_no = await generateTokenNo(vehicle.vehicle_no);
 
       const entry = await GateEntry.create({
         token_no,
@@ -249,9 +254,9 @@ module.exports = {
         throw createError(400, "vehicle_id, driver_id, vendor_id and material_id are required");
       }
 
-      await validateReferences({ vehicle_id, driver_id, vendor_id, material_id, po_id });
+      const { vehicle } = await validateReferences({ vehicle_id, driver_id, vendor_id, material_id, po_id });
 
-      const token_no = await generateTokenNo();
+      const token_no = await generateTokenNo(vehicle.vehicle_no);
 
       const entry = await GateEntry.create({
         token_no,
@@ -271,6 +276,20 @@ module.exports = {
 
       const created = await GateEntry.findByPk(entry.id, { include: detailIncludes });
       res.status(201).json({ success: true, msg: "Token generated", data: created });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // POST /api/gate/upload-photo  (multipart, field name "photo") -- saves a
+  // driver photo to disk and returns its URL; driver_photo_url only ever
+  // stores this short URL, never the raw image data (the column is a
+  // VARCHAR(255), a base64 data URL would blow past that).
+  uploadPhoto: async (req, res, next) => {
+    try {
+      if (!req.file) throw createError(400, "No photo file received (field name must be 'photo')");
+      const url = `/uploads/${req.file.filename}`;
+      res.status(201).json({ success: true, msg: "Photo uploaded", data: { url } });
     } catch (err) {
       next(err);
     }

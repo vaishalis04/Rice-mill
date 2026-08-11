@@ -100,6 +100,23 @@ export default function SalesOrdersPage() {
     }
   };
 
+  // Cancel/Close were previously unreachable from the UI — the backend has
+  // always supported these statuses via PUT, nothing ever called it with
+  // them. Cancel only makes sense before goods have moved (pending/confirmed);
+  // Close is a manual "this order is fully settled" step taken after dispatch.
+  const handleStatusChange = async (row, newStatus) => {
+    const verb = newStatus === "cancelled" ? "cancel" : "close";
+    if (!window.confirm(`Are you sure you want to ${verb} ${row.so_no}?`)) return;
+    setError("");
+    try {
+      await updateSalesOrderApi(row.id, { so_status: newStatus });
+      setInfo(`${row.so_no} marked ${newStatus}.`);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.message || `Failed to mark order ${newStatus}`);
+    }
+  };
+
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>Sales Orders</h2>
@@ -217,6 +234,24 @@ export default function SalesOrdersPage() {
             key: "so_status",
             label: "Status",
             render: (row) => <span className="dt-badge">{row.so_status}</span>,
+          },
+          {
+            key: "lifecycle_actions",
+            label: "",
+            render: (row) => (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {["pending", "confirmed"].includes(row.so_status) && (
+                  <button className="dt-btn" onClick={() => handleStatusChange(row, "cancelled")}>
+                    Cancel
+                  </button>
+                )}
+                {row.so_status === "dispatched" && (
+                  <button className="dt-btn" onClick={() => handleStatusChange(row, "closed")}>
+                    Close
+                  </button>
+                )}
+              </div>
+            ),
           },
         ]}
       />

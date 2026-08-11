@@ -212,7 +212,7 @@ async function upsertUser({ username, email, role_id, plant_id }) {
     console.log("\n=== Golden path: full cycle (accepted) ===");
 
     console.log("→ Gate entry (check-in)...");
-    const token_no = await generateTokenNo();
+    const token_no = await generateTokenNo(vehicle1.vehicle_no);
     const gate1 = await GateEntry.create({
       token_no,
       vehicle_id: vehicle1.id,
@@ -493,7 +493,7 @@ async function upsertUser({ username, email, role_id, plant_id }) {
     // GOLDEN PATH #2 (short) — a rejected lab verdict, for KPI/report variety
     // =================================================================
     console.log("\n=== Extra: rejected lab verdict cycle ===");
-    const token_no2 = await generateTokenNo();
+    const token_no2 = await generateTokenNo(vehicle2.vehicle_no);
     const gate2 = await GateEntry.create({
       token_no: token_no2,
       vehicle_id: vehicle2.id,
@@ -537,7 +537,7 @@ async function upsertUser({ username, email, role_id, plant_id }) {
     // GOLDEN PATH #3 (partial) — still at the gate, for trucks_at_gate KPI
     // =================================================================
     console.log("\n=== Extra: truck still waiting at gate ===");
-    const token_no3 = await generateTokenNo();
+    const token_no3 = await generateTokenNo(vehicle1.vehicle_no);
     await GateEntry.create({
       token_no: token_no3,
       vehicle_id: vehicle1.id,

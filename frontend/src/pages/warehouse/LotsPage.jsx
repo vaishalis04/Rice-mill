@@ -66,6 +66,7 @@ export default function LotsPage() {
       setInfo(`Lot created${lotNo ? ` (${lotNo})` : ""} — stack and inventory opened.`);
       setForm(emptyForm);
       setShowOptional(false);
+      gateEntries.refetch();
       load();
     } catch (err) {
       setError(
@@ -91,6 +92,7 @@ export default function LotsPage() {
     try {
       await routeLotApi(id, destination);
       setInfo(`Lot routed to ${destination} — linked gate entry moved to unloaded.`);
+      gateEntries.refetch();
       load();
     } catch (err) {
       setError(err.response?.data?.message || "Routing failed");
@@ -165,6 +167,7 @@ export default function LotsPage() {
               label="Variety"
               value={form.variety_id}
               onChange={(id) => setForm({ ...form, variety_id: id })}
+              creatable
             />
           </>
         )}
@@ -185,17 +188,23 @@ export default function LotsPage() {
           {
             key: "gate_entry_id",
             label: "Gate Entry",
-            render: (row) => gateEntries.getLabel(row.gate_entry_id),
+            render: (row) =>
+              row.purchase?.gate_entry_id
+                ? gateEntries.getLabel(row.purchase.gate_entry_id)
+                : "—",
           },
           {
             key: "warehouse_id",
             label: "Warehouse",
-            render: (row) => warehouses.getLabel(row.warehouse_id),
+            render: (row) =>
+              row.stacks?.[0]?.warehouse
+                ? `${row.stacks[0].warehouse.name} (${row.stacks[0].warehouse.warehouse_code})`
+                : "—",
           },
           {
             key: "bin_id",
             label: "Bin",
-            render: (row) => bins.getLabel(row.bin_id),
+            render: (row) => row.stacks?.[0]?.bin?.bin_code || "—",
           },
           { key: "qty", label: "Qty" },
           {

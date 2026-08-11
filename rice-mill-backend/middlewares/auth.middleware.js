@@ -38,7 +38,7 @@ const attachUser = async (req, res, next) => {
   const authorize = (...roles) => (req, res, next) => {
   if (!req.user) return next(createError.Unauthorized());
   const userRole = req.user.role?.role_name;
-  if (!userRole || !roles.includes(userRole)) {
+  if (!userRole || !roles.map(r => r.toLowerCase()).includes(userRole.toLowerCase())) {
     return next(createError.Forbidden("Access denied: insufficient permissions"));
   }
   next();

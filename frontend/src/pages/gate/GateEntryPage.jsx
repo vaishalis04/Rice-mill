@@ -4,10 +4,12 @@ import {
   generateGateTokenApi,
   gateCheckinApi,
   gateCheckoutApi,
+  uploadGatePhotoApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
+import CameraCapture from "../../components/CameraCapture";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyForm = {
@@ -24,16 +26,13 @@ const emptyForm = {
 const STATUS_FILTERS = [
   { key: "", label: "All" },
   { key: "waiting_token", label: "Waiting Token" },
-  { key: "checked_in", label: "Checked In" },
-  { key: "parked", label: "Parked" },
-  { key: "checked_out", label: "Checked Out" },
   { key: "waiting_sampling", label: "Waiting Sampling" },
   { key: "sampling_done", label: "Sampling Done" },
-  { key: "lab_accepted", label: "Lab Accepted" },
-  { key: "rejected", label: "Rejected" },
   { key: "accepted", label: "Accepted" },
+  { key: "rejected", label: "Rejected" },
   { key: "in_process", label: "In Process (Weighed)" },
-  { key: "unloaded", label: "Unloaded" },
+  { key: "parked", label: "Parked" },
+  { key: "exited", label: "Exited" },
 ];
 
 export default function GateEntryPage() {
@@ -44,7 +43,14 @@ export default function GateEntryPage() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [lastToken, setLastToken] = useState("");
-  const [photoError, setPhotoError] = useState("");
+  const [showCamera, setShowCamera] = useState(false);
+  // The captured image is shown locally (photoPreview) the instant it's
+  // taken, while it uploads in the background; form.driver_photo_url only
+  // gets set once the server confirms and hands back a real URL — that's
+  // the only thing that ever gets submitted with the gate entry.
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoUploadError, setPhotoUploadError] = useState("");
 
   const vehicles = useEntityLookup("vehicle");
   const drivers = useEntityLookup("driver");
@@ -70,21 +76,38 @@ export default function GateEntryPage() {
   // Used by EntitySelect fields — they hand back the picked row's id directly.
   const setField = (name) => (id) => setForm({ ...form, [name]: id });
 
-  // Tap the camera button → take/choose a photo → it's read into a data URL
-  // right in the browser and dropped straight into driver_photo_url. No
-  // separate upload step, no typing a URL by hand.
-  const handlePhotoCapture = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPhotoError("");
-    if (!file.type.startsWith("image/")) {
-      setPhotoError("That's not an image file — try again.");
-      return;
+  // Fired by <CameraCapture> once a frame is snapped (or a fallback file is
+  // picked, if the camera itself couldn't be opened). We show it locally
+  // right away, then upload it — driver_photo_url only gets set once that
+  // upload actually succeeds and the backend hands back a short URL.
+  const handlePhotoCaptured = async (dataUrl) => {
+    setShowCamera(false);
+    setPhotoPreview(dataUrl);
+    setPhotoUploadError("");
+    setForm((prev) => ({ ...prev, driver_photo_url: "" }));
+    setUploadingPhoto(true);
+    try {
+      const blob = await fetch(dataUrl).then((r) => r.blob());
+      const res = await uploadGatePhotoApi(blob);
+      const url = res.data.data?.url ?? res.data.url;
+      if (!url) throw new Error("Upload didn't return a URL");
+      setForm((prev) => ({ ...prev, driver_photo_url: url }));
+    } catch (err) {
+      setPhotoUploadError(
+        err.response?.data?.msg ||
+          err.response?.data?.message ||
+          err.message ||
+          "Photo upload failed — try Retake, or Clear and continue without a photo."
+      );
+    } finally {
+      setUploadingPhoto(false);
     }
-    const reader = new FileReader();
-    reader.onload = () => setForm((prev) => ({ ...prev, driver_photo_url: reader.result }));
-    reader.onerror = () => setPhotoError("Couldn't read that photo — try again.");
-    reader.readAsDataURL(file);
+  };
+
+  const handleClearPhoto = () => {
+    setPhotoPreview("");
+    setPhotoUploadError("");
+    setForm((prev) => ({ ...prev, driver_photo_url: "" }));
   };
 
   const handleGenerateToken = async (e) => {
@@ -92,6 +115,10 @@ export default function GateEntryPage() {
     setError("");
     setInfo("");
     setLastToken("");
+    if (uploadingPhoto) {
+      setError("The driver photo is still uploading — wait a moment and try again.");
+      return;
+    }
     try {
       const payload = {
         ...form,
@@ -111,9 +138,11 @@ export default function GateEntryPage() {
           : "Entry saved (check the list below for the token number)."
       );
       setForm(emptyForm);
+      setPhotoPreview("");
+      setPhotoUploadError("");
       load();
     } catch (err) {
-      setError(err.response?.data?.message || "Failed to generate token");
+      setError(err.response?.data?.msg || err.response?.data?.message || "Failed to generate token");
     }
   };
 
@@ -123,7 +152,7 @@ export default function GateEntryPage() {
       await gateCheckinApi(id);
       load();
     } catch (err) {
-      setError(err.response?.data?.message || "Check-in failed");
+      setError(err.response?.data?.msg || err.response?.data?.message || "Check-in failed");
     }
   };
 
@@ -133,7 +162,7 @@ export default function GateEntryPage() {
       await gateCheckoutApi(id);
       load();
     } catch (err) {
-      setError(err.response?.data?.message || "Check-out failed");
+      setError(err.response?.data?.msg || err.response?.data?.message || "Check-out failed");
     }
   };
 
@@ -238,9 +267,9 @@ export default function GateEntryPage() {
         <div className="sf-field">
           <label>Driver Photo</label>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {form.driver_photo_url ? (
+            {photoPreview ? (
               <img
-                src={form.driver_photo_url}
+                src={photoPreview}
                 alt="Driver"
                 style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: "1px solid #cbd5e1" }}
               />
@@ -255,33 +284,37 @@ export default function GateEntryPage() {
                 }}
               />
             )}
-            <label className="dt-btn" style={{ cursor: "pointer", margin: 0 }}>
-              📷 {form.driver_photo_url ? "Retake" : "Take Photo"}
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                onChange={handlePhotoCapture}
-                style={{ display: "none" }}
-              />
-            </label>
-            {form.driver_photo_url && (
-              <button
-                type="button"
-                className="dt-btn dt-btn-danger"
-                onClick={() => setForm((prev) => ({ ...prev, driver_photo_url: "" }))}
-              >
+            <button
+              type="button"
+              className="dt-btn"
+              style={{ cursor: "pointer", margin: 0 }}
+              onClick={() => setShowCamera(true)}
+            >
+              📷 {photoPreview ? "Retake" : "Take Photo"}
+            </button>
+            {photoPreview && (
+              <button type="button" className="dt-btn dt-btn-danger" onClick={handleClearPhoto}>
                 Clear
               </button>
             )}
           </div>
-          {photoError && <p className="field-hint" style={{ color: "#dc2626" }}>{photoError}</p>}
+          {uploadingPhoto && <p className="field-hint">Uploading photo…</p>}
+          {photoUploadError && (
+            <p className="field-hint" style={{ color: "#dc2626" }}>{photoUploadError}</p>
+          )}
           <p className="field-hint">Optional — a quick photo of the driver for the record.</p>
         </div>
-        <button className="sf-submit" type="submit">
-          Generate Token
+        <button className="sf-submit" type="submit" disabled={uploadingPhoto}>
+          {uploadingPhoto ? "Uploading photo…" : "Generate Token"}
         </button>
       </form>
+
+      {showCamera && (
+        <CameraCapture
+          onCapture={handlePhotoCaptured}
+          onClose={() => setShowCamera(false)}
+        />
+      )}
 
       <h3>Entries</h3>
       <div className="section-tabs">
@@ -331,7 +364,7 @@ export default function GateEntryPage() {
                     Check-in
                   </button>
                 )}
-                {row.gate_status === "checked_in" && (
+                {row.gate_status !== "waiting_token" && row.gate_status !== "exited" && (
                   <button className="dt-btn" onClick={() => handleCheckout(row.id)}>
                     Check-out
                   </button>
@@ -346,7 +379,7 @@ export default function GateEntryPage() {
         steps={[
           "Fill in the Generate Token form when a truck arrives — vehicle, driver, vendor, material and PO. Anything not already registered can be added on the spot with '+ Add new'.",
           "Submitting prints a token number for the driver, and the entry starts at status 'waiting_token'.",
-          "Check-in when the truck actually enters the yard, Check-out when it's done and leaving that stage.",
+          "Check-in when the truck actually enters the yard — this moves it into the sampling queue. Check-out is available any time after that, for whenever the truck physically leaves the premises (it doesn't have to wait for the full journey to finish).",
           "From here the entry flows forward automatically: Quality samples and tests it, Weighbridge weighs it, then Warehouse unloads it into a Lot.",
           "Use the status tabs above the list to see entries at any stage of that journey.",
         ]}

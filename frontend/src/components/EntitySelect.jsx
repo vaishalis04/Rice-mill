@@ -22,6 +22,11 @@ import "./EntitySelect.css";
  * ENTITY_OPTIONS[entity].quickCreate is configured. If that entity's
  * quickCreate declares `requiresContext` (e.g. purchase_order needs a
  * vendor + material already chosen), pass those values in via `context`.
+ *
+ * Pass `onCreated(newRow)` to be notified when the quick-create panel adds a
+ * new row — e.g. a sibling `useEntityLookup(entity)` on the same page can
+ * refetch so labels elsewhere on the page (table columns, other dropdowns)
+ * pick up the new record immediately instead of on next page load.
  */
 export default function EntitySelect({
   entity,
@@ -34,6 +39,7 @@ export default function EntitySelect({
   disabled = false,
   creatable = false,
   context = {},
+  onCreated,
 }) {
   const config = ENTITY_OPTIONS[entity];
   const [options, setOptions] = useState([]);
@@ -156,6 +162,15 @@ export default function EntitySelect({
             payload[f.name] = Number(payload[f.name]);
           }
         });
+      // "combo" fields (e.g. Material category) are free-typed but should
+      // still be a clean, consistent key — trim + lowercase before saving.
+      quickCreate.fields
+        .filter((f) => f.type === "combo")
+        .forEach((f) => {
+          if (typeof payload[f.name] === "string") {
+            payload[f.name] = payload[f.name].trim().toLowerCase();
+          }
+        });
       let newRow = await quickCreate.create(payload, context);
 
       // Defensive: if the backend's create response isn't shaped the way
@@ -184,13 +199,19 @@ export default function EntitySelect({
       }
 
       onChange(newRow.id);
+      onCreated?.(newRow);
       setCreating(false);
       setCreateValues({});
       setQuery("");
       setOpen(false);
     } catch (err) {
+      // Backend error responses use { success:false, msg: "..." } (see
+      // app.js's global error handler), not `message` — check `msg` first
+      // so the real validation reason (e.g. "Invalid category") reaches
+      // the user instead of a generic axios error string.
       setCreateError(
-        err.response?.data?.message ||
+        err.response?.data?.msg ||
+          err.response?.data?.message ||
           err.message ||
           "Couldn't create — check the details"
       );
@@ -243,14 +264,60 @@ export default function EntitySelect({
                       {f.label}
                       {f.required ? " *" : ""}
                     </label>
-                    <input
-                      type={f.type === "number" ? "number" : f.type || "text"}
-                      value={createValues[f.name] ?? ""}
-                      onChange={(e) =>
-                        handleCreateFieldChange(f.name, e.target.value)
-                      }
-                      autoFocus={f === quickCreate.fields[0]}
-                    />
+                    {f.type === "select" ? (
+                      <select
+                        value={createValues[f.name] ?? ""}
+                        onChange={(e) =>
+                          handleCreateFieldChange(f.name, e.target.value)
+                        }
+                        autoFocus={f === quickCreate.fields[0]}
+                      >
+                        <option value="">
+                          {f.placeholder || `Select ${f.label}…`}
+                        </option>
+                        {f.options.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : f.type === "combo" ? (
+                      <>
+                        <input
+                          type="text"
+                          list={`es-combo-${entity}-${f.name}`}
+                          value={createValues[f.name] ?? ""}
+                          placeholder={f.placeholder || `Pick or type a new ${f.label.toLowerCase()}…`}
+                          onChange={(e) =>
+                            handleCreateFieldChange(f.name, e.target.value)
+                          }
+                          autoFocus={f === quickCreate.fields[0]}
+                        />
+                        <datalist id={`es-combo-${entity}-${f.name}`}>
+                          {f.options.map((opt) => (
+                            <option key={opt} value={opt} />
+                          ))}
+                        </datalist>
+                      </>
+                    ) : f.type === "entity" ? (
+                      <EntitySelect
+                        entity={f.entity}
+                        value={createValues[f.name] ?? ""}
+                        onChange={(id) => handleCreateFieldChange(f.name, id)}
+                        required={f.required}
+                        creatable={f.creatable}
+                        placeholder={f.placeholder}
+                      />
+                    ) : (
+                      <input
+                        type={f.type === "number" ? "number" : f.type || "text"}
+                        value={createValues[f.name] ?? ""}
+                        onChange={(e) =>
+                          handleCreateFieldChange(f.name, e.target.value)
+                        }
+                        autoFocus={f === quickCreate.fields[0]}
+                      />
+                    )}
                   </div>
                 ))}
                 {createError && <div className="es-msg es-msg-error">{createError}</div>}

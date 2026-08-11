@@ -61,12 +61,21 @@ const validateAndBuildPayload = async (type, body, { isUpdate = false, existing 
   }
 
   if (type === "material") {
-    const { material_code, name, category, uom_id, variety_id, hsn_code, plant_id } = body;
+    // eslint-disable-next-line prefer-const
+    let { material_code, name, category, uom_id, variety_id, hsn_code, plant_id } = body;
     if (!isUpdate && (!material_code || !name || !category)) {
       throw createError(400, "material_code, name and category are required");
     }
-    if (category && !["paddy", "rice", "husk", "bran", "broken", "other"].includes(category)) {
-      throw createError(400, "Invalid category");
+    // category used to be locked to a fixed 6-value enum; it's now free text
+    // so new categories can be added on the fly (Purchase Orders quick-add,
+    // Admin > Master Settings). Still required + normalized (trimmed,
+    // lowercased) so it stays a short, consistent, comparable key — and so
+    // it still matches the literal "husk" / "bran" / "broken" strings
+    // production.controller.js's writeByProduct() looks up by category.
+    if (category) {
+      category = String(category).trim().toLowerCase();
+      if (!category) throw createError(400, "category cannot be blank");
+      if (category.length > 30) throw createError(400, "category must be 30 characters or fewer");
     }
     if (material_code) {
       const dup = await MaterialMaster.findOne({ where: { material_code, ...(existing ? { id: { [Op.ne]: existing.id } } : {}) } });

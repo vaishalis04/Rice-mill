@@ -1,6 +1,6 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
-const { Customer } = require("../models/index");
+const { Customer, SalesOrder, Dispatch, MaterialMaster, Vehicle, Driver } = require("../models/index");
 
 // Customer master incl. by-product buyers
 module.exports = {
@@ -33,6 +33,59 @@ module.exports = {
         success: true,
         data: rows,
         pagination: { total: count, page: Number(page), limit: Number(limit), totalPages: Math.ceil(count / limit) },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // GET /api/customers/:id/history
+  // One-call "customer profile" — full contact/address details plus every
+  // order they've placed and every dispatch fulfilling those orders, so
+  // Dispatch and Admin can both show "who we sold to, how much, and when"
+  // without stitching together multiple screens.
+  getHistory: async (req, res, next) => {
+    try {
+      const customer = await Customer.findOne({ where: { id: req.params.id, is_deleted: false } });
+      if (!customer) throw createError(404, "Customer not found");
+
+      const salesOrders = await SalesOrder.findAll({
+        where: { customer_id: customer.id, is_deleted: false },
+        include: [{ model: MaterialMaster, as: "material", attributes: ["id", "material_code", "name"] }],
+        order: [["order_date", "DESC"]],
+      });
+
+      const dispatches = await Dispatch.findAll({
+        where: { is_deleted: false },
+        include: [
+          {
+            model: SalesOrder,
+            as: "salesOrder",
+            where: { customer_id: customer.id },
+            attributes: ["id", "so_no"],
+          },
+          { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
+          { model: Driver, as: "driver", attributes: ["id", "name"] },
+        ],
+        order: [["created_at", "DESC"]],
+      });
+
+      const totalOrderedQty = salesOrders.reduce((sum, so) => sum + Number(so.qty || 0), 0);
+      const totalDispatchedQty = dispatches.reduce((sum, d) => sum + Number(d.dispatch_weight || 0), 0);
+
+      res.status(200).json({
+        success: true,
+        data: {
+          customer,
+          salesOrders,
+          dispatches,
+          summary: {
+            orderCount: salesOrders.length,
+            dispatchCount: dispatches.length,
+            totalOrderedQty,
+            totalDispatchedQty,
+          },
+        },
       });
     } catch (err) {
       next(err);

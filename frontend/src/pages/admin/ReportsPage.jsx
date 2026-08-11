@@ -113,10 +113,10 @@ function GateRegisterTab() {
         columns={[
           { key: "token_no", label: "Token No." },
           { key: "entry_time", label: "Entry Time" },
-          { key: "vehicle_no", label: "Vehicle" },
-          { key: "driver_name", label: "Driver" },
-          { key: "vendor_name", label: "Vendor" },
-          { key: "material_name", label: "Material" },
+          { key: "vehicle", label: "Vehicle", render: (row) => row.vehicle?.vehicle_no || "—" },
+          { key: "driver", label: "Driver", render: (row) => row.driver?.name || "—" },
+          { key: "vendor", label: "Vendor", render: (row) => row.vendor?.name || "—" },
+          { key: "material", label: "Material", render: (row) => row.material?.name || "—" },
           { key: "gate_status", label: "Status" },
         ]}
       />

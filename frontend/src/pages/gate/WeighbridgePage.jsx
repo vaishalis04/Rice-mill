@@ -81,6 +81,7 @@ export default function WeighbridgePage() {
         setInfo(
           "Weight slip created — net weight computed, purchase finalized, gate entry moved to in_process."
         );
+        gateEntries.refetch();
       }
       setForm(emptyForm);
       setEditingId(null);
@@ -147,7 +148,7 @@ export default function WeighbridgePage() {
           />
         </div>
         <div className="sf-field">
-          <label>Gross Weight</label>
+          <label>Gross Weight (truck + load)</label>
           <input
             name="gross_weight"
             type="number"
@@ -157,7 +158,7 @@ export default function WeighbridgePage() {
           />
         </div>
         <div className="sf-field">
-          <label>Tare Weight</label>
+          <label>Tare Weight (empty truck — must be less than gross)</label>
           <input
             name="tare_weight"
             type="number"

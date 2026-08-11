@@ -1,10 +1,12 @@
 const createError = require("http-errors");
-const { Sampling, LabTest, GateEntry, VarietyMaster, User } = require("../models/index");
+const { Sampling, LabTest, GateEntry, VarietyMaster, User, Negotiation, PurchaseOrder } = require("../models/index");
 
 // Lab test parameters & verdicts (Module 6)
 // verdict = 'accepted'   -> gate entry gate_status = 'accepted'
 // verdict = 'rejected'   -> gate entry gate_status = 'rejected'
-// verdict = 'negotiation' -> gate entry stays at 'sampling_done' until a Negotiation is resolved
+// verdict = 'negotiation' -> gate entry stays at 'sampling_done'; a Negotiation
+//                            record is auto-opened (see openNegotiationIfNeeded)
+//                            and resolved later by Negotiation.respond
 
 const detailIncludes = [
   {
@@ -35,6 +37,40 @@ const applyVerdictToGateEntry = async (samplingId, verdict, userId) => {
   // 'negotiation' leaves gate_status untouched; resolved later by Negotiation.respond
 
   return gateEntry;
+};
+
+// When a verdict is (re)set to 'negotiation', automatically open the
+// Negotiation record so it shows up immediately on Purchase's Negotiations
+// tab — Purchase no longer has to manually search for the lab test and
+// re-type the old rate themselves. old_rate is pulled from the linked
+// Purchase Order when one exists; proposed_rate starts equal to old_rate
+// and Purchase edits it downward via the existing "Update Proposed Rate" flow.
+// Safe to call multiple times — skips silently if one already exists.
+const openNegotiationIfNeeded = async (labTest, userId) => {
+  if (labTest.verdict !== "negotiation") return;
+
+  const existing = await Negotiation.findOne({ where: { lab_test_id: labTest.id, is_deleted: false } });
+  if (existing) return;
+
+  let oldRate = null;
+  const sampling = await Sampling.findOne({ where: { id: labTest.sampling_id, is_deleted: false } });
+  if (sampling) {
+    const gateEntry = await GateEntry.findOne({ where: { id: sampling.gate_entry_id, is_deleted: false } });
+    if (gateEntry && gateEntry.po_id) {
+      const po = await PurchaseOrder.findOne({ where: { id: gateEntry.po_id, is_deleted: false } });
+      if (po) oldRate = po.rate;
+    }
+  }
+
+  await Negotiation.create({
+    lab_test_id: labTest.id,
+    old_rate: oldRate,
+    proposed_rate: oldRate,
+    negotiated_by: userId,
+    negotiated_at: new Date(),
+    plant_id: labTest.plant_id || null,
+    created_by: userId,
+  });
 };
 
 module.exports = {
@@ -120,6 +156,7 @@ module.exports = {
         created_by: req.user ? req.user.id : null,
       });
       await applyVerdictToGateEntry(sampling_id, verdict, req.user ? req.user.id : null);
+      await openNegotiationIfNeeded(test, req.user ? req.user.id : null);
 
       const created = await LabTest.findByPk(test.id, { include: detailIncludes });
       res.status(201).json({ success: true, msg: "Lab test recorded", data: created });
@@ -171,6 +208,7 @@ module.exports = {
 
       await test.update({ verdict, updated_by: req.user ? req.user.id : null });
       const gateEntry = await applyVerdictToGateEntry(test.sampling_id, verdict, req.user ? req.user.id : null);
+      await openNegotiationIfNeeded(test, req.user ? req.user.id : null);
 
       const updated = await LabTest.findByPk(test.id, { include: detailIncludes });
       res.status(200).json({

@@ -7,6 +7,8 @@ import {
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import { useEntityLookup } from "../../hooks/useEntityLookup";
+import { GRAIN_TYPES } from "../../constants/grainTypes";
 
 // Each sub-type's own fields (besides `type`, which is added automatically)
 const TYPE_CONFIG = {
@@ -22,7 +24,7 @@ const TYPE_CONFIG = {
     label: "Variety",
     fields: [
       { name: "variety_name", label: "Variety Name" },
-      { name: "grain_type", label: "Grain Type" },
+      { name: "grain_type", label: "Grain Type", type: "select", options: GRAIN_TYPES },
     ],
   },
   material: {
@@ -30,7 +32,7 @@ const TYPE_CONFIG = {
     fields: [
       { name: "material_code", label: "Material Code" },
       { name: "name", label: "Name" },
-      { name: "category", label: "Category" },
+      { name: "category", label: "Category", type: "entity", entity: "material_category", creatable: true },
       { name: "uom_id", label: "UOM", type: "entity", entity: "uom" },
       { name: "variety_id", label: "Variety", type: "entity", entity: "variety" },
     ],
@@ -40,28 +42,53 @@ const TYPE_CONFIG = {
     fields: [
       { name: "plant_code", label: "Plant Code" },
       { name: "name", label: "Name" },
-      { name: "location", label: "Location" },
+      // Backend column is "address", not "location" — this was silently
+      // never saving/showing before since the request body key didn't
+      // match what the backend actually reads.
+      { name: "address", label: "Location" },
     ],
   },
   rate: {
     label: "Rate",
     fields: [
       { name: "material_id", label: "Material", type: "entity", entity: "material" },
-      { name: "rate", label: "Rate", type: "number" },
+      // Backend requires "base_rate", not "rate" — this was the exact
+      // cause of "material_id, base_rate and effective_date are required"
+      // even when Material/Rate/Date all looked filled in.
+      { name: "base_rate", label: "Rate", type: "number" },
       { name: "effective_date", label: "Effective Date", type: "date" },
     ],
   },
   quality_parameter: {
     label: "Quality Parameter",
     fields: [
-      { name: "param_code", label: "Param Code" },
-      { name: "name", label: "Name" },
-      { name: "uom", label: "Unit" },
+      // Backend requires "parameter_name", not "name" — that mismatch was
+      // the exact cause of "parameter_name is required". Also: there is no
+      // param_code column on this model at all (the old "Param Code" field
+      // was silently ignored on every save), and acceptable_min/max exist
+      // on the backend but were never exposed here before.
+      { name: "parameter_name", label: "Name" },
+      { name: "unit", label: "Unit" },
+      { name: "acceptable_min", label: "Acceptable Min", type: "number" },
+      { name: "acceptable_max", label: "Acceptable Max", type: "number" },
     ],
   },
   reason_code: {
     label: "Reason Code",
     fields: [
+      // category was completely missing from this form before, even
+      // though the backend requires it — that's why submitting always
+      // failed with "category and code are required" no matter what.
+      {
+        name: "category",
+        label: "Category",
+        type: "select",
+        options: [
+          { value: "rejection", label: "Rejection" },
+          { value: "downtime", label: "Downtime" },
+          { value: "waste", label: "Waste" },
+        ],
+      },
       { name: "code", label: "Code" },
       { name: "description", label: "Description" },
     ],
@@ -88,6 +115,15 @@ export default function MasterSettingsPage() {
   const [form, setForm] = useState(emptyFormFor("uom"));
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
+
+  // FK-backed entity fields across the tabs above (uom_id/variety_id on
+  // Material, material_id on Rate). material_category is excluded — its
+  // "id" is the category string itself, so it already displays correctly
+  // with no lookup needed.
+  const uoms = useEntityLookup("uom");
+  const varieties = useEntityLookup("variety");
+  const materials = useEntityLookup("material");
+  const entityLookups = { uom: uoms, variety: varieties, material: materials };
 
   const load = (type) => {
     setLoading(true);
@@ -121,7 +157,7 @@ export default function MasterSettingsPage() {
       setEditingId(null);
       load(activeType);
     } catch (err) {
-      setError(err.response?.data?.message || "Save failed");
+      setError(err.response?.data?.msg || err.response?.data?.message || "Save failed");
     }
   };
 
@@ -179,7 +215,20 @@ export default function MasterSettingsPage() {
               value={form[f.name] ?? ""}
               onChange={(id) => setForm({ ...form, [f.name]: id })}
               required
+              creatable={!!f.creatable}
             />
+          ) : f.type === "select" ? (
+            <div className="sf-field" key={f.name}>
+              <label>{f.label}</label>
+              <select name={f.name} value={form[f.name] ?? ""} onChange={handleChange} required>
+                <option value="">Select {f.label}…</option>
+                {f.options.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           ) : (
             <div className="sf-field" key={f.name}>
               <label>{f.label}</label>
@@ -211,7 +260,11 @@ export default function MasterSettingsPage() {
         rows={rows}
         onEdit={handleEdit}
         onDelete={handleDelete}
-        columns={config.fields.map((f) => ({ key: f.name, label: f.label }))}
+        columns={config.fields.map((f) =>
+          f.type === "entity" && entityLookups[f.entity]
+            ? { key: f.name, label: f.label, render: (row) => entityLookups[f.entity].getLabel(row[f.name]) }
+            : { key: f.name, label: f.label }
+        )}
       />
     </div>
   );

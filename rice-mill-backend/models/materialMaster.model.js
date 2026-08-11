@@ -8,7 +8,7 @@ MaterialMaster.init(
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
     material_code: { type: DataTypes.STRING(30), allowNull: false, unique: true },
     name: { type: DataTypes.STRING(100), allowNull: false },
-    category: { type: DataTypes.ENUM("paddy", "rice", "husk", "bran", "broken", "other"), allowNull: false },
+    category: { type: DataTypes.STRING(30), allowNull: false }, // free text — not a fixed enum; see masterSettings.controller.js for the (relaxed) validation
     uom_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "uom_master", key: "id" } }, // normalized from raw "uom" string
     variety_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "variety_master", key: "id" } },
     hsn_code: { type: DataTypes.STRING(15) },

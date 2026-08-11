@@ -14,7 +14,12 @@ const TYPE_CONFIG = {
     label: "Vehicle",
     fields: [
       { name: "vehicle_no", label: "Vehicle No." },
-      { name: "vehicle_type", label: "Vehicle Type" },
+      // Local form field is "vehicle_type" (matches what the backend's
+      // create/update actions expect in the request body), but the actual
+      // Vehicle table column — and therefore what GET responses return — is
+      // just "type". dbField lets Edit and the table read the response
+      // correctly without changing what gets submitted.
+      { name: "vehicle_type", dbField: "type", label: "Vehicle Type" },
       { name: "capacity", label: "Capacity", type: "number" },
       { name: "owner_vendor_id", label: "Owner Vendor", type: "entity", entity: "vendor" },
     ],
@@ -88,8 +93,8 @@ export default function VehiclesDriversPage() {
   const handleEdit = (row) => {
     setEditingId(row.id);
     const next = emptyFormFor(activeType);
-    Object.keys(next).forEach((key) => {
-      next[key] = row[key] ?? "";
+    config.fields.forEach((f) => {
+      next[f.name] = row[f.dbField || f.name] ?? "";
     });
     setForm(next);
   };
@@ -170,11 +175,12 @@ export default function VehiclesDriversPage() {
         rows={rows}
         onEdit={handleEdit}
         onDelete={handleDelete}
-        columns={config.fields.map((f) =>
-          f.type === "entity"
-            ? { key: f.name, label: f.label, render: (row) => vendors.getLabel(row[f.name]) }
-            : { key: f.name, label: f.label }
-        )}
+        columns={config.fields.map((f) => {
+          const dbKey = f.dbField || f.name;
+          return f.type === "entity"
+            ? { key: dbKey, label: f.label, render: (row) => vendors.getLabel(row[dbKey]) }
+            : { key: dbKey, label: f.label };
+        })}
       />
     </div>
   );

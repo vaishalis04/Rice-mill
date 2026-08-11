@@ -25,6 +25,7 @@ gate_status: {
     "accepted",
     "rejected",
     "in_process",
+    "unloaded",
     "parked",
     "exited"
   ),

@@ -2,28 +2,27 @@
 // TODO: implement as needed while building out each module.
 
 // e.g. generate sequential token numbers for Gate Entry (Module 1)
-const generateTokenNo = async () => {
+// Format: GT-<VEHICLE_NO>-0001 — sequence is per vehicle (all-time), not
+// per calendar day, so a truck's Nth visit is always token ...-000N.
+const generateTokenNo = async (vehicleNo) => {
   const { GateEntry } = require("../models/index");
   const { Op } = require("sequelize");
 
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  const datePart = `${yyyy}${mm}${dd}`;
-  const prefix = `GT-${datePart}-`;
+  // Keep the token clean/predictable even if the vehicle number was typed
+  // with spaces or hyphens (e.g. "MP09 AB 1122" -> "MP09AB1122").
+  const cleanVehicleNo = String(vehicleNo || "UNKNOWN")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  const prefix = `GT-${cleanVehicleNo}-`;
 
-  const startOfDay = new Date(yyyy, now.getMonth(), now.getDate(), 0, 0, 0, 0);
-  const endOfDay = new Date(yyyy, now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
-  const lastToday = await GateEntry.findOne({
-    where: { token_no: { [Op.like]: `${prefix}%` }, created_at: { [Op.between]: [startOfDay, endOfDay] } },
+  const lastForVehicle = await GateEntry.findOne({
+    where: { token_no: { [Op.like]: `${prefix}%` } },
     order: [["id", "DESC"]],
   });
 
   let nextSeq = 1;
-  if (lastToday) {
-    const lastSeq = parseInt(lastToday.token_no.split("-").pop(), 10);
+  if (lastForVehicle) {
+    const lastSeq = parseInt(lastForVehicle.token_no.split("-").pop(), 10);
     if (!Number.isNaN(lastSeq)) nextSeq = lastSeq + 1;
   }
 

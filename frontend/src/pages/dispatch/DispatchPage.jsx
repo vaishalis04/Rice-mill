@@ -9,6 +9,7 @@ import {
 import DataTable from "../../components/DataTable";
 import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
+import CustomerHistoryModal from "../../components/CustomerHistoryModal";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyForm = {
@@ -25,6 +26,7 @@ export default function DispatchPage() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [historyCustomerId, setHistoryCustomerId] = useState(null);
 
   // Ready finished goods available to allocate — a plain multi-select
   // checklist since EntitySelect only picks one id at a time.
@@ -93,6 +95,7 @@ export default function DispatchPage() {
       setSelectedFgIds([]);
       load();
       loadReadyFg();
+      salesOrders.refetch();
     } catch (err) {
       setError(err.response?.data?.message || "Save failed");
     }
@@ -225,6 +228,21 @@ export default function DispatchPage() {
             render: (row) => salesOrders.getLabel(row.so_id),
           },
           {
+            key: "customer",
+            label: "Customer",
+            render: (row) => row.salesOrder?.customer?.name || "—",
+          },
+          {
+            key: "address",
+            label: "Address",
+            render: (row) => row.salesOrder?.customer?.address || "—",
+          },
+          {
+            key: "qty",
+            label: "Qty",
+            render: (row) => row.salesOrder?.qty ?? "—",
+          },
+          {
             key: "vehicle_id",
             label: "Vehicle",
             render: (row) => vehicles.getLabel(row.vehicle_id),
@@ -244,7 +262,7 @@ export default function DispatchPage() {
             key: "actions2",
             label: "",
             render: (row) => (
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <button className="dt-btn" onClick={() => handleDownloadChallan(row)}>
                   Download Challan
                 </button>
@@ -253,11 +271,27 @@ export default function DispatchPage() {
                     Mark Delivered
                   </button>
                 )}
+                {row.salesOrder?.customer?.id && (
+                  <button
+                    className="dt-btn"
+                    onClick={() => setHistoryCustomerId(row.salesOrder.customer.id)}
+                  >
+                    View Customer
+                  </button>
+                )}
               </div>
             ),
           },
         ]}
       />
+
+      {historyCustomerId && (
+        <CustomerHistoryModal
+          customerId={historyCustomerId}
+          onClose={() => setHistoryCustomerId(null)}
+        />
+      )}
+
       <ModuleGuide
         title="Dispatch"
         steps={[

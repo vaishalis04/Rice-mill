@@ -5,7 +5,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // User, role & permission management (Module 26)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-// router.use(verifyAccessToken, attachUser, authorize("admin"));
+router.use(verifyAccessToken, attachUser, authorize("admin"));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

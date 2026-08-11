@@ -93,6 +93,24 @@ export const gateCheckinApi = (id) =>
 export const gateCheckoutApi = (id) =>
   axiosInstance.post("/gate/checkout", { id });
 
+// photoBlob is a Blob/File — sent as multipart form-data, field name "photo"
+// (must match uploadImage.single("photo") on the backend route). Returns
+// { data: { url } } — a short path, not the image itself; that's what goes
+// into driver_photo_url (the column is a VARCHAR(255), too small for a raw
+// base64 image).
+export const uploadGatePhotoApi = (photoBlob) => {
+  const formData = new FormData();
+  formData.append("photo", photoBlob, "driver-photo.jpg");
+  // Don't set Content-Type explicitly — axiosInstance defaults it to
+  // application/json, but a multipart upload needs the browser to set its
+  // own Content-Type (with the boundary parameter) for FormData bodies.
+  // Overriding to undefined here lets that happen instead of sending a
+  // boundary-less multipart header the backend can't parse.
+  return axiosInstance.post("/gate/upload-photo", formData, {
+    headers: { "Content-Type": undefined },
+  });
+};
+
 export const getGateEntriesApi = (status) =>
   axiosInstance.get("/gate", { params: status ? { status } : {} });
 
@@ -183,6 +201,9 @@ export const getCustomersApi = (params = {}) =>
   axiosInstance.get("/customers", { params });
 
 export const getCustomerByIdApi = (id) => axiosInstance.get(`/customers/${id}`);
+
+export const getCustomerHistoryApi = (id) =>
+  axiosInstance.get(`/customers/${id}/history`);
 
 export const updateCustomerApi = (id, data) =>
   axiosInstance.put(`/customers/${id}`, data);

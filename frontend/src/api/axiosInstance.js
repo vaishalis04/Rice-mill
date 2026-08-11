@@ -22,10 +22,20 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Auto-logout on 401 (expired/invalid token)
+// Auto-logout on 401 (expired/invalid token) + normalize error message field.
+// Backend sends errors as { success: false, msg: "..." } (see app.js's global
+// error handler), but every page's .catch() reads err.response.data.message.
+// Rather than fix that in 20+ files, we mirror msg -> message here once.
+// IMPORTANT: this file has been overwritten/reverted before — if error
+// banners across the app start showing generic fallback text again instead
+// of specific backend reasons, check this file first.
 axiosInstance.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (error.response?.data && error.response.data.message === undefined) {
+      error.response.data.message = error.response.data.msg;
+    }
+
     if (error.response?.status === 401) {
       localStorage.removeItem("token");
       localStorage.removeItem("refreshToken");

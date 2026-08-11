@@ -4,10 +4,10 @@ import {
   createPurchaseOrderApi,
   updatePurchaseOrderApi,
   deletePurchaseOrderApi,
-  convertPurchaseApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import ModuleGuide from "../../components/ModuleGuide";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyForm = {
@@ -29,13 +29,6 @@ export default function PurchaseOrdersPage() {
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
-
-  // Convert-to-purchase mini form (replaces the old window.prompt flow)
-  const [convertingPO, setConvertingPO] = useState(null);
-  const [convertForm, setConvertForm] = useState({
-    gate_entry_id: "",
-    weight_slip_id: "",
-  });
 
   const load = () => {
     setLoading(true);
@@ -106,46 +99,6 @@ export default function PurchaseOrdersPage() {
     setForm(emptyForm);
   };
 
-  // Only works once a gate entry has been weighed (weighbridge module,
-  // not built on the backend yet per the API docs) — this will show the
-  // backend's "Invalid weight_slip_id" error until that exists.
-  const openConvert = (po) => {
-    setConvertingPO(po);
-    setConvertForm({ gate_entry_id: "", weight_slip_id: "" });
-    setError("");
-    setInfo("");
-  };
-
-  const cancelConvert = () => {
-    setConvertingPO(null);
-    setConvertForm({ gate_entry_id: "", weight_slip_id: "" });
-  };
-
-  const handleConvertSubmit = async (e) => {
-    e.preventDefault();
-    if (!convertForm.gate_entry_id || !convertForm.weight_slip_id) return;
-
-    setError("");
-    setInfo("");
-    try {
-      await convertPurchaseApi({
-        gate_entry_id: Number(convertForm.gate_entry_id),
-        weight_slip_id: Number(convertForm.weight_slip_id),
-        po_id: convertingPO.id,
-        final_rate: convertingPO.rate,
-        purchase_date: new Date().toISOString().slice(0, 10),
-      });
-      setInfo("Converted to final purchase.");
-      cancelConvert();
-      load();
-    } catch (err) {
-      setError(
-        err.response?.data?.message ||
-          "Convert failed — likely no weight slip yet (weighbridge module isn't built)."
-      );
-    }
-  };
-
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>Purchase Orders</h2>
@@ -174,6 +127,8 @@ export default function PurchaseOrdersPage() {
           value={form.material_id}
           onChange={setField("material_id")}
           required
+          creatable
+          onCreated={materials.refetch}
         />
         <EntitySelect
           entity="variety"
@@ -181,6 +136,7 @@ export default function PurchaseOrdersPage() {
           value={form.variety_id}
           onChange={setField("variety_id")}
           required
+          creatable
         />
         <div className="sf-field">
           <label>Qty</label>
@@ -225,53 +181,6 @@ export default function PurchaseOrdersPage() {
         </div>
       </form>
 
-      {convertingPO && (
-        <form className="sf-form" onSubmit={handleConvertSubmit}>
-          <div className="sf-field" style={{ gridColumn: "1 / -1" }}>
-            <label>Converting PO</label>
-            <div style={{ padding: "8px 0", fontSize: "0.9rem" }}>
-              {convertingPO.po_no} — Rate {convertingPO.rate}
-            </div>
-          </div>
-          <EntitySelect
-            entity="gate_entry"
-            label="Gate Entry"
-            value={convertForm.gate_entry_id}
-            onChange={(id) =>
-              setConvertForm({ ...convertForm, gate_entry_id: id })
-            }
-            required
-          />
-          <div className="sf-field">
-            <label>Weight Slip ID</label>
-            <input
-              type="number"
-              value={convertForm.weight_slip_id}
-              onChange={(e) =>
-                setConvertForm({
-                  ...convertForm,
-                  weight_slip_id: e.target.value,
-                })
-              }
-              placeholder="Not available until weighbridge module exists"
-              required
-            />
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="sf-submit" type="submit">
-              Convert
-            </button>
-            <button
-              type="button"
-              className="sf-cancel"
-              onClick={cancelConvert}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
-
       <DataTable
         loading={loading}
         rows={orders}
@@ -292,15 +201,16 @@ export default function PurchaseOrdersPage() {
           { key: "qty", label: "Qty" },
           { key: "rate", label: "Rate" },
           { key: "po_date", label: "PO Date" },
-          {
-            key: "convert",
-            label: "Convert",
-            render: (row) => (
-              <button className="dt-btn" onClick={() => openConvert(row)}>
-                To Purchase
-              </button>
-            ),
-          },
+        ]}
+      />
+
+      <ModuleGuide
+        title="a PO becoming a final Purchase"
+        steps={[
+          "There's no manual \"Convert\" step here anymore.",
+          "Once a truck against this PO is gated in, sampled, and lab-accepted, it moves to Weighbridge.",
+          "The Gate role weighs it on the Weighbridge tab — that action automatically creates the final Purchase record.",
+          "You'll then see it reflected in Warehouse's Lots once it's stacked.",
         ]}
       />
     </div>

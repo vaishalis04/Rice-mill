@@ -16,7 +16,10 @@ const TYPE_CONFIG = {
     fields: [
       { name: "machine_code", label: "Machine Code" },
       { name: "name", label: "Name" },
-      { name: "machine_type", label: "Machine Type" },
+      // Backend expects "machine_type" in the request body but the
+      // MachineMaster column — and therefore GET responses — is just
+      // "type". dbField lets Edit/table read the response correctly.
+      { name: "machine_type", dbField: "type", label: "Machine Type" },
       { name: "capacity_per_hr", label: "Capacity / hr", type: "number" },
     ],
   },
@@ -116,8 +119,8 @@ export default function MachinesPage() {
   const handleEdit = (row) => {
     setEditingId(row.id);
     const next = emptyFormFor(activeType);
-    Object.keys(next).forEach((key) => {
-      next[key] = row[key] ?? "";
+    config.fields.forEach((f) => {
+      next[f.name] = row[f.dbField || f.name] ?? "";
     });
     setForm(next);
   };
@@ -221,7 +224,7 @@ export default function MachinesPage() {
                 label: f.label,
                 render: (row) => lookups[f.entity].getLabel(row[f.name]),
               }
-            : { key: f.name, label: f.label }
+            : { key: f.dbField || f.name, label: f.label }
         )}
       />
     </div>

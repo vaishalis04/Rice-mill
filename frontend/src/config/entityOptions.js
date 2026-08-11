@@ -30,6 +30,8 @@ import {
   getSalesOrdersApi,
   getFinishedGoodsApi,
 } from "../api/api";
+import { MATERIAL_CATEGORIES } from "../constants/materialCategories";
+import { GRAIN_TYPES } from "../constants/grainTypes";
 
 const unwrap = (res) => res.data.data ?? res.data;
 
@@ -79,16 +81,63 @@ export const ENTITY_OPTIONS = {
         createVehicleDriverApi({ type: "driver", ...values }).then(unwrap),
     },
   },
+  // Not a real backend table — category is a free-text column on
+  // material_master, not its own master. This "virtual" entity lets the
+  // Category field behave like every other EntitySelect (search + a real
+  // "+ Add new Category" option) by deriving its list from the defaults
+  // plus whatever categories already exist on saved materials.
+  material_category: {
+    fetch: () =>
+      getMasterSettingsApi("material")
+        .then(unwrap)
+        .then((materials) => {
+          const used = (materials || [])
+            .map((m) => m.category)
+            .filter(Boolean);
+          const all = Array.from(
+            new Set([...MATERIAL_CATEGORIES.map((c) => c.value), ...used])
+          );
+          return all.map((v) => ({ id: v, name: v }));
+        }),
+    getLabel: (row) => row.name.charAt(0).toUpperCase() + row.name.slice(1),
+    quickCreate: {
+      label: "Category",
+      fields: [{ name: "name", label: "Category Name", required: true }],
+      // No API call — this isn't its own table, so "creating" a category
+      // just means resolving it as a valid choice for right now. It's
+      // properly persisted the moment the parent Material is saved with
+      // this category value.
+      create: (values) => {
+        const v = String(values.name || "").trim().toLowerCase();
+        if (!v) return Promise.reject(new Error("Category name is required"));
+        return Promise.resolve({ id: v, name: v });
+      },
+    },
+  },
+
   material: {
     fetch: () => getMasterSettingsApi("material").then(unwrap),
     getLabel: (row) =>
       `${row.name}${row.material_code ? ` (${row.material_code})` : ""}`,
     quickCreate: {
       label: "Material",
+      // material_code, name and category are all required by the backend
+      // (controllers/masterSettings.controller.js — validateAndBuildPayload
+      // for type "material"). category is a free-text field on the
+      // backend (see materialMaster.model.js) rather than a locked enum,
+      // so it's its own "material_category" entity here — giving it the
+      // same "+ Add new Category" pattern Material itself has.
       fields: [
         { name: "name", label: "Name", required: true },
-        { name: "material_code", label: "Material Code" },
-        { name: "category", label: "Category" },
+        { name: "material_code", label: "Material Code", required: true },
+        {
+          name: "category",
+          label: "Category",
+          type: "entity",
+          entity: "material_category",
+          required: true,
+          creatable: true,
+        },
       ],
       create: (values) =>
         createMasterSettingApi({ type: "material", ...values }).then(unwrap),
@@ -97,6 +146,24 @@ export const ENTITY_OPTIONS = {
   variety: {
     fetch: () => getMasterSettingsApi("variety").then(unwrap),
     getLabel: (row) => row.variety_name,
+    quickCreate: {
+      label: "Variety",
+      // Both required by the backend (controllers/masterSettings.controller.js,
+      // type "variety"); variety_name must also be unique or the create call
+      // is rejected with 409.
+      fields: [
+        { name: "variety_name", label: "Variety Name", required: true },
+        {
+          name: "grain_type",
+          label: "Grain Type",
+          type: "select",
+          required: true,
+          options: GRAIN_TYPES,
+        },
+      ],
+      create: (values) =>
+        createMasterSettingApi({ type: "variety", ...values }).then(unwrap),
+    },
   },
   uom: {
     fetch: () => getMasterSettingsApi("uom").then(unwrap),

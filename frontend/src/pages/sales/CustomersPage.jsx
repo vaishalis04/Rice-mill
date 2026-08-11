@@ -6,6 +6,7 @@ import {
   deleteCustomerApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
+import CustomerHistoryModal from "../../components/CustomerHistoryModal";
 
 const emptyForm = {
   customer_code: "",
@@ -22,6 +23,7 @@ export default function CustomersPage() {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
+  const [historyId, setHistoryId] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -150,8 +152,21 @@ export default function CustomersPage() {
           { key: "gstin", label: "GSTIN" },
           { key: "customer_type", label: "Type" },
           { key: "credit_limit", label: "Credit Limit" },
+          {
+            key: "history",
+            label: "",
+            render: (row) => (
+              <button className="dt-btn" onClick={() => setHistoryId(row.id)}>
+                History
+              </button>
+            ),
+          },
         ]}
       />
+
+      {historyId && (
+        <CustomerHistoryModal customerId={historyId} onClose={() => setHistoryId(null)} />
+      )}
     </div>
   );
 }

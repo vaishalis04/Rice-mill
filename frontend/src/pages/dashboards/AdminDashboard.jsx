@@ -3,10 +3,12 @@ import DashboardLayout from "./DashboardLayout";
 import MasterSettingsPage from "../admin/MasterSettingsPage";
 import VehiclesDriversPage from "../admin/VehiclesDriversPage";
 import ReportsPage from "../admin/ReportsPage";
+import CustomersPage from "../sales/CustomersPage";
 
 const TABS = [
   { key: "master", label: "Master Settings" },
   { key: "vehicles", label: "Vehicles & Drivers" },
+  { key: "customers", label: "Customers" },
   { key: "reports", label: "Reports" },
 ];
 
@@ -29,6 +31,7 @@ export default function AdminDashboard() {
 
       {tab === "master" && <MasterSettingsPage />}
       {tab === "vehicles" && <VehiclesDriversPage />}
+      {tab === "customers" && <CustomersPage />}
       {tab === "reports" && <ReportsPage />}
     </DashboardLayout>
   );
