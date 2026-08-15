@@ -92,6 +92,8 @@ Lot.belongsTo(Purchase, { foreignKey: "purchase_id", as: "purchase" });
 Lot.belongsTo(MaterialMaster, { foreignKey: "material_id", as: "material" });
 Lot.belongsTo(VarietyMaster, { foreignKey: "variety_id", as: "variety" });
 Lot.belongsTo(Lot, { foreignKey: "parent_lot_id", as: "parentLot" });
+Lot.belongsTo(WarehouseMaster, { foreignKey: "warehouse_id", as: "targetWarehouse" }); // chosen at Start Unloading, before the Stack exists
+Lot.belongsTo(BinStackMaster, { foreignKey: "bin_id", as: "targetBin" });
 Stack.belongsTo(Lot, { foreignKey: "lot_id", as: "lot" });
 Lot.hasMany(Stack, { foreignKey: "lot_id", as: "stacks" });
 Stack.belongsTo(WarehouseMaster, { foreignKey: "warehouse_id", as: "warehouse" });
@@ -165,6 +167,7 @@ QualityParameterMaster.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "pla
 ReasonCodeMaster.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 PurchaseOrder.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 GateEntry.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
+GateEntry.belongsTo(WarehouseMaster, { foreignKey: "received_warehouse_id", as: "receivedWarehouse" });
 Sampling.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 LabTest.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 Negotiation.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });

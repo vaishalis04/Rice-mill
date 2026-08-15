@@ -1,6 +1,7 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
 const { Customer, SalesOrder, Dispatch, MaterialMaster, Vehicle, Driver } = require("../models/index");
+const { generateCustomerCode } = require("../helpers/helperFunction");
 
 // Customer master incl. by-product buyers
 module.exports = {
@@ -106,23 +107,28 @@ module.exports = {
   // POST /api/customers
   create: async (req, res, next) => {
     try {
-      const { customer_code, name, gstin, address, credit_limit, customer_type, plant_id } = req.body;
+      const { customer_code: providedCode, name, gstin, address, credit_limit, customer_type, plant_id } = req.body;
 
-      if (!customer_code || !name) throw createError(400, "customer_code and name are required");
+      if (!name) throw createError(400, "name is required");
       if (gstin && gstin.length !== 15) throw createError(400, "gstin must be 15 characters");
       if (customer_type && !["fg", "by_product"].includes(customer_type)) {
         throw createError(400, "customer_type must be 'fg' or 'by_product'");
       }
 
-      const existing = await Customer.findOne({
-        where: { [Op.or]: [{ customer_code }, ...(gstin ? [{ gstin }] : [])] },
-      });
-      if (existing) throw createError(409, "A customer with this customer_code or gstin already exists");
+      // customer_code is auto-generated (CUST0001, CUST0002, ...) unless the
+      // caller explicitly supplies one — kept optional-override for admin
+      // tooling/imports, but the UI no longer asks for it.
+      const customer_code = providedCode || (await generateCustomerCode());
+
+      if (gstin) {
+        const existing = await Customer.findOne({ where: { gstin } });
+        if (existing) throw createError(409, "A customer with this gstin already exists");
+      }
 
       const customer = await Customer.create({
         customer_code,
         name,
-        gstin,
+        gstin: gstin || null,
         address,
         credit_limit: credit_limit ?? 0,
         customer_type: customer_type || "fg",
@@ -158,7 +164,7 @@ module.exports = {
         if (dup) throw createError(409, "Another customer already uses this customer_code or gstin");
       }
 
-      const updates = { customer_code, name, gstin, address, credit_limit, customer_type, plant_id };
+      const updates = { customer_code, name, gstin: gstin === "" ? null : gstin, address, credit_limit, customer_type, plant_id };
       Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
       updates.updated_by = req.user ? req.user.id : null;
 

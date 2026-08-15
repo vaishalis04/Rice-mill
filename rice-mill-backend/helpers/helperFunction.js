@@ -174,6 +174,14 @@ const generateSoNo = async () => {
   return generateDailySequence(SalesOrder, "so_no", "SO", 3);
 };
 
+// Generate sequential daily PO numbers (Module 4)
+// Format: PO-YYYYMMDD-001 — one number shared across every line item
+// (material+variety+qty+rate row) belonging to the same purchase order.
+const generatePoNo = async () => {
+  const { PurchaseOrder } = require("../models/index");
+  return generateDailySequence(PurchaseOrder, "po_no", "PO", 3);
+};
+
 // Generate sequential daily delivery challan numbers (Module 19)
 // Format: CH-YYYYMMDD-001
 const generateChallanNo = async () => {
@@ -181,7 +189,45 @@ const generateChallanNo = async () => {
   return generateDailySequence(Dispatch, "challan_no", "CH", 3);
 };
 
+// Generate sequential customer codes (Module: Sales/Customers)
+// Format: CUST0001, CUST0002, ... — continuous, not reset daily, since
+// customers are master data rather than daily transactions. Robust against
+// gaps left by deleted records: looks at the highest existing numeric
+// suffix rather than a plain row count.
+const generateCustomerCode = async () => {
+  const { Customer } = require("../models/index");
+  const { Op } = require("sequelize");
+  const last = await Customer.findOne({
+    where: { customer_code: { [Op.like]: "CUST%" } },
+    order: [["id", "DESC"]],
+  });
+  let nextSeq = 1;
+  if (last) {
+    const match = last.customer_code.match(/CUST(\d+)$/);
+    if (match) nextSeq = parseInt(match[1], 10) + 1;
+  }
+  return `CUST${String(nextSeq).padStart(4, "0")}`;
+};
+
+// Generate sequential vendor codes (Module: Purchase/Vendors)
+// Format: VEND0001, VEND0002, ... — same rationale as generateCustomerCode.
+const generateVendorCode = async () => {
+  const { Vendor } = require("../models/index");
+  const { Op } = require("sequelize");
+  const last = await Vendor.findOne({
+    where: { vendor_code: { [Op.like]: "VEND%" } },
+    order: [["id", "DESC"]],
+  });
+  let nextSeq = 1;
+  if (last) {
+    const match = last.vendor_code.match(/VEND(\d+)$/);
+    if (match) nextSeq = parseInt(match[1], 10) + 1;
+  }
+  return `VEND${String(nextSeq).padStart(4, "0")}`;
+};
+
 module.exports = {
   generateTokenNo, generateLotNo, generateBatchNo, computeAgeDays,
+  generateCustomerCode, generateVendorCode, generatePoNo,
   generatePackingBatchNo, generateEAN13, generateSoNo, generateChallanNo,
 };

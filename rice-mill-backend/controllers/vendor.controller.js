@@ -1,6 +1,7 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
 const { Vendor } = require("../models/index");
+const { generateVendorCode } = require("../helpers/helperFunction");
 
 // Vendor master, rating, ledger (Module 3)
 module.exports = {
@@ -54,25 +55,29 @@ module.exports = {
   create: async (req, res, next) => {
     try {
       const {
-        vendor_code, name, gstin, address, bank_details,
+        vendor_code: providedCode, name, gstin, address, bank_details,
         rating, credit_terms, vendor_type, plant_id,
       } = req.body;
 
-      if (!vendor_code || !name) throw createError(400, "vendor_code and name are required");
+      if (!name) throw createError(400, "name is required");
       if (gstin && gstin.length !== 15) throw createError(400, "gstin must be 15 characters");
       if (vendor_type && !["supplier", "by_product_buyer"].includes(vendor_type)) {
         throw createError(400, "vendor_type must be 'supplier' or 'by_product_buyer'");
       }
 
-      const existing = await Vendor.findOne({
-        where: { [Op.or]: [{ vendor_code }, ...(gstin ? [{ gstin }] : [])] },
-      });
-      if (existing) throw createError(409, "A vendor with this vendor_code or gstin already exists");
+      // vendor_code is auto-generated (VEND0001, VEND0002, ...) unless the
+      // caller explicitly supplies one.
+      const vendor_code = providedCode || (await generateVendorCode());
+
+      if (gstin) {
+        const existing = await Vendor.findOne({ where: { gstin } });
+        if (existing) throw createError(409, "A vendor with this gstin already exists");
+      }
 
       const vendor = await Vendor.create({
         vendor_code,
         name,
-        gstin,
+        gstin: gstin || null,
         address,
         bank_details,
         rating: rating ?? 0,
@@ -114,7 +119,7 @@ module.exports = {
         if (dup) throw createError(409, "Another vendor already uses this vendor_code or gstin");
       }
 
-      const updates = { vendor_code, name, gstin, address, bank_details, rating, credit_terms, vendor_type, plant_id };
+      const updates = { vendor_code, name, gstin: gstin === "" ? null : gstin, address, bank_details, rating, credit_terms, vendor_type, plant_id };
       Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
       updates.updated_by = req.user ? req.user.id : null;
 

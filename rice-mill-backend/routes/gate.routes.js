@@ -19,6 +19,9 @@ router.delete("/:id", Controller.delete);
 router.post("/checkin", Controller.checkIn);
 router.post("/checkout", Controller.checkOut);
 router.post("/generatetoken", Controller.generateToken);
+// Empty trucks / miscellaneous-item trucks (entry_type = "other") only —
+// skips the rest of the journey and marks the truck received at warehouse.
+router.post("/send-to-warehouse", Controller.sendToWarehouse);
 // Uploads a captured/chosen driver photo to disk and returns its URL — the
 // URL (a short path, not the image itself) is what actually gets saved on
 // the gate entry's driver_photo_url column.

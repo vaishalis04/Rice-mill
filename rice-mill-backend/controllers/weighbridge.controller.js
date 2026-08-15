@@ -3,13 +3,18 @@ const { Op } = require("sequelize");
 const { WeightSlip, GateEntry, Purchase, PurchaseOrder, User } = require("../models/index");
 
 // Gross / Tare / Net capture, slip printing (Module 8)
-// Weighing can only happen once a gate entry has cleared lab QC (gate_status = 'accepted').
-// Creating a slip auto-calculates net weight and immediately finalizes a Purchase record
-// (qty from the scale, rate from the linked PurchaseOrder unless overridden), then advances
-// the gate entry to 'in_process'.
+// Weighing can happen once a gate entry has either cleared lab QC (gate_status
+// = 'accepted', the normal purchase flow) or, for empty/miscellaneous trucks
+// (entry_type = 'other'), once it's simply checked in (gate_status =
+// 'waiting_weighment' — those skip Sampling/Lab/Negotiation entirely).
+// For purchase entries, creating a slip auto-calculates net weight and
+// immediately finalizes a Purchase record (qty from the scale, rate from the
+// linked PurchaseOrder unless overridden). For "other" entries there's no
+// purchase to finalize — no PO/rate is required and no Purchase record is
+// created. Either way the gate entry advances to 'in_process'.
 
 const detailIncludes = [
-  { model: GateEntry, as: "gateEntry", attributes: ["id", "token_no", "gate_status", "po_id", "vendor_id", "material_id"] },
+  { model: GateEntry, as: "gateEntry", attributes: ["id", "token_no", "gate_status", "entry_type", "po_id", "vendor_id", "material_id"] },
   { model: User, as: "operator", attributes: ["id", "username", "email"] },
 ];
 
@@ -71,8 +76,11 @@ module.exports = {
 
       const gateEntry = await GateEntry.findOne({ where: { id: gate_entry_id, is_deleted: false } });
       if (!gateEntry) throw createError(400, "Invalid gate_entry_id");
-      if (gateEntry.gate_status !== "accepted") {
-        throw createError(400, `Cannot weigh a gate entry with status '${gateEntry.gate_status}'; it must be 'accepted'`);
+
+      const isOtherEntry = gateEntry.entry_type === "other";
+      const requiredStatus = isOtherEntry ? "waiting_weighment" : "accepted";
+      if (gateEntry.gate_status !== requiredStatus) {
+        throw createError(400, `Cannot weigh a gate entry with status '${gateEntry.gate_status}'; it must be '${requiredStatus}'`);
       }
 
       const existingSlip = await WeightSlip.findOne({ where: { gate_entry_id, is_deleted: false } });
@@ -81,14 +89,18 @@ module.exports = {
       const dupSlipNo = await WeightSlip.findOne({ where: { slip_no } });
       if (dupSlipNo) throw createError(409, "A weight slip with this slip_no already exists");
 
-      // Resolve the rate to finalize the purchase at: the linked PO's rate, unless
-      // this gate entry has no PO, in which case final_rate must be supplied.
+      // Empty/miscellaneous trucks (entry_type = "other") aren't a purchase —
+      // no PO/rate is needed and no Purchase record gets created for them.
       let po = null;
-      if (gateEntry.po_id) {
-        po = await PurchaseOrder.findOne({ where: { id: gateEntry.po_id, is_deleted: false } });
-        if (!po) throw createError(400, "The purchase order linked to this gate entry could not be found");
-      } else if (final_rate === undefined) {
-        throw createError(400, "final_rate is required when the gate entry has no linked purchase order");
+      if (!isOtherEntry) {
+        // Resolve the rate to finalize the purchase at: the linked PO's rate, unless
+        // this gate entry has no PO, in which case final_rate must be supplied.
+        if (gateEntry.po_id) {
+          po = await PurchaseOrder.findOne({ where: { id: gateEntry.po_id, is_deleted: false } });
+          if (!po) throw createError(400, "The purchase order linked to this gate entry could not be found");
+        } else if (final_rate === undefined) {
+          throw createError(400, "final_rate is required when the gate entry has no linked purchase order");
+        }
       }
 
       const netWeight = Number(gross_weight) - Number(tare_weight);
@@ -105,24 +117,29 @@ module.exports = {
         created_by: req.user ? req.user.id : null,
       });
 
-      const purchase = await Purchase.create({
-        po_id: gateEntry.po_id || null,
-        gate_entry_id,
-        weight_slip_id: slip.id,
-        final_rate: resolvedRate,
-        final_qty: netWeight,
-        amount: netWeight * resolvedRate,
-        purchase_date: new Date().toISOString().slice(0, 10),
-        plant_id: slip.plant_id,
-        created_by: req.user ? req.user.id : null,
-      });
+      let purchase = null;
+      if (!isOtherEntry) {
+        purchase = await Purchase.create({
+          po_id: gateEntry.po_id || null,
+          gate_entry_id,
+          weight_slip_id: slip.id,
+          final_rate: resolvedRate,
+          final_qty: netWeight,
+          amount: netWeight * resolvedRate,
+          purchase_date: new Date().toISOString().slice(0, 10),
+          plant_id: slip.plant_id,
+          created_by: req.user ? req.user.id : null,
+        });
+      }
 
       await gateEntry.update({ gate_status: "in_process", updated_by: req.user ? req.user.id : null });
 
       const created = await WeightSlip.findByPk(slip.id, { include: detailIncludes });
       res.status(201).json({
         success: true,
-        msg: `Weight slip ${slip.slip_no} generated (net ${netWeight}); purchase finalized`,
+        msg: isOtherEntry
+          ? `Weight slip ${slip.slip_no} generated (net ${netWeight}); ready for warehouse`
+          : `Weight slip ${slip.slip_no} generated (net ${netWeight}); purchase finalized`,
         data: { weightSlip: created, purchase },
       });
     } catch (err) {

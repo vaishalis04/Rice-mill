@@ -6,7 +6,11 @@ class PurchaseOrder extends Model {}
 PurchaseOrder.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    po_no: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    // No longer unique: a single PO can now have multiple line items
+    // (different material/variety/qty/rate combos) sharing one po_no.
+    // Uniqueness is enforced instead on (po_no, material_id, variety_id) —
+    // see purchase.controller.js's create/bulkCreate.
+    po_no: { type: DataTypes.STRING(30), allowNull: false },
     vendor_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "vendors", key: "id" } },
     material_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "material_master", key: "id" } },
     variety_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "variety_master", key: "id" } },

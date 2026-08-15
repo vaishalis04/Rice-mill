@@ -10,6 +10,7 @@ router.use(verifyAccessToken, attachUser, authorize("purchase","admin","sales","
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);
 router.post("/",    Controller.create);
+router.post("/bulk", Controller.bulkCreate);
 router.put("/:id",  Controller.update);
 router.delete("/:id", Controller.delete);
 router.post("/convert", Controller.convertToPurchase);

@@ -12,7 +12,9 @@ const { generatePackingBatchNo, generateEAN13 } = require("../helpers/helperFunc
 // matching FinishedGoods record with status 'ready'.
 
 const DEFAULT_SHELF_LIFE_DAYS = 180;
-const PACK_SIZES = ["5", "10", "25", "50", "custom"];
+// pack_size is a free numeric value (kg per bag) — any positive number (5, 10, 25, 50,
+// 15, 2, 33.5...) is valid; the frontend just offers common ones (5/10/25/50) as quick picks
+// plus a "Custom" option for anything else.
 
 const detailIncludes = [
   {
@@ -88,7 +90,35 @@ module.exports = {
       if (!batch) throw createError(404, "Production batch not found");
       if (!batch.lengthGrading) throw createError(400, "This batch has not completed length grading yet");
 
-      const alreadyPacked = await Packing.sum("bag_count", { where: { batch_id: batch.id, is_deleted: false } });
+      // Sum what's already been packed against this batch, across every prior
+      // packing record — both in bags and in actual kg (via the linked
+      // FinishedGoods qty, so a qty_override on an earlier packing is
+      // accounted for correctly, not just bag_count × pack_size).
+      const priorPackings = await Packing.findAll({
+        where: { batch_id: batch.id, is_deleted: false },
+        include: [
+          {
+            model: FinishedGoods,
+            as: "finishedGoodsRecords",
+            attributes: ["qty"],
+            where: { is_deleted: false },
+            required: false,
+          },
+        ],
+      });
+      const bagsAlreadyPacked = priorPackings.reduce((sum, p) => sum + (p.bag_count || 0), 0);
+      const qtyAlreadyPacked = priorPackings.reduce(
+        (sum, p) =>
+          sum + (p.finishedGoodsRecords || []).reduce((s, fg) => s + Number(fg.qty || 0), 0),
+        0
+      );
+
+      const totalGraded =
+        Number(batch.lengthGrading.long_qty || 0) +
+        Number(batch.lengthGrading.medium_qty || 0) +
+        Number(batch.lengthGrading.broken_qty || 0) +
+        Number(batch.lengthGrading.small_broken_qty || 0);
+      const remainingQty = Math.max(0, totalGraded - qtyAlreadyPacked);
 
       res.status(200).json({
         success: true,
@@ -101,7 +131,10 @@ module.exports = {
             broken_qty: batch.lengthGrading.broken_qty,
             small_broken_qty: batch.lengthGrading.small_broken_qty,
           },
-          bagsAlreadyPacked: alreadyPacked || 0,
+          bagsAlreadyPacked: bagsAlreadyPacked || 0,
+          bags_packed_so_far: bagsAlreadyPacked || 0,
+          qty_already_packed: qtyAlreadyPacked,
+          remaining_qty: remainingQty,
         },
       });
     } catch (err) {
@@ -110,8 +143,10 @@ module.exports = {
   },
 
   // POST /api/packing
-  // { batch_id, warehouse_id, pack_size, bag_count, qty_override? (required if pack_size='custom'),
+  // { batch_id, warehouse_id, pack_size, bag_count, qty_override? (optional manual total override),
   //   production_date?, shelf_life_days?, rack_id?, pallet_id? }
+  // pack_size is the kg-per-bag weight — any positive number is accepted, not just the
+  // common presets, so a genuinely custom pack size (e.g. 15kg, 2kg) can be recorded.
   create: async (req, res, next) => {
     try {
       const {
@@ -119,11 +154,10 @@ module.exports = {
         production_date, shelf_life_days, rack_id, pallet_id, plant_id,
       } = req.body;
 
-      if (!batch_id || !warehouse_id || !pack_size || !bag_count) {
+      if (!batch_id || !warehouse_id || pack_size === undefined || pack_size === null || pack_size === "" || !bag_count) {
         throw createError(400, "batch_id, warehouse_id, pack_size and bag_count are required");
       }
-      if (!PACK_SIZES.includes(String(pack_size))) throw createError(400, `pack_size must be one of: ${PACK_SIZES.join(", ")}`);
-      if (pack_size === "custom" && !qty_override) throw createError(400, "qty_override is required when pack_size is 'custom'");
+      if (!(Number(pack_size) > 0)) throw createError(400, "pack_size must be a positive number (kg per bag)");
       if (Number(bag_count) <= 0) throw createError(400, "bag_count must be greater than 0");
 
       const batch = await ProductionBatch.findOne({
@@ -155,7 +189,7 @@ module.exports = {
       const packing = await Packing.create({
         batch_id,
         lot_id: batch.lot_id,
-        pack_size,
+        pack_size: Number(pack_size),
         bag_count,
         batch_no,
         barcode,
@@ -167,7 +201,12 @@ module.exports = {
         created_by: req.user ? req.user.id : null,
       });
 
-      const qty = pack_size === "custom" ? Number(qty_override) : Number(pack_size) * Number(bag_count);
+      // qty is normally pack_size × bag_count; qty_override lets an operator correct the
+      // total by hand for any pack size (e.g. one bag was part-filled) without lying about
+      // the recorded pack_size itself.
+      const qty = qty_override !== undefined && qty_override !== null && qty_override !== ""
+        ? Number(qty_override)
+        : Number(pack_size) * Number(bag_count);
 
       const finishedGoods = await FinishedGoods.create({
         packing_id: packing.id,
@@ -195,18 +234,49 @@ module.exports = {
   // PUT /api/packing/:id
   update: async (req, res, next) => {
     try {
-      const packing = await Packing.findOne({ where: { id: req.params.id, is_deleted: false } });
+      const packing = await Packing.findOne({
+        where: { id: req.params.id, is_deleted: false },
+        include: [{ model: FinishedGoods, as: "finishedGoodsRecords", where: { is_deleted: false }, required: false }],
+      });
       if (!packing) throw createError(404, "Packing record not found");
 
       const { pack_size, bag_count, production_date, expiry_date, plant_id } = req.body;
-      if (pack_size && !PACK_SIZES.includes(String(pack_size))) throw createError(400, `pack_size must be one of: ${PACK_SIZES.join(", ")}`);
+      if (pack_size !== undefined && !(Number(pack_size) > 0)) throw createError(400, "pack_size must be a positive number (kg per bag)");
       if (bag_count !== undefined && Number(bag_count) <= 0) throw createError(400, "bag_count must be greater than 0");
 
-      const updates = { pack_size, bag_count, production_date, expiry_date, plant_id };
+      const changingQty = pack_size !== undefined || bag_count !== undefined;
+      const dispatchedFg = (packing.finishedGoodsRecords || []).find(
+        (fg) => fg.fg_status === "dispatched" || fg.dispatch_id != null
+      );
+      if (changingQty && dispatchedFg) {
+        throw createError(
+          400,
+          "Can't change pack size or bag count — this packing's finished goods stock has already been dispatched."
+        );
+      }
+
+      const updates = {
+        pack_size: pack_size !== undefined ? Number(pack_size) : undefined,
+        bag_count, production_date, expiry_date, plant_id,
+      };
       Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
       updates.updated_by = req.user ? req.user.id : null;
 
       await packing.update(updates);
+
+      // Keep the linked Finished Goods qty in sync — it was originally set to
+      // pack_size × bag_count (or a manual override) at creation time, and
+      // would otherwise go stale the moment either of those numbers changes
+      // here, silently corrupting stock/dispatch totals.
+      if (changingQty) {
+        const finalPackSize = Number(updates.pack_size ?? packing.pack_size);
+        const finalBagCount = Number(updates.bag_count ?? packing.bag_count);
+        const recalculatedQty = finalPackSize * finalBagCount;
+        await FinishedGoods.update(
+          { qty: recalculatedQty, updated_by: req.user ? req.user.id : null },
+          { where: { packing_id: packing.id, is_deleted: false } }
+        );
+      }
 
       const updated = await Packing.findByPk(packing.id, { include: detailIncludes });
       res.status(200).json({ success: true, msg: "Packing record updated", data: updated });

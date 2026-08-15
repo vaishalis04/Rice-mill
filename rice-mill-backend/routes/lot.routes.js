@@ -8,7 +8,8 @@ router.use(verifyAccessToken, attachUser, authorize("warehouse","production"));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);
-router.post("/",    Controller.create);
+router.post("/start-unloading", Controller.startUnloading);
+router.patch("/:id/complete-unloading", Controller.completeUnloading);
 router.put("/:id",  Controller.update);
 router.delete("/:id", Controller.delete);
 router.patch("/:id/route", Controller.route);

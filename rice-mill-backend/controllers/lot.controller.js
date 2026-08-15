@@ -6,16 +6,29 @@ const {
 const { generateLotNo } = require("../helpers/helperFunction");
 
 // Unloading & Lot creation, traceability backbone (Module 9 / part 2)
-// A lot is opened once a gate entry has been weighed (gate_status = 'in_process').
-// Creating a lot also opens its initial Stack placement and writes the opening
-// Inventory balance. Routing the lot (warehouse vs production) is a separate step
-// that finalizes the gate entry's journey to 'unloaded'.
+//
+// Unloading is now a two-step workflow instead of one "record and done" action:
+//   1. Start Unloading (startUnloading) — gate entry must be 'in_process' (weighed).
+//      Opens a Lot shell (qty = 0, unloading_status = 'in_progress') and moves the
+//      gate entry to 'unloading'. This is the point where the truck is opened up and
+//      a manual check happens at the factory — no stock exists yet.
+//   2. Complete Unloading (completeUnloading) — once the manual check is done, the
+//      operator enters bag_size + accepted_bags + rejected_bags. Accepted/rejected
+//      quantities are auto-calculated (bag_size * bags). Only the ACCEPTED qty opens
+//      the Stack placement and the opening Inventory balance; rejected qty is recorded
+//      on the lot for traceability but never enters stock. The gate entry then moves
+//      to 'unloaded'.
+// Routing the lot (warehouse vs production) remains a separate step after that —
+// it decides whether the now-known accepted stock stays as raw warehouse stock or
+// goes straight into a production batch.
 
 const lotIncludes = [
   { model: Purchase, as: "purchase", attributes: ["id", "gate_entry_id", "final_qty", "final_rate"] },
   { model: MaterialMaster, as: "material", attributes: ["id", "material_code", "name"] },
   { model: VarietyMaster, as: "variety", attributes: ["id", "variety_name"] },
   { model: Lot, as: "parentLot", attributes: ["id", "lot_no"] },
+  { model: WarehouseMaster, as: "targetWarehouse", attributes: ["id", "warehouse_code", "name"] },
+  { model: BinStackMaster, as: "targetBin", attributes: ["id", "bin_code"] },
   {
     model: Stack,
     as: "stacks",
@@ -81,13 +94,16 @@ module.exports = {
     }
   },
 
-  // POST /api/lots
-  // { gate_entry_id, warehouse_id, bin_id, qty?, material_id?, variety_id?, parent_lot_id?, stacked_at? }
-  create: async (req, res, next) => {
+  // POST /api/lots/start-unloading
+  // { gate_entry_id, warehouse_id, bin_id, material_id?, variety_id?, parent_lot_id?, plant_id? }
+  // Step 1 of unloading: truck is opened up at the factory for a manual check.
+  // Opens a Lot shell (qty = 0, unloading_status = 'in_progress') — no Stack or
+  // Inventory yet, since the accepted quantity isn't known until bags are counted.
+  startUnloading: async (req, res, next) => {
     try {
       const {
-        gate_entry_id, warehouse_id, bin_id, qty, material_id, variety_id,
-        parent_lot_id, stacked_at, plant_id,
+        gate_entry_id, warehouse_id, bin_id, material_id, variety_id,
+        parent_lot_id, plant_id,
       } = req.body;
       if (!gate_entry_id || !warehouse_id || !bin_id) {
         throw createError(400, "gate_entry_id, warehouse_id and bin_id are required");
@@ -96,7 +112,7 @@ module.exports = {
       const gateEntry = await GateEntry.findOne({ where: { id: gate_entry_id, is_deleted: false } });
       if (!gateEntry) throw createError(400, "Invalid gate_entry_id");
       if (gateEntry.gate_status !== "in_process") {
-        throw createError(400, `Cannot create a lot for a gate entry with status '${gateEntry.gate_status}'; it must be 'in_process' (weighed)`);
+        throw createError(400, `Cannot start unloading for a gate entry with status '${gateEntry.gate_status}'; it must be 'in_process' (weighed)`);
       }
 
       const purchase = await Purchase.findOne({ where: { gate_entry_id, is_deleted: false } });
@@ -133,52 +149,126 @@ module.exports = {
         if (!parentLot) throw createError(400, "Invalid parent_lot_id");
       }
 
-      const resolvedQty = qty !== undefined ? Number(qty) : Number(purchase.final_qty);
-      if (!(resolvedQty > 0)) throw createError(400, "qty must be greater than 0");
-
       const lot_no = await generateLotNo();
+      const resolvedPlantId = plant_id || gateEntry.plant_id || (req.user ? req.user.plant_id : null);
 
       const lot = await Lot.create({
         lot_no,
         purchase_id: purchase.id,
         material_id: resolvedMaterialId,
         variety_id: resolvedVarietyId,
-        qty: resolvedQty,
+        qty: 0,
         parent_lot_id: parent_lot_id || null,
-        plant_id: plant_id || gateEntry.plant_id || (req.user ? req.user.plant_id : null),
-        created_by: req.user ? req.user.id : null,
-      });
-
-      const stack = await Stack.create({
-        stack_code: `${lot_no}-S1`,
-        lot_id: lot.id,
         warehouse_id,
         bin_id,
-        qty: resolvedQty,
-        stacked_at: stacked_at || new Date(),
-        plant_id: lot.plant_id,
+        unloading_status: "in_progress",
+        plant_id: resolvedPlantId,
         created_by: req.user ? req.user.id : null,
       });
 
-      // Inventory service: opening raw-material balance for this lot.
-      const inventory = await Inventory.create({
-        lot_id: lot.id,
-        material_id: resolvedMaterialId,
-        warehouse_id,
-        stage: "raw",
-        qty_in: resolvedQty,
-        qty_out: 0,
-        balance_qty: resolvedQty,
-        as_of: new Date(),
-        plant_id: lot.plant_id,
-        created_by: req.user ? req.user.id : null,
-      });
+      await gateEntry.update({ gate_status: "unloading", updated_by: req.user ? req.user.id : null });
 
       const created = await Lot.findByPk(lot.id, { include: lotIncludes });
       res.status(201).json({
         success: true,
-        msg: `Lot ${lot_no} created`,
-        data: { lot: created, stack, inventory },
+        msg: `Unloading started — Lot ${lot_no} opened. Do the manual check at the factory, then complete unloading with bag counts.`,
+        data: { lot: created },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // PATCH /api/lots/:id/complete-unloading
+  // { bag_size, accepted_bags, rejected_bags? }
+  // Step 2 of unloading: bags have been counted after the manual check.
+  // accepted_qty = bag_size * accepted_bags, rejected_qty = bag_size * rejected_bags.
+  // Only the accepted qty opens the Stack placement + opening Inventory balance.
+  completeUnloading: async (req, res, next) => {
+    try {
+      const lot = await Lot.findOne({ where: { id: req.params.id, is_deleted: false } });
+      if (!lot) throw createError(404, "Lot not found");
+      if (lot.unloading_status === "completed") {
+        throw createError(409, "Unloading has already been completed for this lot");
+      }
+
+      const bag_size = Number(req.body.bag_size);
+      const accepted_bags = Number(req.body.accepted_bags);
+      const rejected_bags = req.body.rejected_bags !== undefined ? Number(req.body.rejected_bags) : 0;
+
+      if (!(bag_size > 0)) throw createError(400, "bag_size must be greater than 0");
+      if (!Number.isInteger(accepted_bags) || accepted_bags < 0) {
+        throw createError(400, "accepted_bags must be a whole number, 0 or more");
+      }
+      if (!Number.isInteger(rejected_bags) || rejected_bags < 0) {
+        throw createError(400, "rejected_bags must be a whole number, 0 or more");
+      }
+      if (accepted_bags + rejected_bags <= 0) {
+        throw createError(400, "At least one bag (accepted or rejected) is required");
+      }
+
+      const accepted_qty = Math.round(bag_size * accepted_bags * 100) / 100;
+      const rejected_qty = Math.round(bag_size * rejected_bags * 100) / 100;
+
+      await lot.update({
+        qty: accepted_qty,
+        bag_size,
+        accepted_bags,
+        rejected_bags,
+        rejected_qty,
+        unloading_status: "completed",
+        updated_by: req.user ? req.user.id : null,
+      });
+
+      let stack = null;
+      let inventory = null;
+
+      // Accepted bags only — rejected material never enters Stack/Inventory,
+      // it's kept purely on the lot record for traceability.
+      if (accepted_qty > 0) {
+        stack = await Stack.create({
+          stack_code: `${lot.lot_no}-S1`,
+          lot_id: lot.id,
+          warehouse_id: lot.warehouse_id,
+          bin_id: lot.bin_id,
+          qty: accepted_qty,
+          stacked_at: new Date(),
+          plant_id: lot.plant_id,
+          created_by: req.user ? req.user.id : null,
+        });
+
+        inventory = await Inventory.create({
+          lot_id: lot.id,
+          material_id: lot.material_id,
+          warehouse_id: lot.warehouse_id,
+          stage: "raw",
+          qty_in: accepted_qty,
+          qty_out: 0,
+          balance_qty: accepted_qty,
+          as_of: new Date(),
+          plant_id: lot.plant_id,
+          created_by: req.user ? req.user.id : null,
+        });
+      }
+
+      // Truck is now physically empty and its contents counted — close out the gate journey.
+      if (lot.purchase_id) {
+        const purchase = await Purchase.findOne({ where: { id: lot.purchase_id, is_deleted: false } });
+        if (purchase) {
+          const gateEntry = await GateEntry.findOne({ where: { id: purchase.gate_entry_id, is_deleted: false } });
+          if (gateEntry) {
+            await gateEntry.update({ gate_status: "unloaded", updated_by: req.user ? req.user.id : null });
+          }
+        }
+      }
+
+      const updated = await Lot.findByPk(lot.id, { include: lotIncludes });
+      res.status(200).json({
+        success: true,
+        msg: `Unloading completed — ${accepted_bags} bag(s) accepted (${accepted_qty}), ${rejected_bags} bag(s) rejected (${rejected_qty}).${
+          accepted_qty > 0 ? " Route the accepted stock to Warehouse or Production below." : ""
+        }`,
+        data: { lot: updated, stack, inventory, accepted_qty, rejected_qty },
       });
     } catch (err) {
       next(err);
@@ -221,8 +311,10 @@ module.exports = {
   },
 
   // PATCH /api/lots/:id/route  { destination: "warehouse" | "production" }
-  // Records where the lot is headed and, if it originated from a gate entry,
-  // advances that gate entry's status to 'unloaded'.
+  // Decides where the ACCEPTED stock goes next — stays as raw warehouse stock, or
+  // heads straight into a production batch. The gate entry itself already moved to
+  // 'unloaded' when unloading was completed (bags counted); routing is purely about
+  // the stock's next stage, so it only needs unloading to have finished.
   route: async (req, res, next) => {
     try {
       const { destination } = req.body;
@@ -232,24 +324,16 @@ module.exports = {
 
       const lot = await Lot.findOne({ where: { id: req.params.id, is_deleted: false } });
       if (!lot) throw createError(404, "Lot not found");
+      if (lot.unloading_status !== "completed") {
+        throw createError(400, "Cannot route a lot before unloading is completed (bag counts recorded)");
+      }
 
       await lot.update({ destination, updated_by: req.user ? req.user.id : null });
-
-      let gateEntry = null;
-      if (lot.purchase_id) {
-        const purchase = await Purchase.findOne({ where: { id: lot.purchase_id, is_deleted: false } });
-        if (purchase) {
-          gateEntry = await GateEntry.findOne({ where: { id: purchase.gate_entry_id, is_deleted: false } });
-          if (gateEntry) {
-            await gateEntry.update({ gate_status: "unloaded", updated_by: req.user ? req.user.id : null });
-          }
-        }
-      }
 
       const updated = await Lot.findByPk(lot.id, { include: lotIncludes });
       res.status(200).json({
         success: true,
-        msg: `Lot routed to ${destination}${gateEntry ? " — gate entry status is now 'unloaded'" : ""}`,
+        msg: `Lot routed to ${destination}`,
         data: updated,
       });
     } catch (err) {

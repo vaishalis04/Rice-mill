@@ -8,7 +8,12 @@ Packing.init(
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
     batch_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "production_batch", key: "id" } },
     lot_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "lots", key: "id" } }, 
-    pack_size: { type: DataTypes.ENUM("5", "10", "25", "50", "custom"), allowNull: false },
+    // Pack size in kg per bag. Was a fixed ENUM ("5","10","25","50","custom") which made
+    // it impossible to actually store a real custom size (e.g. 15kg, 2kg) — "custom" was
+    // just a literal string with no numeric value attached. Now it's a plain decimal, so
+    // the common sizes (5/10/25/50) AND any custom size the mill packs in are all stored
+    // as the real number, uniformly.
+    pack_size: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
     bag_count: { type: DataTypes.INTEGER, allowNull: false },
     batch_no: { type: DataTypes.STRING(30) },
     qr_code: { type: DataTypes.STRING(255), unique: true },

@@ -36,6 +36,7 @@ const dispatchRoutes       = require("./routes/dispatch.routes");
 const gpsTrackingRoutes    = require("./routes/gpsTracking.routes");
 const accountsRoutes       = require("./routes/accounts.routes");
 const reportsRoutes        = require("./routes/reports.routes");
+const analyticsRoutes      = require("./routes/analytics.routes");
 const dashboardRoutes      = require("./routes/dashboard.routes");
 const auditLogRoutes       = require("./routes/auditLog.routes");
 const notificationRoutes   = require("./routes/notification.routes");
@@ -82,6 +83,7 @@ app.use("/api/dispatch",         dispatchRoutes);
 app.use("/api/gps-tracking",     gpsTrackingRoutes);
 app.use("/api/accounts",         accountsRoutes);
 app.use("/api/reports",          reportsRoutes);
+app.use("/api/analytics",        analyticsRoutes);
 app.use("/api/dashboard",        dashboardRoutes);
 app.use("/api/audit-logs",       auditLogRoutes);
 app.use("/api/notifications",    notificationRoutes);
@@ -89,6 +91,8 @@ app.use("/api/reject-waste",     rejectWasteRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {
+  console.error("❌", req.method, req.originalUrl, "-", err.message);
+  console.error(err.stack);
   res.status(err.status || 500).json({ success: false, msg: err.message || "Internal Server Error" });
 });
 

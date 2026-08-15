@@ -334,7 +334,7 @@ CREATE TABLE `gate_entry` (
   `expected_qty` DECIMAL(12, 2) NULL,
   `entry_time` DATETIME NULL,
   `exit_time` DATETIME NULL,
-  `gate_status` ENUM('waiting_token', 'waiting_sampling', 'rejected', 'in_process', 'parked', 'exited') NULL DEFAULT 'waiting_token',  -- notes #2,#5,#13
+  `gate_status` ENUM('waiting_token', 'waiting_sampling', 'sampling_done', 'accepted', 'rejected', 'waiting_weighment', 'in_process', 'unloading', 'unloaded', 'parked', 'exited') NULL DEFAULT 'waiting_token',  -- notes #2,#5,#13
   `created_by` BIGINT UNSIGNED NULL,
   `updated_by` BIGINT UNSIGNED NULL,
   `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
@@ -458,8 +458,16 @@ CREATE TABLE `lots` (
   `purchase_id` BIGINT NULL,  -- null for production-generated lots
   `material_id` BIGINT NOT NULL,
   `variety_id` BIGINT NULL,
-  `qty` DECIMAL(12, 2) NOT NULL,
+  `qty` DECIMAL(12, 2) NOT NULL DEFAULT 0,  -- ACCEPTED qty only; 0 until unloading is completed
   `parent_lot_id` BIGINT NULL,  -- self-FK: traceability backbone
+  `destination` ENUM('warehouse','production') NULL,  -- set via PATCH /api/lots/:id/route
+  `warehouse_id` BIGINT NULL,  -- chosen at Start Unloading, before the Stack exists
+  `bin_id` BIGINT NULL,
+  `unloading_status` ENUM('in_progress','completed') NOT NULL DEFAULT 'in_progress',
+  `bag_size` DECIMAL(10, 2) NULL,  -- kg per bag, entered at Complete Unloading
+  `accepted_bags` INT NULL,
+  `rejected_bags` INT NULL DEFAULT 0,
+  `rejected_qty` DECIMAL(12, 2) NULL DEFAULT 0,  -- bag_size * rejected_bags, never enters Stack/Inventory
   `created_by` BIGINT UNSIGNED NULL,
   `updated_by` BIGINT UNSIGNED NULL,
   `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
@@ -470,6 +478,8 @@ CREATE TABLE `lots` (
   FOREIGN KEY (`material_id`) REFERENCES `material_master`(`id`),
   FOREIGN KEY (`variety_id`) REFERENCES `variety_master`(`id`),
   FOREIGN KEY (`parent_lot_id`) REFERENCES `lots`(`id`),
+  FOREIGN KEY (`warehouse_id`) REFERENCES `warehouse_master`(`id`),
+  FOREIGN KEY (`bin_id`) REFERENCES `bin_stack_master`(`id`),
   FOREIGN KEY (`plant_id`) REFERENCES `plant_master`(`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -694,7 +704,7 @@ CREATE TABLE `packing` (
   `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `batch_id` BIGINT NOT NULL,
   `lot_id` BIGINT NULL,  -- output lot
-  `pack_size` ENUM('5', '10', '25', '50', 'custom') NOT NULL,
+  `pack_size` DECIMAL(10,2) NOT NULL, -- kg per bag; any positive number (common: 5/10/25/50, or a custom size)
   `bag_count` INT NOT NULL,
   `batch_no` VARCHAR(30) NULL,
   `qr_code` VARCHAR(255) NULL UNIQUE,

@@ -1,5 +1,6 @@
 const createError = require("http-errors");
 const bcrypt = require("bcrypt");
+const { Op } = require("sequelize");
 
 const {
   User,
@@ -9,6 +10,21 @@ const {
 } = require("../models");
 
 module.exports = {
+  // ===========================
+  // Get All Roles (for the role-assignment dropdown)
+  // ===========================
+  getRoles: async (req, res, next) => {
+    try {
+      const roles = await Role.findAll({
+        attributes: ["id", "role_name", "description"],
+        order: [["role_name", "ASC"]],
+      });
+      res.status(200).json({ success: true, data: roles });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   // ===========================
   // Get All Users
   // ===========================
@@ -21,6 +37,7 @@ module.exports = {
         include: [
           {
             model: Role,
+            as: "role",
             attributes: ["id", "role_name"],
           },
         ],
@@ -53,6 +70,7 @@ module.exports = {
         include: [
           {
             model: Role,
+            as: "role",
             attributes: ["id", "role_name"],
           },
         ],
@@ -89,6 +107,10 @@ module.exports = {
         plant_id,
       } = req.body;
 
+      if (!username || !email || !password || !role_id) {
+        throw createError(400, "username, email, password and role_id are required");
+      }
+
       const role = await Role.findByPk(role_id);
 
       if (!role) {
@@ -97,13 +119,13 @@ module.exports = {
 
       const existingUser = await User.findOne({
         where: {
-          email,
+          [Op.or]: [{ email }, { username }],
           is_deleted: false,
         },
       });
 
       if (existingUser) {
-        throw createError(409, "Email already exists");
+        throw createError(409, "Email or username already exists");
       }
 
       const hash = await bcrypt.hash(password, 10);
@@ -149,6 +171,25 @@ module.exports = {
         throw createError(404, "User not found");
       }
 
+      if (req.body.email || req.body.username) {
+        const dup = await User.findOne({
+          where: {
+            id: { [Op.ne]: id },
+            is_deleted: false,
+            [Op.or]: [
+              ...(req.body.email ? [{ email: req.body.email }] : []),
+              ...(req.body.username ? [{ username: req.body.username }] : []),
+            ],
+          },
+        });
+        if (dup) throw createError(409, "Another user already uses this email or username");
+      }
+
+      if (req.body.role_id) {
+        const role = await Role.findByPk(req.body.role_id);
+        if (!role) throw createError(404, "Role not found");
+      }
+
       const updateData = { ...req.body };
 
       if (req.body.password) {
@@ -184,6 +225,10 @@ module.exports = {
 
       if (!user) {
         throw createError(404, "User not found");
+      }
+
+      if (req.user && String(req.user.id) === String(user.id)) {
+        throw createError(400, "You cannot delete your own account while logged in as it");
       }
 
       await user.update({

@@ -3,10 +3,12 @@
 
 const createError = require("http-errors");
 const { Op } = require("sequelize");
+const sequelize = require("../config/db");
 const {
   PurchaseOrder, Purchase, Vendor, MaterialMaster, VarietyMaster,
   GateEntry, WeightSlip,
 } = require("../models/index");
+const { generatePoNo } = require("../helpers/helperFunction");
 
 // PO creation, rate negotiation, final purchase (Module 4)
 // Primary CRUD below manages PurchaseOrder (needed by Gate Entry's po_id link).
@@ -92,8 +94,13 @@ module.exports = {
         if (!variety) throw createError(400, "Invalid variety_id");
       }
 
-      const existing = await PurchaseOrder.findOne({ where: { po_no } });
-      if (existing) throw createError(409, "A purchase order with this po_no already exists");
+      // po_no is no longer globally unique — multiple line items (different
+      // material/variety combos) can share one PO number. Only block a
+      // literal repeat of the same material+variety under that same po_no.
+      const existing = await PurchaseOrder.findOne({
+        where: { po_no, material_id, variety_id: variety_id || null },
+      });
+      if (existing) throw createError(409, "This material/variety is already on this PO");
 
       const po = await PurchaseOrder.create({
         po_no, vendor_id, material_id, variety_id, qty, rate, po_date, validity, do_no,
@@ -109,6 +116,104 @@ module.exports = {
     }
   },
 
+  // POST /api/purchases/bulk
+  // { vendor_id, po_date, validity?, do_no?, plant_id?, items: [{ material_id, variety_id?, qty, rate }, ...] }
+  // Creates one PO number shared across every line item — this is how a
+  // vendor can supply multiple materials/varieties under a single PO.
+  bulkCreate: async (req, res, next) => {
+    const t = await sequelize.transaction();
+    try {
+      const { vendor_id, po_date, validity, do_no, uploaded_by_vendor, plant_id, items } = req.body;
+
+      if (!vendor_id || !po_date) throw createError(400, "vendor_id and po_date are required");
+      if (!Array.isArray(items) || items.length === 0) {
+        throw createError(400, "items must be a non-empty array of { material_id, variety_id, qty, rate }");
+      }
+
+      const vendor = await Vendor.findOne({ where: { id: vendor_id, is_deleted: false } });
+      if (!vendor) throw createError(400, "Invalid vendor_id");
+
+      for (const item of items) {
+        if (!item.material_id || !item.qty || !item.rate) {
+          throw createError(400, "Every item needs material_id, qty and rate");
+        }
+        const material = await MaterialMaster.findOne({ where: { id: item.material_id, is_deleted: false } });
+        if (!material) throw createError(400, `Invalid material_id: ${item.material_id}`);
+        if (item.variety_id) {
+          const variety = await VarietyMaster.findOne({ where: { id: item.variety_id, is_deleted: false } });
+          if (!variety) throw createError(400, `Invalid variety_id: ${item.variety_id}`);
+        }
+      }
+
+      // Reject exact duplicate material+variety combos within the same submission.
+      const seen = new Set();
+      for (const item of items) {
+        const key = `${item.material_id}-${item.variety_id || "none"}`;
+        if (seen.has(key)) throw createError(400, "Duplicate material/variety in the same PO submission");
+        seen.add(key);
+      }
+
+      const po_no = await generatePoNo();
+      const resolvedPlantId = plant_id || (req.user ? req.user.plant_id : null);
+
+      const created = [];
+      for (const item of items) {
+        const row = await PurchaseOrder.create(
+          {
+            po_no,
+            vendor_id,
+            material_id: item.material_id,
+            variety_id: item.variety_id || null,
+            qty: item.qty,
+            rate: item.rate,
+            po_date,
+            validity,
+            do_no,
+            uploaded_by_vendor: uploaded_by_vendor ?? false,
+            plant_id: resolvedPlantId,
+            created_by: req.user ? req.user.id : null,
+          },
+          { transaction: t }
+        );
+        created.push(row);
+      }
+
+      await t.commit();
+
+      const fullRows = await PurchaseOrder.findAll({
+        where: { po_no, id: { [Op.in]: created.map((r) => r.id) } },
+        include: poIncludes,
+      });
+
+      res.status(201).json({
+        success: true,
+        msg: `PO ${po_no} created with ${items.length} line item(s)`,
+        data: fullRows,
+      });
+    } catch (err) {
+      if (!t.finished) await t.rollback();
+
+      // Surface exactly which field(s) tripped a leftover DB-level
+      // constraint or Sequelize validator, instead of letting Sequelize's
+      // generic "Validation error" reach the user with no detail.
+      if (err.name === "SequelizeUniqueConstraintError") {
+        const fields = err.fields ? Object.keys(err.fields).join(", ") : "unknown field(s)";
+        return next(createError(
+          500,
+          `A database constraint still exists on: ${fields}. This is very likely a leftover unique index from ` +
+          `before multi-item POs were supported. Run "SHOW INDEX FROM purchase_order;" in MySQL Workbench, find ` +
+          `the index covering [${fields}], and drop it with: ALTER TABLE purchase_order DROP INDEX <index_name>;`
+        ));
+      }
+      if (err.name === "SequelizeValidationError" && Array.isArray(err.errors)) {
+        const detail = err.errors.map((e) => `${e.path}: ${e.message}`).join("; ");
+        return next(createError(400, `Validation failed — ${detail}`));
+      }
+
+      next(err);
+    }
+  },
+
   // PUT /api/purchase/:id
   update: async (req, res, next) => {
     try {
@@ -120,9 +225,16 @@ module.exports = {
         po_date, validity, do_no, uploaded_by_vendor, plant_id,
       } = req.body;
 
-      if (po_no) {
-        const dup = await PurchaseOrder.findOne({ where: { po_no, id: { [Op.ne]: po.id } } });
-        if (dup) throw createError(409, "Another purchase order already uses this po_no");
+      if (po_no || material_id || variety_id !== undefined) {
+        const dup = await PurchaseOrder.findOne({
+          where: {
+            po_no: po_no || po.po_no,
+            material_id: material_id || po.material_id,
+            variety_id: variety_id !== undefined ? (variety_id || null) : po.variety_id,
+            id: { [Op.ne]: po.id },
+          },
+        });
+        if (dup) throw createError(409, "This material/variety is already on this PO");
       }
       if (vendor_id) {
         const vendor = await Vendor.findOne({ where: { id: vendor_id, is_deleted: false } });

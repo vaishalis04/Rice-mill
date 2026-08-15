@@ -181,6 +181,9 @@ console.log("req.body", req.body);
 
       const lot = await Lot.findOne({ where: { id: lot_id, is_deleted: false } });
       if (!lot) throw createError(400, "Invalid lot_id");
+      if (lot.unloading_status !== "completed") {
+        throw createError(400, "Cannot start a production batch before unloading is completed for this lot (bag counts not recorded yet)");
+      }
 console.log("lot", lot);
       const existing = await ProductionBatch.findOne({ where: { lot_id, is_deleted: false } });
       if (existing) throw createError(409, "A production batch already exists for this lot");
