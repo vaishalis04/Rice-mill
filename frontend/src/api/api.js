@@ -16,13 +16,6 @@ export const getCurrentUserApi = () => axiosInstance.get("/auth/me");
 
 export const logoutApi = () => axiosInstance.post("/auth/logout");
 
-// ---------------- USERS (example - edit/remove as needed) ----------------
-export const getAllUsersApi = () => axiosInstance.get("/users");
-export const getUserByIdApi = (id) => axiosInstance.get(`/users/${id}`);
-export const updateUserApi = (id, data) =>
-  axiosInstance.put(`/users/${id}`, data);
-export const deleteUserApi = (id) => axiosInstance.delete(`/users/${id}`);
-
 // ---------------- MASTER SETTINGS (role: admin) ----------------
 // One set of routes for 7 sub-tables, selected via `type`:
 // plant | material | variety | uom | rate | quality_parameter | reason_code
@@ -69,6 +62,8 @@ export const deleteVehicleDriverApi = (id, type) =>
 // ---------------- PURCHASE ORDER (role: purchase) ----------------
 export const createPurchaseOrderApi = (data) =>
   axiosInstance.post("/purchases", data);
+export const createPurchaseOrderBulkApi = (data) =>
+  axiosInstance.post("/purchases/bulk", data);
 export const getPurchaseOrdersApi = () => axiosInstance.get("/purchases");
 export const getPurchaseOrderByIdApi = (id) =>
   axiosInstance.get(`/purchases/${id}`);
@@ -76,6 +71,11 @@ export const updatePurchaseOrderApi = (id, data) =>
   axiosInstance.put(`/purchases/${id}`, data);
 export const deletePurchaseOrderApi = (id) =>
   axiosInstance.delete(`/purchases/${id}`); // soft delete
+
+export const getPurchaseOrderByPoNoApi = (po_no) =>
+  axiosInstance.get(`/purchases/po/${po_no}`);
+export const getPurchaseOrderPdfApi = (po_no) =>
+  axiosInstance.get(`/purchases/po/${po_no}/pdf`, { responseType: "blob" });
 
 // Converts a weighed gate entry into a final purchase.
 // NOTE: will fail with "Invalid weight_slip_id" until the weighbridge
@@ -92,6 +92,30 @@ export const gateCheckinApi = (id) =>
 
 export const gateCheckoutApi = (id) =>
   axiosInstance.post("/gate/checkout", { id });
+
+// Empty trucks / trucks with miscellaneous items only (entry_type "other").
+// Skips Sampling/Lab/Negotiation; sends the truck straight to warehouse —
+// valid once it's checked in ('waiting_weighment') or already weighed
+// ('in_process').
+export const gateSendToWarehouseApi = (id, extra = {}) =>
+  axiosInstance.post("/gate/send-to-warehouse", { id, ...extra });
+
+// ---------------- LOADING (role: gate) ----------------
+// Outbound loading capture for entry_type = "sales" gate entries. Valid
+// once the gate entry is at gate_status "waiting_loading" (checked in).
+// Creating a loading record moves the gate entry to "loaded" (ready for
+// check-out) and the linked Sales Order to "dispatched".
+export const getLoadingsApi = (params = {}) =>
+  axiosInstance.get("/loading", { params });
+
+export const getLoadingByIdApi = (id) => axiosInstance.get(`/loading/${id}`);
+
+export const createLoadingApi = (data) => axiosInstance.post("/loading", data);
+
+export const updateLoadingApi = (id, data) =>
+  axiosInstance.put(`/loading/${id}`, data);
+
+export const deleteLoadingApi = (id) => axiosInstance.delete(`/loading/${id}`); // soft delete
 
 // photoBlob is a Blob/File — sent as multipart form-data, field name "photo"
 // (must match uploadImage.single("photo") on the backend route). Returns
@@ -111,8 +135,12 @@ export const uploadGatePhotoApi = (photoBlob) => {
   });
 };
 
-export const getGateEntriesApi = (status) =>
-  axiosInstance.get("/gate", { params: status ? { status } : {} });
+export const getGateEntriesApi = (status, entry_type) => {
+  const params = {};
+  if (status) params.status = status;
+  if (entry_type) params.entry_type = entry_type;
+  return axiosInstance.get("/gate", { params });
+};
 
 export const getGateEntryByIdApi = (id) => axiosInstance.get(`/gate/${id}`);
 
@@ -409,9 +437,17 @@ export const deleteWeightSlipApi = (id) =>
   axiosInstance.delete(`/weight-slips/${id}`); // soft delete
 
 // ---------------- LOTS / UNLOADING (role: warehouse) ----------------
-// Only works once the gate entry is "in_process" (weighed) with a
-// finalized Purchase. Creating a lot also opens its Stack + Inventory.
-export const createLotApi = (data) => axiosInstance.post("/lots", data);
+// Two-step unloading workflow. Only works once the gate entry is "in_process"
+// (weighed) with a finalized Purchase.
+//   1. startUnloading — opens a Lot shell (qty 0), gate entry -> "unloading".
+//      This is the point where the truck is opened for a manual check at the factory.
+//   2. completeUnloading — bag_size + accepted_bags + rejected_bags; backend
+//      auto-calculates accepted/rejected qty, opens Stack + Inventory for the
+//      accepted qty only, gate entry -> "unloaded".
+export const startUnloadingApi = (data) => axiosInstance.post("/lots/start-unloading", data);
+
+export const completeUnloadingApi = (id, data) =>
+  axiosInstance.patch(`/lots/${id}/complete-unloading`, data);
 
 export const getLotsApi = (params = {}) =>
   axiosInstance.get("/lots", { params });
@@ -421,8 +457,8 @@ export const getLotByIdApi = (id) => axiosInstance.get(`/lots/${id}`);
 export const updateLotApi = (id, data) =>
   axiosInstance.put(`/lots/${id}`, data);
 
-// destination: "warehouse" | "production" — either advances the linked
-// gate entry to "unloaded".
+// destination: "warehouse" | "production" — only allowed once unloading is
+// completed (bag counts recorded).
 export const routeLotApi = (id, destination) =>
   axiosInstance.patch(`/lots/${id}/route`, { destination });
 
@@ -458,3 +494,35 @@ export const getInventoryApi = (params = {}) =>
 
 export const getInventoryByIdApi = (id) =>
   axiosInstance.get(`/inventory/${id}`);
+
+// ---------------- USERS (role: admin) ----------------
+export const getUsersApi = (params = {}) =>
+  axiosInstance.get("/users", { params });
+
+export const getUserByIdApi = (id) => axiosInstance.get(`/users/${id}`);
+
+export const createUserApi = (data) => axiosInstance.post("/users", data);
+
+export const updateUserApi = (id, data) =>
+  axiosInstance.put(`/users/${id}`, data);
+
+export const deleteUserApi = (id) =>
+  axiosInstance.delete(`/users/${id}`); // soft delete
+
+export const getRolesApi = () => axiosInstance.get("/users/roles");
+
+// ---------------- ANALYTICS (role: admin) ----------------
+export const getAnalyticsSummaryApi = (params = {}) =>
+  axiosInstance.get("/analytics/summary", { params });
+
+export const getProductionTrendApi = (params = {}) =>
+  axiosInstance.get("/analytics/production-trend", { params });
+
+export const getMaterialFlowSnapshotApi = (params = {}) =>
+  axiosInstance.get("/analytics/material-flow", { params });
+
+export const getFleetSnapshotApi = (params = {}) =>
+  axiosInstance.get("/analytics/fleet-snapshot", { params });
+
+export const getGateActivityApi = (params = {}) =>
+  axiosInstance.get("/analytics/gate-activity", { params });

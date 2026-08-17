@@ -1,0 +1,17 @@
+.dashboard-panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.dashboard-panel h3 {
+  margin-top: 0;
+  font-size: 1rem;
+}
+
+@media (max-width: 900px) {
+  .dashboard-panel-row {
+    grid-template-columns: 1fr !important;
+  }
+}

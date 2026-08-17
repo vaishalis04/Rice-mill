@@ -5,6 +5,9 @@ import {
   updateWarehouseSettingApi,
   deleteWarehouseSettingApi,
   getWarehouseStockApi,
+  getGateEntriesApi,
+  getWeightSlipsApi,
+  gateSendToWarehouseApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
@@ -133,6 +136,107 @@ function StockTab() {
   );
 }
 
+// Empty trucks and trucks with miscellaneous (non-purchase) items don't go
+// through Sampling/Lab/Negotiation or open a Lot — this tab is purely for
+// visibility, so the warehouse team can see what's arrived and, if it's
+// still in transit, close it out themselves once received.
+function EmptyMiscTab() {
+  const [rows, setRows] = useState([]);
+  const [weightByGateEntry, setWeightByGateEntry] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+
+  const vehicles = useEntityLookup("vehicle");
+  const drivers = useEntityLookup("driver");
+
+  const load = () => {
+    setLoading(true);
+    setError("");
+    Promise.all([getGateEntriesApi(undefined, "other"), getWeightSlipsApi()])
+      .then(([entriesRes, slipsRes]) => {
+        setRows(entriesRes.data.data ?? entriesRes.data);
+        const slips = slipsRes.data.data ?? slipsRes.data ?? [];
+        const map = {};
+        slips.forEach((s) => {
+          map[s.gate_entry_id] = s.net_weight ?? (s.gross_weight - s.tare_weight);
+        });
+        setWeightByGateEntry(map);
+      })
+      .catch(() => setError("Failed to load empty/misc trucks"))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(load, []);
+
+  const handleReceive = async (id) => {
+    setError("");
+    setInfo("");
+    try {
+      await gateSendToWarehouseApi(id);
+      setInfo("Marked as received at warehouse.");
+      load();
+    } catch (err) {
+      setError(err.response?.data?.msg || err.response?.data?.message || "Failed to mark received");
+    }
+  };
+
+  return (
+    <div>
+      <p className="field-hint" style={{ marginTop: -6 }}>
+        Empty trucks and trucks with miscellaneous items — these skip Sampling/Lab and don't
+        open a Lot, so they're listed here separately for visibility rather than in Stock.
+      </p>
+      {error && <div className="dt-error">{error}</div>}
+      {info && <div className="dt-success">{info}</div>}
+      <DataTable
+        loading={loading}
+        rows={rows}
+        columns={[
+          {
+            key: "token_no",
+            label: "Token No.",
+            render: (row) => <span className="token-chip">{row.token_no}</span>,
+          },
+          {
+            key: "vehicle_id",
+            label: "Vehicle No.",
+            render: (row) => vehicles.getLabel(row.vehicle_id),
+          },
+          {
+            key: "driver_id",
+            label: "Driver Name",
+            render: (row) => drivers.getLabel(row.driver_id),
+          },
+          { key: "remarks", label: "Remarks", render: (row) => row.remarks || "—" },
+          {
+            key: "net_weight",
+            label: "Net Wt.",
+            render: (row) => weightByGateEntry[row.id] ?? "— (not weighed)",
+          },
+          {
+            key: "gate_status",
+            label: "Status",
+            render: (row) => <span className="dt-badge">{row.gate_status}</span>,
+          },
+          {
+            key: "actions",
+            label: "Action",
+            render: (row) =>
+              ["waiting_weighment", "in_process"].includes(row.gate_status) ? (
+                <button className="dt-btn" onClick={() => handleReceive(row.id)}>
+                  Mark Received
+                </button>
+              ) : (
+                "—"
+              ),
+          },
+        ]}
+      />
+    </div>
+  );
+}
+
 export default function WarehousePage() {
   const [activeType, setActiveType] = useState("warehouse");
   const [rows, setRows] = useState([]);
@@ -141,6 +245,7 @@ export default function WarehousePage() {
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [showStock, setShowStock] = useState(false);
+  const [showEmptyMisc, setShowEmptyMisc] = useState(false);
 
   // Used to render entity-type columns (warehouse_id, bin_id, lot_id) as
   // names instead of raw ids in the table below.
@@ -159,12 +264,12 @@ export default function WarehousePage() {
   };
 
   useEffect(() => {
-    if (showStock) return;
+    if (showStock || showEmptyMisc) return;
     load(activeType);
     setForm(emptyFormFor(activeType));
     setEditingId(null);
     setError("");
-  }, [activeType, showStock]);
+  }, [activeType, showStock, showEmptyMisc]);
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -226,9 +331,10 @@ export default function WarehousePage() {
         {TYPES.map((t) => (
           <button
             key={t}
-            className={`section-tab ${!showStock && activeType === t ? "active" : ""}`}
+            className={`section-tab ${!showStock && !showEmptyMisc && activeType === t ? "active" : ""}`}
             onClick={() => {
               setShowStock(false);
+              setShowEmptyMisc(false);
               setActiveType(t);
             }}
           >
@@ -237,14 +343,28 @@ export default function WarehousePage() {
         ))}
         <button
           className={`section-tab ${showStock ? "active" : ""}`}
-          onClick={() => setShowStock(true)}
+          onClick={() => {
+            setShowStock(true);
+            setShowEmptyMisc(false);
+          }}
         >
           Stock
+        </button>
+        <button
+          className={`section-tab ${showEmptyMisc ? "active" : ""}`}
+          onClick={() => {
+            setShowEmptyMisc(true);
+            setShowStock(false);
+          }}
+        >
+          Empty / Misc Trucks
         </button>
       </div>
 
       {showStock ? (
         <StockTab />
+      ) : showEmptyMisc ? (
+        <EmptyMiscTab />
       ) : (
         <>
           {error && <div className="dt-error">{error}</div>}
@@ -311,6 +431,7 @@ export default function WarehousePage() {
           "Set up your Warehouses and the Bins inside them once — after that they're just picked from a dropdown every time a Lot is unloaded.",
           "Stacks (the physical pile in a bin) are normally opened automatically when a Lot is created — manual entry here is only for corrections.",
           "The Stock tab shows a live snapshot of what's actually sitting in each warehouse right now.",
+          "The Empty / Misc Trucks tab lists trucks that skipped Sampling/Lab entirely (empty trucks or non-purchase loads) — they're weighed (if needed) and sent straight here instead of opening a Lot. Use 'Mark Received' once the truck has actually arrived at the warehouse.",
         ]}
       />
     </div>

@@ -91,12 +91,12 @@ export default function CustomersPage() {
 
       <form className="sf-form" onSubmit={handleSubmit}>
         <div className="sf-field">
-          <label>Customer Code</label>
+          <label>Customer Code (optional — auto-generated if left blank)</label>
           <input
             name="customer_code"
             value={form.customer_code}
             onChange={handleChange}
-            required
+            placeholder="e.g. CUST0004"
           />
         </div>
         <div className="sf-field">

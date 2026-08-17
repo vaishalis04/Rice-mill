@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   getWeightSlipsApi,
   createWeightSlipApi,
@@ -40,6 +40,12 @@ export default function WeighbridgePage() {
   const getGateEntryRow = (gate_entry_id) =>
     gateEntries.rows.find((r) => String(r.id) === String(gate_entry_id));
 
+  // Empty/miscellaneous trucks (entry_type "other") skip Sampling/Lab
+  // entirely and are weighable as soon as they're checked in
+  // ('waiting_weighment'), instead of needing to reach 'accepted'.
+  const selectedGateEntry = getGateEntryRow(form.gate_entry_id);
+  const isOtherEntry = selectedGateEntry?.entry_type === "other";
+
   const load = () => {
     setLoading(true);
     getWeightSlipsApi()
@@ -49,6 +55,45 @@ export default function WeighbridgePage() {
   };
 
   useEffect(load, []);
+
+  // Live net weight — recalculated automatically the moment both weights are
+  // entered, so the operator sees it instantly instead of only after saving.
+  const liveNetWeight = useMemo(() => {
+    if (form.gross_weight === "" || form.tare_weight === "") return null;
+    const g = Number(form.gross_weight);
+    const t = Number(form.tare_weight);
+    if (Number.isNaN(g) || Number.isNaN(t)) return null;
+    return g - t;
+  }, [form.gross_weight, form.tare_weight]);
+
+  // Auto-calculate tare weight when a vehicle is selected: the same truck's
+  // empty weight rarely changes, so look up its most recent weight slip and
+  // pre-fill tare_weight automatically (still editable — this is a starting
+  // point, not a lock).
+  useEffect(() => {
+    if (editingId || !form.gate_entry_id) return;
+    const ge = getGateEntryRow(form.gate_entry_id);
+    if (!ge || !ge.vehicle_id) return;
+
+    const priorForVehicle = slips
+      .filter((s) => {
+        const otherGe = getGateEntryRow(s.gate_entry_id);
+        return otherGe && String(otherGe.vehicle_id) === String(ge.vehicle_id);
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.weighed_at || b.created_at) - new Date(a.weighed_at || a.created_at)
+      );
+
+    if (priorForVehicle[0]) {
+      setForm((prev) =>
+        prev.gate_entry_id === form.gate_entry_id && prev.tare_weight === ""
+          ? { ...prev, tare_weight: String(priorForVehicle[0].tare_weight) }
+          : prev
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.gate_entry_id, slips.length]);
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -73,13 +118,16 @@ export default function WeighbridgePage() {
           tare_weight: Number(form.tare_weight),
         };
         if (form.weighed_at) payload.weighed_at = toIso(form.weighed_at);
-        // final_rate is only relevant when the gate entry has no PO — leave
-        // it out entirely rather than send an empty string.
-        if (form.final_rate !== "") payload.final_rate = Number(form.final_rate);
+        // final_rate is only relevant for a purchase entry with no PO — leave
+        // it out entirely rather than send an empty string (and it's not
+        // used at all for empty/misc entries).
+        if (!isOtherEntry && form.final_rate !== "") payload.final_rate = Number(form.final_rate);
 
         await createWeightSlipApi(payload);
         setInfo(
-          "Weight slip created — net weight computed, purchase finalized, gate entry moved to in_process."
+          isOtherEntry
+            ? "Weight slip created — net weight computed, gate entry moved to in_process. Send it to Warehouse next."
+            : "Weight slip created — net weight computed, purchase finalized, gate entry moved to in_process."
         );
         gateEntries.refetch();
       }
@@ -89,7 +137,7 @@ export default function WeighbridgePage() {
     } catch (err) {
       setError(
         err.response?.data?.message ||
-          "Save failed — gate entry may not be at 'accepted' yet."
+          "Save failed — gate entry may not be ready to weigh yet (purchase entries need 'accepted'; empty/misc entries need 'waiting_weighment')."
       );
     }
   };
@@ -133,7 +181,10 @@ export default function WeighbridgePage() {
           label="Gate Entry"
           value={form.gate_entry_id}
           onChange={(id) => setForm({ ...form, gate_entry_id: id })}
-          filter={(row) => row.gate_status === "accepted"}
+          filter={(row) =>
+            row.gate_status === "accepted" ||
+            (row.entry_type === "other" && row.gate_status === "waiting_weighment")
+          }
           required={!editingId}
           disabled={!!editingId}
         />
@@ -166,6 +217,31 @@ export default function WeighbridgePage() {
             onChange={handleChange}
             required
           />
+          {!editingId && form.gate_entry_id && form.tare_weight !== "" && (
+            <p className="field-hint">
+              Auto-filled from this vehicle's last weighing — adjust if the truck's empty
+              weight has changed.
+            </p>
+          )}
+        </div>
+        <div className="sf-field">
+          <label>Net Weight (auto-calculated)</label>
+          <input
+            type="text"
+            value={liveNetWeight === null ? "" : liveNetWeight}
+            disabled
+            placeholder="Enter gross & tare weight above"
+            style={{
+              fontWeight: 700,
+              color: liveNetWeight !== null && liveNetWeight <= 0 ? "#b91c1c" : "#1d4ed8",
+              background: "#f8fafc",
+            }}
+          />
+          {liveNetWeight !== null && liveNetWeight <= 0 && (
+            <p className="field-hint" style={{ color: "#b91c1c" }}>
+              Gross weight must be greater than tare weight.
+            </p>
+          )}
         </div>
         {!editingId && (
           <>
@@ -178,16 +254,23 @@ export default function WeighbridgePage() {
                 onChange={handleChange}
               />
             </div>
-            <div className="sf-field">
-              <label>Final Rate (only if this entry has no PO)</label>
-              <input
-                name="final_rate"
-                type="number"
-                step="0.01"
-                value={form.final_rate}
-                onChange={handleChange}
-              />
-            </div>
+            {!isOtherEntry && (
+              <div className="sf-field">
+                <label>Final Rate (only if this entry has no PO)</label>
+                <input
+                  name="final_rate"
+                  type="number"
+                  step="0.01"
+                  value={form.final_rate}
+                  onChange={handleChange}
+                />
+              </div>
+            )}
+            {isOtherEntry && (
+              <p className="field-hint">
+                This is an Empty/Misc truck — no purchase is finalized, no rate needed.
+              </p>
+            )}
           </>
         )}
         <div style={{ display: "flex", gap: 8 }}>
@@ -257,11 +340,11 @@ export default function WeighbridgePage() {
       <ModuleGuide
         title="Weighbridge"
         steps={[
-          "A truck must already be marked 'accepted' by Quality before it can be weighed — pick it from the Gate Entry dropdown above.",
-          "Enter the gross weight (truck + load) and tare weight (empty truck) from the weighbridge readout.",
-          "Net weight is calculated automatically (gross − tare) — you don't need to work it out yourself.",
-          "Submitting finalizes the Purchase record and moves the gate entry on to 'in_process', ready for unloading in the Warehouse module.",
-          "If this particular delivery has no linked Purchase Order, fill in Final Rate so the purchase can still be priced.",
+          "A purchase truck must already be marked 'accepted' by Quality before it can be weighed. An Empty/Misc truck just needs to be checked in ('waiting_weighment') — pick either from the Gate Entry dropdown above.",
+          "Selecting a Gate Entry auto-fills Tare Weight from that same vehicle's last weighing, if there is one — adjust it if the empty weight has changed.",
+          "Enter the gross weight (truck + load) from the weighbridge readout — Net Weight is calculated live as you type, no calculator needed.",
+          "For a purchase truck, submitting finalizes the Purchase record and moves the gate entry on to 'in_process', ready for unloading in the Warehouse module. For an Empty/Misc truck, no purchase is created — it just moves to 'in_process', ready to be sent straight to Warehouse.",
+          "If a purchase delivery has no linked Purchase Order, fill in Final Rate so the purchase can still be priced.",
         ]}
       />
     </div>

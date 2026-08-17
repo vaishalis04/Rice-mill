@@ -85,12 +85,12 @@ export default function VendorsPage() {
 
       <form className="sf-form" onSubmit={handleSubmit}>
         <div className="sf-field">
-          <label>Vendor Code</label>
+          <label>Vendor Code (optional — auto-generated if left blank)</label>
           <input
             name="vendor_code"
             value={form.vendor_code}
             onChange={handleChange}
-            required
+            placeholder="e.g. VEND0003"
           />
         </div>
         <div className="sf-field">

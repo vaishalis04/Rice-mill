@@ -1,38 +1,24 @@
 import { useState, useEffect } from "react";
-import {
-  getLotsApi,
-  createLotApi,
-  updateLotApi,
-  routeLotApi,
-  deleteLotApi,
-} from "../../api/api";
+import { getLotsApi, updateLotApi, routeLotApi, deleteLotApi } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
-const emptyForm = {
-  gate_entry_id: "",
-  warehouse_id: "",
-  bin_id: "",
-  // Optional overrides — left blank, the backend infers/defaults these
-  // from the weight slip and gate entry / PO.
-  qty: "",
-  material_id: "",
-  variety_id: "",
-};
-
+// Lots is now the master view/management screen for every lot that exists —
+// both routed and still-pending. Recording a *new* unload (which opens a
+// lot) lives on the separate Unloading page; this page is for looking a lot
+// up, correcting its qty/material/variety, tracing its warehouse/bin
+// placement, or routing it if that step was skipped on the Unloading page.
 export default function LotsPage() {
   const [lots, setLots] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState(emptyForm);
-  const [showOptional, setShowOptional] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ qty: "", material_id: "", variety_id: "" });
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
   const gateEntries = useEntityLookup("gate_entry");
-  const warehouses = useEntityLookup("warehouse");
-  const bins = useEntityLookup("bin");
 
   const load = () => {
     setLoading(true);
@@ -44,37 +30,37 @@ export default function LotsPage() {
 
   useEffect(load, []);
 
-  const handleChange = (e) =>
-    setForm({ ...form, [e.target.name]: e.target.value });
+  const handleEdit = (row) => {
+    setEditingId(row.id);
+    setEditForm({
+      qty: row.qty ?? "",
+      material_id: row.material?.id ?? "",
+      variety_id: row.variety?.id ?? "",
+    });
+    setError("");
+    setInfo("");
+  };
 
-  const handleSubmit = async (e) => {
+  const handleUpdate = async (e) => {
     e.preventDefault();
     setError("");
     setInfo("");
     try {
-      const payload = {
-        gate_entry_id: Number(form.gate_entry_id),
-        warehouse_id: Number(form.warehouse_id),
-        bin_id: Number(form.bin_id),
-      };
-      if (form.qty !== "") payload.qty = Number(form.qty);
-      if (form.material_id !== "") payload.material_id = Number(form.material_id);
-      if (form.variety_id !== "") payload.variety_id = Number(form.variety_id);
+      const payload = {};
+      if (editForm.qty !== "") payload.qty = Number(editForm.qty);
+      if (editForm.material_id !== "") payload.material_id = Number(editForm.material_id);
+      if (editForm.variety_id !== "") payload.variety_id = Number(editForm.variety_id);
 
-      const res = await createLotApi(payload);
-      const lotNo = res.data.lot?.lot_no ?? res.data.data?.lot?.lot_no;
-      setInfo(`Lot created${lotNo ? ` (${lotNo})` : ""} — stack and inventory opened.`);
-      setForm(emptyForm);
-      setShowOptional(false);
-      gateEntries.refetch();
+      await updateLotApi(editingId, payload);
+      setInfo("Lot updated.");
+      setEditingId(null);
       load();
     } catch (err) {
-      setError(
-        err.response?.data?.message ||
-          "Save failed — gate entry may not be weighed (in_process) yet."
-      );
+      setError(err.response?.data?.message || "Update failed");
     }
   };
+
+  const handleCancelEdit = () => setEditingId(null);
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this lot?")) return;
@@ -101,7 +87,7 @@ export default function LotsPage() {
 
   return (
     <div>
-      <h2 style={{ marginTop: 0 }}>Lots / Unloading</h2>
+      <h2 style={{ marginTop: 0 }}>Lots</h2>
       {error && <div className="dt-error">{error}</div>}
       {info && (
         <div className="dt-error" style={{ background: "#eaf7ea", color: "#2b7a2b" }}>
@@ -109,79 +95,44 @@ export default function LotsPage() {
         </div>
       )}
 
-      <form className="sf-form" onSubmit={handleSubmit}>
-        <EntitySelect
-          entity="gate_entry"
-          label="Gate Entry"
-          value={form.gate_entry_id}
-          onChange={(id) => setForm({ ...form, gate_entry_id: id })}
-          filter={(row) => row.gate_status === "in_process"}
-          required
-        />
-        <EntitySelect
-          entity="warehouse"
-          label="Warehouse"
-          value={form.warehouse_id}
-          onChange={(id) => setForm({ ...form, warehouse_id: id })}
-          required
-          creatable
-        />
-        <EntitySelect
-          entity="bin"
-          label="Bin"
-          value={form.bin_id}
-          onChange={(id) => setForm({ ...form, bin_id: id })}
-          required
-          creatable
-          context={{ warehouse_id: form.warehouse_id }}
-        />
-
-        <button
-          type="button"
-          className="sf-cancel"
-          style={{ marginBottom: 10 }}
-          onClick={() => setShowOptional((v) => !v)}
-        >
-          {showOptional ? "Hide" : "Show"} optional overrides
-        </button>
-
-        {showOptional && (
-          <>
-            <div className="sf-field">
-              <label>Qty (defaults to weight slip's net weight)</label>
-              <input
-                name="qty"
-                type="number"
-                value={form.qty}
-                onChange={handleChange}
-              />
-            </div>
-            <EntitySelect
-              entity="material"
-              label="Material (defaults from gate entry / PO)"
-              value={form.material_id}
-              onChange={(id) => setForm({ ...form, material_id: id })}
+      {editingId && (
+        <form className="sf-form" onSubmit={handleUpdate}>
+          <div className="sf-field">
+            <label>Qty</label>
+            <input
+              type="number"
+              value={editForm.qty}
+              onChange={(e) => setEditForm({ ...editForm, qty: e.target.value })}
             />
-            <EntitySelect
-              entity="variety"
-              label="Variety"
-              value={form.variety_id}
-              onChange={(id) => setForm({ ...form, variety_id: id })}
-              creatable
-            />
-          </>
-        )}
-
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="sf-submit" type="submit">
-            Create Lot
-          </button>
-        </div>
-      </form>
+          </div>
+          <EntitySelect
+            entity="material"
+            label="Material"
+            value={editForm.material_id}
+            onChange={(id) => setEditForm({ ...editForm, material_id: id })}
+          />
+          <EntitySelect
+            entity="variety"
+            label="Variety"
+            value={editForm.variety_id}
+            onChange={(id) => setEditForm({ ...editForm, variety_id: id })}
+            creatable
+          />
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="sf-submit" type="submit">
+              Save Changes
+            </button>
+            <button type="button" className="sf-cancel" onClick={handleCancelEdit}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
 
       <DataTable
         loading={loading}
         rows={lots}
+        onEdit={handleEdit}
         onDelete={handleDelete}
         columns={[
           { key: "lot_no", label: "Lot No." },
@@ -192,6 +143,16 @@ export default function LotsPage() {
               row.purchase?.gate_entry_id
                 ? gateEntries.getLabel(row.purchase.gate_entry_id)
                 : "—",
+          },
+          {
+            key: "material",
+            label: "Material",
+            render: (row) => row.material?.name || "—",
+          },
+          {
+            key: "variety",
+            label: "Variety",
+            render: (row) => row.variety?.variety_name || "—",
           },
           {
             key: "warehouse_id",
@@ -206,22 +167,42 @@ export default function LotsPage() {
             label: "Bin",
             render: (row) => row.stacks?.[0]?.bin?.bin_code || "—",
           },
-          { key: "qty", label: "Qty" },
+          {
+            key: "unloading_status",
+            label: "Unloading",
+            render: (row) =>
+              row.unloading_status === "completed" ? (
+                <span className="dt-badge">completed</span>
+              ) : (
+                <span style={{ color: "#a08c6b" }}>bags not counted yet</span>
+              ),
+          },
+          { key: "accepted_bags", label: "Accepted Bags" },
+          { key: "rejected_bags", label: "Rejected Bags" },
+          { key: "qty", label: "Accepted Qty" },
+          { key: "rejected_qty", label: "Rejected Qty" },
+          {
+            key: "parent_lot",
+            label: "Parent Lot",
+            render: (row) => row.parentLot?.lot_no || "—",
+          },
           {
             key: "destination",
             label: "Destination",
             render: (row) =>
               row.destination ? (
                 <span className="dt-badge">{row.destination}</span>
-              ) : (
+              ) : row.unloading_status === "completed" ? (
                 <span style={{ color: "#a08c6b" }}>Not routed</span>
+              ) : (
+                <span style={{ color: "#a08c6b" }}>—</span>
               ),
           },
           {
             key: "route_actions",
             label: "Route",
             render: (row) =>
-              row.destination ? null : (
+              row.destination || row.unloading_status !== "completed" ? null : (
                 <div style={{ display: "flex", gap: 6 }}>
                   <button className="dt-btn" onClick={() => handleRoute(row.id, "warehouse")}>
                     To Warehouse
@@ -235,12 +216,12 @@ export default function LotsPage() {
         ]}
       />
       <ModuleGuide
-        title="Lots / Unloading"
+        title="Lots"
         steps={[
-          "Only gate entries at 'in_process' (already weighed) show up here — pick one, then choose which Warehouse and Bin the truck is unloading into.",
-          "This opens a Lot — the traceable batch of grain from that one truck — plus a Stack and Inventory row automatically.",
-          "Route the lot to Warehouse (stays as raw stock) or Production (goes straight into a batch) using the buttons on each unrouted row.",
-          "Routing moves the linked gate entry on to 'unloaded', closing out the gate-to-warehouse journey for that truck.",
+          "This is the full master list of every lot — the traceable batch tied back to one truckload — whether it's still being unloaded, bag-counted, or already routed.",
+          "New lots are opened from the Unloading page's 'Start Unloading' step; bag size and accepted/rejected bag counts are entered there too. This page is for looking lots up and managing them afterwards.",
+          "Edit lets you correct qty, material or variety after the fact (e.g. a lab re-grade). Delete soft-removes a lot.",
+          "Routing to Warehouse or Production is only available once unloading is completed (bags counted) — if it was skipped on the Unloading page, you can still route it from here.",
         ]}
       />
     </div>

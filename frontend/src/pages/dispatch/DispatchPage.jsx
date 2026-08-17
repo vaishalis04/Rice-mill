@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   getDispatchesApi,
   createDispatchApi,
@@ -27,6 +27,12 @@ export default function DispatchPage() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [historyCustomerId, setHistoryCustomerId] = useState(null);
+  // Bumped after every successful dispatch to force the Sales Order picker
+  // to remount and refetch. Without this its internal option list goes
+  // stale after a submit — an SO that just flipped to "dispatched" would
+  // still show up as selectable ("confirmed" only) until a full page
+  // reload, since EntitySelect only fetches once on mount.
+  const [soPickerKey, setSoPickerKey] = useState(0);
 
   // Ready finished goods available to allocate — a plain multi-select
   // checklist since EntitySelect only picks one id at a time.
@@ -58,6 +64,36 @@ export default function DispatchPage() {
     load();
     loadReadyFg();
   }, []);
+
+  // Auto-fill Vehicle & Driver when a Sales Order is picked, by reusing the
+  // most recent prior dispatch's vehicle/driver for that same SO — useful
+  // when a large order goes out in several truckloads and the same
+  // truck/driver combo is doing the run again. Only fills empty fields, and
+  // only for a fresh (non-editing) selection — never overwrites something
+  // the operator already picked by hand.
+  useEffect(() => {
+    if (!form.so_id) return;
+    const priorForSo = dispatches
+      .filter((d) => String(d.so_id) === String(form.so_id))
+      .sort(
+        (a, b) =>
+          new Date(b.created_at || b.createdAt || 0) -
+          new Date(a.created_at || a.createdAt || 0)
+      );
+    const last = priorForSo[0];
+    if (!last) return;
+    setForm((prev) =>
+      prev.so_id === form.so_id && prev.vehicle_id === "" && prev.driver_id === ""
+        ? { ...prev, vehicle_id: String(last.vehicle_id), driver_id: String(last.driver_id) }
+        : prev
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.so_id, dispatches]);
+
+  const priorDispatchForSo = useMemo(
+    () => dispatches.some((d) => String(d.so_id) === String(form.so_id)),
+    [dispatches, form.so_id]
+  );
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -96,6 +132,7 @@ export default function DispatchPage() {
       load();
       loadReadyFg();
       salesOrders.refetch();
+      setSoPickerKey((k) => k + 1);
     } catch (err) {
       setError(err.response?.data?.message || "Save failed");
     }
@@ -140,6 +177,7 @@ export default function DispatchPage() {
 
       <form className="sf-form" onSubmit={handleSubmit}>
         <EntitySelect
+          key={soPickerKey}
           entity="sales_order"
           label="Sales Order"
           value={form.so_id}
@@ -163,6 +201,12 @@ export default function DispatchPage() {
           required
           creatable
         />
+        {priorDispatchForSo && form.so_id && (
+          <p className="field-hint" style={{ gridColumn: "1 / -1", marginTop: -6 }}>
+            Vehicle & Driver auto-filled from this Sales Order's last dispatch — change them if
+            a different truck is doing this run.
+          </p>
+        )}
         <div className="sf-field">
           <label>Dispatch Weight (optional — defaults to sum of allocated FG)</label>
           <input
@@ -295,7 +339,8 @@ export default function DispatchPage() {
       <ModuleGuide
         title="Dispatch"
         steps={[
-          "Pick a confirmed Sales Order, a Vehicle and Driver, then tick which 'ready' Finished Goods records to allocate to this delivery.",
+          "Pick a confirmed Sales Order — if it's had a prior dispatch, Vehicle and Driver auto-fill from that last run (still editable).",
+          "Tick which 'ready' Finished Goods records to allocate to this delivery.",
           "Submitting generates a challan number, flips those FG rows to 'dispatched', and marks the sales order dispatched too.",
           "Download the Challan PDF to hand to the driver, and mark it Delivered once it's confirmed at the customer's end.",
         ]}

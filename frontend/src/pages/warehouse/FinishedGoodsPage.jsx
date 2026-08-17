@@ -14,7 +14,6 @@ import { useEntityLookup } from "../../hooks/useEntityLookup";
 // given as an exact enum — if your backend uses different casing/wording,
 // tell me and I'll adjust this list.
 const STATUS_OPTIONS = ["", "ready", "dispatched", "hold", "aging"];
-const PACK_SIZES = ["", "5", "10", "25", "50", "custom"];
 
 export default function FinishedGoodsPage() {
   const [rows, setRows] = useState([]);
@@ -132,20 +131,15 @@ export default function FinishedGoodsPage() {
           </select>
         </div>
         <div className="sf-field">
-          <label>Pack Size</label>
-          <select
+          <label>Pack Size (kg)</label>
+          <input
+            type="number"
+            step="0.01"
+            placeholder="e.g. 25 — leave blank for all"
             value={packSizeFilter}
-            onChange={(e) => {
-              setPackSizeFilter(e.target.value);
-              load({ pack_size: e.target.value });
-            }}
-          >
-            {PACK_SIZES.map((s) => (
-              <option key={s} value={s}>
-                {s ? (s === "custom" ? "Custom" : `${s} kg`) : "All"}
-              </option>
-            ))}
-          </select>
+            onChange={(e) => setPackSizeFilter(e.target.value)}
+            onBlur={(e) => load({ pack_size: e.target.value })}
+          />
         </div>
         <EntitySelect
           entity="warehouse"

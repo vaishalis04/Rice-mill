@@ -29,6 +29,7 @@ import {
   createCustomerApi,
   getSalesOrdersApi,
   getFinishedGoodsApi,
+  getRolesApi,
 } from "../api/api";
 import { MATERIAL_CATEGORIES } from "../constants/materialCategories";
 import { GRAIN_TYPES } from "../constants/grainTypes";
@@ -169,9 +170,21 @@ export const ENTITY_OPTIONS = {
     fetch: () => getMasterSettingsApi("uom").then(unwrap),
     getLabel: (row) => `${row.name}${row.uom_code ? ` (${row.uom_code})` : ""}`,
   },
+  plant: {
+    fetch: () => getMasterSettingsApi("plant").then(unwrap),
+    getLabel: (row) => `${row.name}${row.plant_code ? ` (${row.plant_code})` : ""}`,
+  },
+  role: {
+    fetch: () => getRolesApi().then(unwrap),
+    getLabel: (row) => row.role_name,
+  },
   purchase_order: {
     fetch: () => getPurchaseOrdersApi().then(unwrap),
-    getLabel: (row) => `${row.po_no}${row.rate ? ` — ₹${row.rate}` : ""}`,
+    // Deliberately just the PO number — no vendor name or rate. Gate Entry
+    // (and anywhere else this dropdown is used) auto-fills Vendor/Material
+    // from the picked PO itself, so those details would just be noise here
+    // rather than something the person needs to compare in the list.
+    getLabel: (row) => row.po_no,
     quickCreate: {
       label: "Purchase Order",
       fields: [
@@ -305,8 +318,10 @@ export const ENTITY_OPTIONS = {
   },
   sales_order: {
     fetch: () => getSalesOrdersApi().then(unwrap),
-    getLabel: (row) =>
-      `${row.so_no || `SO #${row.id}`}${row.so_status ? ` (${row.so_status})` : ""}`,
+    getLabel: (row) => {
+      const remaining = Number(row.qty || 0) - Number(row.dispatched_qty || 0);
+      return `${row.so_no || `SO #${row.id}`} — ${row.customer?.name || "?"} — ${row.material?.name || "?"} (${remaining}/${row.qty ?? "?"}kg left) [${row.so_status}]`;
+    },
   },
   // Only "ready" FG rows are ever pickable for dispatch — see DispatchPage,
   // which fetches this filtered rather than through useEntityLookup.
