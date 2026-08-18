@@ -12,19 +12,7 @@ export default function SalesDashboard() {
   const [tab, setTab] = useState("customers");
 
   return (
-    <DashboardLayout title="Sales Dashboard">
-      <div className="section-tabs">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            className={`section-tab ${tab === t.key ? "active" : ""}`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
+    <DashboardLayout title="Sales Dashboard" tabs={TABS} activeTab={tab} onTabChange={setTab}>
       {tab === "customers" && <CustomersPage />}
       {tab === "orders" && <SalesOrdersPage />}
     </DashboardLayout>

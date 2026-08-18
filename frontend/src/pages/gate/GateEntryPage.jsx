@@ -60,6 +60,17 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
   const [statusFilter, setStatusFilter] = useState("");
   const [entryTypeFilter, setEntryTypeFilter] = useState("");
   const [form, setForm] = useState(emptyForm);
+  // The full grouped PO object (po_no + all its material line items) once
+  // one's been picked — used to resolve which SPECIFIC line item (po_id)
+  // matches whichever material the truck actually ends up delivering, and
+  // to constrain the Material field's choices to only what's on this PO.
+  const [poGroup, setPoGroup] = useState(null);
+  // The full grouped Sales Order object (so_no + all its material line
+  // items) once one's been picked — same idea as poGroup above. Lets the
+  // "materials on this Sales Order" box below show EVERY material the SO
+  // covers, and (when there's more than one) resolves which SPECIFIC line
+  // item (so_id) matches whichever material this truck is collecting.
+  const [soGroup, setSoGroup] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [lastToken, setLastToken] = useState("");
@@ -80,8 +91,13 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
   // the PO that already pins them down.
   const purchaseOrders = useEntityLookup("purchase_order");
   // Used to auto-fill Customer/Material the moment a Sales Order is picked
-  // for a sales (outbound loading) entry.
+  // for a sales (outbound loading) entry — flat, one row per material line,
+  // used for labels/details of a SPECIFIC line item (so_id).
   const salesOrders = useEntityLookup("sales_order");
+  // Grouped, one option per so_no with every material it covers nested
+  // under `items` — used for the Sales Order picker itself, so a
+  // multi-material SO reads as ONE order (see soGroup above).
+  const salesOrderGroups = useEntityLookup("sales_order_grouped");
 
   // "Load New Truck for Remaining Qty" on the Loading tab jumps here with a
   // Sales Order id already known — pre-select it and switch to the Sales
@@ -89,12 +105,13 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
   useEffect(() => {
     if (!prefillSoId) return;
     setForm((prev) => ({ ...emptyForm, entry_type: "sales", so_id: prefillSoId }));
+    setPoGroup(null);
+    setSoGroup(null);
     if (onPrefillConsumed) onPrefillConsumed();
   }, [prefillSoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isOther = form.entry_type === "other";
   const isSales = form.entry_type === "sales";
-  const selectedSalesOrder = salesOrders.rows.find((r) => String(r.id) === String(form.so_id));
 
   const load = (status = statusFilter, entryType = entryTypeFilter) => {
     setLoading(true);
@@ -122,18 +139,42 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
   // Used by EntitySelect fields — they hand back the picked row's id directly.
   const setField = (name) => (id) => setForm({ ...form, [name]: id });
 
-  // Picking a PO pins down its vendor + material too — auto-fill both so
-  // the person isn't asked to pick things the PO already answers. They can
-  // still override afterward if the PO turns out to be the wrong one.
+  // Picking a PO pins down its vendor too — auto-fill it so the person
+  // isn't asked to pick something the PO already answers (they can still
+  // override afterward). If the PO covers just one material, auto-fill
+  // that too. If it covers several, leave Material for the person to pick
+  // explicitly (constrained to just this PO's materials, see the Material
+  // field below) — the exact po_id line item is resolved once they do.
   const handlePoChange = (po_id) => {
     const po = purchaseOrders.rows.find((r) => String(r.id) === String(po_id));
+    setPoGroup(po || null);
+    // Use grouped PO id so a single gate entry represents the whole PO
     setForm((prev) => ({
       ...prev,
-      po_id,
+      po_id: po ? po.id : po_id,
       vendor_id: po ? po.vendor_id : prev.vendor_id,
-      material_id: po ? po.material_id : prev.material_id,
+      material_id: po && Array.isArray(po.items) && po.items[0] ? po.items[0].material_id : "",
     }));
   };
+
+  // Picking a Sales Order shows every material it covers (soGroup below).
+  // If it covers just one material, auto-select that line item's id as
+  // so_id — nothing else to pick. If it covers several, leave Material for
+  // the person to pick explicitly (constrained to just this SO's materials,
+  // see the Material field below) — the exact so_id line item is resolved
+  // once they do, same pattern as handlePoChange above.
+  const handleSoChange = (so_id) => {
+    const so = salesOrderGroups.rows.find((r) => String(r.id) === String(so_id));
+    setSoGroup(so || null);
+    // Use grouped SO id so a single gate entry represents the whole Sales Order
+    setForm((prev) => ({
+      ...prev,
+      so_id: so ? so.id : so_id,
+      material_id: so && Array.isArray(so.items) && so.items[0] ? so.items[0].material_id : "",
+    }));
+    salesOrders.refetch();
+  };
+  
 
   const handleEntryTypeChange = (e) => {
     const entry_type = e.target.value;
@@ -147,6 +188,8 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
       driver_id: prev.driver_id,
       driver_photo_url: prev.driver_photo_url,
     }));
+    setPoGroup(null);
+    setSoGroup(null);
   };
 
   // Fired by <CameraCapture> once a frame is snapped (or a fallback file is
@@ -199,24 +242,24 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
         driver_id: Number(form.driver_id),
         driver_photo_url: form.driver_photo_url,
       };
+
       if (form.entry_type === "purchase") {
         payload.vendor_id = Number(form.vendor_id);
+        // send grouped PO id so one gate entry represents the whole PO
         payload.po_id = form.po_id ? Number(form.po_id) : undefined;
-        payload.material_id = Number(form.material_id);
+        if (form.material_id) payload.material_id = Number(form.material_id);
         payload.challan_no = form.challan_no;
         payload.expected_qty = form.expected_qty ? Number(form.expected_qty) : undefined;
       } else if (form.entry_type === "sales") {
-        // material_id is intentionally NOT sent — the backend derives it
-        // from the Sales Order so it can never drift from what was ordered.
+        // send grouped Sales Order id so one gate entry represents the whole SO
         payload.so_id = Number(form.so_id);
         payload.challan_no = form.challan_no || undefined;
-        // Planned/expected qty is optional here — the actual loaded qty is
-        // only known once the truck is physically loaded (Loading tab).
         payload.expected_qty = form.expected_qty ? Number(form.expected_qty) : undefined;
       } else {
         payload.challan_no = form.challan_no || undefined;
         payload.remarks = form.remarks;
       }
+
       const res = await generateGateTokenApi(payload);
       const tokenNo = res.data.token_no ?? res.data.data?.token_no;
       setLastToken(tokenNo || "");
@@ -226,6 +269,8 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
           : "Entry saved (check the list below for the token number)."
       );
       setForm(emptyForm);
+      setPoGroup(null);
+      setSoGroup(null);
       setPhotoPreview("");
       setPhotoUploadError("");
       load();
@@ -330,38 +375,55 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
           <>
             <div>
               <EntitySelect
-                entity="vendor"
-                label="Vendor"
-                value={form.vendor_id}
-                onChange={setField("vendor_id")}
-                required
-                creatable
-              />
-              <p className="field-hint">Who is supplying this load of grain — auto-fills once you pick a PO below.</p>
-            </div>
-            <div>
-              <EntitySelect
-                entity="material"
-                label="Material"
-                value={form.material_id}
-                onChange={setField("material_id")}
-                required
-                creatable
-              />
-              <p className="field-hint">What's being delivered, e.g. Paddy — auto-fills once you pick a PO below.</p>
-            </div>
-            <div>
-              <EntitySelect
                 entity="purchase_order"
                 label="Purchase Order"
                 value={form.po_id}
                 onChange={handlePoChange}
                 required
-                creatable
-                context={{ vendor_id: form.vendor_id, material_id: form.material_id }}
               />
-              <p className="field-hint">Picking an existing PO fills in Vendor and Material above for you.</p>
+              <p className="field-hint">
+                Picking a Purchase Order shows every material it covers below and fills in the
+                Vendor automatically. The gate entry will represent the whole Purchase Order
+                (all materials) for this vehicle.
+              </p>
             </div>
+            {/* Material selection removed — gate entry represents the whole PO */}
+            {poGroup && (
+              <div className="sf-field">
+                <label>Materials on this Purchase Order</label>
+                <div
+                  style={{
+                    padding: "8px 10px",
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 6,
+                    fontSize: 13,
+                  }}
+                >
+                  <div style={{ marginBottom: 4 }}>
+                    <strong>Vendor:</strong> {poGroup.vendor?.name || "—"}
+                  </div>
+                  {poGroup.items.map((i, idx) => {
+                    const isThisTruck = String(i.id) === String(form.po_id);
+                    return (
+                      <div
+                        key={i.id}
+                        style={{
+                          marginTop: idx === 0 ? 0 : 6,
+                          paddingTop: idx === 0 ? 0 : 6,
+                          borderTop: idx === 0 ? "none" : "1px dashed #e2e8f0",
+                          color: isThisTruck ? "#1d4ed8" : undefined,
+                        }}
+                      >
+                        <strong>{i.material?.name || "—"}</strong>
+                        {i.variety?.variety_name ? ` (${i.variety.variety_name})` : ""} — Ordered {i.qty} @ ₹{i.rate}
+                        {isThisTruck ? " ← this truck" : ""}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="sf-field">
               <label>Challan No.</label>
               <input
@@ -389,25 +451,27 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
           <>
             <div>
               <EntitySelect
-                entity="sales_order"
+                entity="sales_order_grouped"
                 label="Sales Order"
                 value={form.so_id}
-                onChange={(id) => {
-                  setForm((prev) => ({ ...prev, so_id: id }));
-                  salesOrders.refetch();
-                }}
-                filter={(row) => !["dispatched", "closed", "cancelled"].includes(row.so_status)}
+                onChange={handleSoChange}
+                filter={(row) =>
+                  Array.isArray(row.items) &&
+                  row.items.some((i) => !["dispatched", "closed", "cancelled"].includes(i.so_status))
+                }
                 required
               />
               <p className="field-hint">
-                Picking a Sales Order fills in the Customer and Material below automatically —
-                only the loaded quantity is left for later (that's captured in the Loading tab
-                once the truck is actually loaded).
+                Picking a Sales Order shows every material it covers below and fills in the
+                Customer automatically. The gate entry will represent the whole Sales Order
+                (all materials) for this vehicle; the actual loaded quantity is entered later on
+                the Loading tab when the truck is loaded.
               </p>
             </div>
-            {selectedSalesOrder && (
+            {/* Material selection removed — gate entry represents the whole Sales Order */}
+            {soGroup && (
               <div className="sf-field">
-                <label>Auto-filled from Sales Order</label>
+                <label>Materials on this Sales Order</label>
                 <div
                   style={{
                     padding: "8px 10px",
@@ -417,9 +481,27 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
                     fontSize: 13,
                   }}
                 >
-                  <div><strong>Customer:</strong> {selectedSalesOrder.customer?.name || "—"}</div>
-                  <div><strong>Material:</strong> {selectedSalesOrder.material?.name || "—"}</div>
-                  <div><strong>Ordered Qty:</strong> {selectedSalesOrder.qty ?? "—"}</div>
+                  <div style={{ marginBottom: 4 }}>
+                    <strong>Customer:</strong> {soGroup.customer?.name || "—"}
+                  </div>
+                  {soGroup.items.map((i, idx) => {
+                    const remaining = Math.round((Number(i.qty || 0) - Number(i.dispatched_qty || 0)) * 100) / 100;
+                    const isThisTruck = String(i.id) === String(form.so_id);
+                    return (
+                      <div
+                        key={i.id}
+                        style={{
+                          marginTop: idx === 0 ? 0 : 6,
+                          paddingTop: idx === 0 ? 0 : 6,
+                          borderTop: idx === 0 ? "none" : "1px dashed #e2e8f0",
+                          color: isThisTruck ? "#1d4ed8" : undefined,
+                        }}
+                      >
+                        <strong>{i.material?.name || "—"}</strong> — Ordered {i.qty}, Remaining {remaining}
+                        {isThisTruck ? " ← this truck" : ""}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

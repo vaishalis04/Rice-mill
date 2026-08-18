@@ -1,53 +1,52 @@
 import { useState, useEffect } from "react";
 import {
-  getPurchaseOrdersApi,
+  getPurchaseOrdersGroupedApi,
   createPurchaseOrderBulkApi,
+  addPurchaseOrderItemApi,
   updatePurchaseOrderApi,
+  updatePurchaseOrderHeaderApi,
   deletePurchaseOrderApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
-import PurchaseOrderDetailModal from "../../components/PurchaseOrderDetailModal";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
+// A Purchase Order can cover several materials from the same vendor — under
+// the hood each material is still its own row sharing one po_no (so Gate →
+// Weighbridge can track each material's delivery independently), but the
+// UI here treats a po_no as ONE order: one row in the list, one edit panel
+// that lets you keep adding materials to it, not several duplicate-looking
+// rows for the same PO number.
 const emptyHeader = { vendor_id: "", po_date: "", validity: "", do_no: "" };
 const emptyItem = { material_id: "", variety_id: "", qty: "", rate: "" };
-const emptyEditForm = {
-  po_no: "",
-  vendor_id: "",
-  material_id: "",
-  variety_id: "",
-  qty: "",
-  rate: "",
-  po_date: "",
-};
 
 export default function PurchaseOrdersPage() {
-  const [orders, setOrders] = useState([]);
+  const [orders, setOrders] = useState([]); // grouped: [{ po_no, vendor_id, vendor, po_date, validity, do_no, items:[...] }]
   const [loading, setLoading] = useState(true);
   const vendors = useEntityLookup("vendor");
   const materials = useEntityLookup("material");
   const varieties = useEntityLookup("variety");
 
-  // "Cart" state for creating a new multi-item PO.
+  // "Cart" state for creating a brand-new multi-item PO.
   const [header, setHeader] = useState(emptyHeader);
   const [currentItem, setCurrentItem] = useState(emptyItem);
   const [cartItems, setCartItems] = useState([]);
 
-  // Single-row edit state, used only when editing one existing line item.
-  const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState(emptyEditForm);
-
-  // po_no currently open in the View modal, or null when closed.
-  const [viewingPoNo, setViewingPoNo] = useState(null);
+  // Editing an EXISTING PO (by po_no) — header fields + its items, plus a
+  // mini "add material" form that hits the server directly (each add is
+  // its own request, since this PO already exists).
+  const [editingPoNo, setEditingPoNo] = useState(null);
+  const [editHeader, setEditHeader] = useState(emptyHeader);
+  const [editItems, setEditItems] = useState([]); // [{ id, material_id, variety_id, qty, rate }]
+  const [newItem, setNewItem] = useState(emptyItem);
 
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
   const load = () => {
     setLoading(true);
-    getPurchaseOrdersApi()
+    getPurchaseOrdersGroupedApi()
       .then((res) => setOrders(res.data.data ?? res.data))
       .catch(() => setError("Failed to load purchase orders"))
       .finally(() => setLoading(false));
@@ -111,60 +110,151 @@ export default function PurchaseOrdersPage() {
       setCartItems([]);
       load();
     } catch (err) {
-      setError(err.response?.data?.message || "Save failed");
+      setError(err.response?.data?.msg || err.response?.data?.message || "Save failed");
     }
   };
 
-  const handleEdit = (row) => {
-    setEditingId(row.id);
-    setEditForm({
-      po_no: row.po_no || "",
-      vendor_id: row.vendor_id || "",
-      material_id: row.material_id || "",
-      variety_id: row.variety_id || "",
-      qty: row.qty || "",
-      rate: row.rate || "",
-      po_date: row.po_date?.slice(0, 10) || "",
-    });
-  };
+  // ---- editing an existing PO (header + items) ----
 
-  const handleEditChange = (e) => setEditForm({ ...editForm, [e.target.name]: e.target.value });
-  const setEditField = (name) => (id) => setEditForm({ ...editForm, [name]: id });
-
-  const handleUpdateSubmit = async (e) => {
-    e.preventDefault();
+  const handleEditPo = (po) => {
     setError("");
-    try {
-      await updatePurchaseOrderApi(editingId, {
-        ...editForm,
-        vendor_id: Number(editForm.vendor_id),
-        material_id: Number(editForm.material_id),
-        variety_id: editForm.variety_id ? Number(editForm.variety_id) : null,
-        qty: Number(editForm.qty),
-        rate: Number(editForm.rate),
-      });
-      setInfo("Line item updated.");
-      setEditingId(null);
-      setEditForm(emptyEditForm);
-      load();
-    } catch (err) {
-      setError(err.response?.data?.message || "Update failed");
-    }
+    setInfo("");
+    setEditingPoNo(po.po_no);
+    setEditHeader({
+      vendor_id: po.vendor_id || "",
+      po_date: po.po_date?.slice(0, 10) || "",
+      validity: po.validity?.slice(0, 10) || "",
+      do_no: po.do_no || "",
+    });
+    setEditItems(
+      po.items.map((i) => ({
+        id: i.id,
+        material_id: i.material_id || "",
+        variety_id: i.variety_id || "",
+        qty: i.qty,
+        rate: i.rate,
+      }))
+    );
+    setNewItem(emptyItem);
   };
 
   const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditForm(emptyEditForm);
+    setEditingPoNo(null);
+    setEditHeader(emptyHeader);
+    setEditItems([]);
+    setNewItem(emptyItem);
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm("Delete this PO line item?")) return;
+  const handleEditHeaderChange = (e) => setEditHeader({ ...editHeader, [e.target.name]: e.target.value });
+  const setEditHeaderField = (name) => (id) => setEditHeader({ ...editHeader, [name]: id });
+
+  const handleSaveHeader = async () => {
+    setError("");
+    setInfo("");
     try {
-      await deletePurchaseOrderApi(id);
+      await updatePurchaseOrderHeaderApi(editingPoNo, {
+        vendor_id: editHeader.vendor_id ? Number(editHeader.vendor_id) : undefined,
+        po_date: editHeader.po_date || undefined,
+        validity: editHeader.validity || undefined,
+        do_no: editHeader.do_no || undefined,
+      });
+      setInfo(`PO ${editingPoNo} details updated.`);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.msg || err.response?.data?.message || "Could not update PO details");
+    }
+  };
+
+  const handleEditItemFieldChange = (itemId, field, value) => {
+    setEditItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, [field]: value } : it)));
+  };
+
+  const handleSaveItem = async (item) => {
+    setError("");
+    setInfo("");
+    try {
+      await updatePurchaseOrderApi(item.id, {
+        material_id: Number(item.material_id),
+        variety_id: item.variety_id ? Number(item.variety_id) : null,
+        qty: Number(item.qty),
+        rate: Number(item.rate),
+      });
+      setInfo("Material line updated.");
+      load();
+    } catch (err) {
+      setError(err.response?.data?.msg || err.response?.data?.message || "Could not update that line item");
+    }
+  };
+
+  const handleRemoveExistingItem = async (itemId) => {
+    if (!window.confirm("Remove this material from the PO?")) return;
+    setError("");
+    setInfo("");
+    try {
+      await deletePurchaseOrderApi(itemId);
+      setEditItems((prev) => prev.filter((it) => it.id !== itemId));
+      setInfo("Material removed from the PO.");
+      load();
+    } catch {
+      setError("Could not remove that line item");
+    }
+  };
+
+  const handleNewItemChange = (e) => setNewItem({ ...newItem, [e.target.name]: e.target.value });
+  const setNewItemField = (name) => (id) => setNewItem({ ...newItem, [name]: id });
+
+  const handleAddItemToExistingPo = async () => {
+    setError("");
+    setInfo("");
+    if (!newItem.material_id || !newItem.qty || !newItem.rate) {
+      setError("Pick a material and enter qty and rate before adding it.");
+      return;
+    }
+    try {
+      const res = await addPurchaseOrderItemApi(editingPoNo, {
+        material_id: Number(newItem.material_id),
+        variety_id: newItem.variety_id ? Number(newItem.variety_id) : null,
+        qty: Number(newItem.qty),
+        rate: Number(newItem.rate),
+      });
+      const created = res.data.data;
+      setEditItems((prev) => [
+        ...prev,
+        {
+          id: created.id,
+          material_id: created.material_id,
+          variety_id: created.variety_id || "",
+          qty: created.qty,
+          rate: created.rate,
+        },
+      ]);
+      setNewItem(emptyItem);
+      setInfo(res.data.msg || "Material added to the PO.");
+      load();
+    } catch (err) {
+      setError(err.response?.data?.msg || err.response?.data?.message || "Could not add that material");
+    }
+  };
+
+  const handleDeleteWholePo = async (po) => {
+    if (!window.confirm(`Delete PO ${po.po_no} and all ${po.items.length} of its material line(s)?`)) return;
+    setError("");
+    setInfo("");
+    try {
+      await Promise.all(po.items.map((i) => deletePurchaseOrderApi(i.id)));
+      setInfo(`PO ${po.po_no} deleted.`);
       load();
     } catch {
       setError("Delete failed");
     }
+  };
+
+  // DataTable's built-in onDelete only passes the row's `id` (the grouped
+  // row's synthetic id, i.e. its first line item) — look the full grouped
+  // row back up so handleDeleteWholePo can remove every line under this po_no.
+  const handleDeleteWholePoById = (id) => {
+    const po = orders.find((o) => String(o.id) === String(id));
+    if (po) handleDeleteWholePo(po);
   };
 
   const materialLabel = (id) => materials.getLabel(id);
@@ -180,29 +270,126 @@ export default function PurchaseOrdersPage() {
         </div>
       )}
 
-      {editingId ? (
-        <form className="sf-form" onSubmit={handleUpdateSubmit}>
-          <h3 style={{ width: "100%" }}>Edit line item — {editForm.po_no}</h3>
-          <EntitySelect entity="vendor" label="Vendor" value={editForm.vendor_id} onChange={setEditField("vendor_id")} required />
-          <EntitySelect entity="material" label="Material" value={editForm.material_id} onChange={setEditField("material_id")} required creatable onCreated={materials.refetch} />
-          <EntitySelect entity="variety" label="Variety" value={editForm.variety_id} onChange={setEditField("variety_id")} creatable />
-          <div className="sf-field">
-            <label>Qty</label>
-            <input name="qty" type="number" value={editForm.qty} onChange={handleEditChange} required />
+      {editingPoNo ? (
+        <div className="module-guide" style={{ marginBottom: 16 }}>
+          <h3 style={{ marginTop: 0 }}>Editing PO {editingPoNo}</h3>
+
+          <form className="sf-form" onSubmit={(e) => e.preventDefault()}>
+            <EntitySelect
+              entity="vendor"
+              label="Vendor"
+              value={editHeader.vendor_id}
+              onChange={setEditHeaderField("vendor_id")}
+              required
+            />
+            <div className="sf-field">
+              <label>PO Date</label>
+              <input name="po_date" type="date" value={editHeader.po_date} onChange={handleEditHeaderChange} required />
+            </div>
+            <div className="sf-field">
+              <label>Validity (optional)</label>
+              <input name="validity" type="date" value={editHeader.validity} onChange={handleEditHeaderChange} />
+            </div>
+            <div className="sf-field">
+              <label>DO No. (optional)</label>
+              <input name="do_no" value={editHeader.do_no} onChange={handleEditHeaderChange} />
+            </div>
+            <button type="button" className="sf-submit" onClick={handleSaveHeader}>
+              Save PO Details
+            </button>
+          </form>
+
+          <h4>Materials on this PO</h4>
+          <div className="dt-wrapper">
+            <table className="dt-table">
+              <thead>
+                <tr>
+                  <th>Material</th>
+                  <th>Variety</th>
+                  <th>Qty</th>
+                  <th>Rate</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {editItems.map((item) => (
+                  <tr key={item.id}>
+                    <td style={{ minWidth: 160 }}>
+                      <EntitySelect
+                        entity="material"
+                        value={item.material_id}
+                        onChange={(id) => handleEditItemFieldChange(item.id, "material_id", id)}
+                      />
+                    </td>
+                    <td style={{ minWidth: 140 }}>
+                      <EntitySelect
+                        entity="variety"
+                        value={item.variety_id}
+                        onChange={(id) => handleEditItemFieldChange(item.id, "variety_id", id)}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        value={item.qty}
+                        style={{ width: 90 }}
+                        onChange={(e) => handleEditItemFieldChange(item.id, "qty", e.target.value)}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={item.rate}
+                        style={{ width: 90 }}
+                        onChange={(e) => handleEditItemFieldChange(item.id, "rate", e.target.value)}
+                      />
+                    </td>
+                    <td style={{ display: "flex", gap: 6 }}>
+                      <button className="dt-btn" onClick={() => handleSaveItem(item)}>Save</button>
+                      <button className="dt-btn" onClick={() => handleRemoveExistingItem(item.id)}>Remove</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="sf-field">
-            <label>Rate</label>
-            <input name="rate" type="number" step="0.01" value={editForm.rate} onChange={handleEditChange} required />
-          </div>
-          <div className="sf-field">
-            <label>PO Date</label>
-            <input name="po_date" type="date" value={editForm.po_date} onChange={handleEditChange} required />
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="sf-submit" type="submit">Update Line Item</button>
-            <button type="button" className="sf-cancel" onClick={handleCancelEdit}>Cancel</button>
-          </div>
-        </form>
+
+          <h4>Add another material to this PO</h4>
+          <form className="sf-form" onSubmit={(e) => e.preventDefault()}>
+            <EntitySelect
+              entity="material"
+              label="Material"
+              value={newItem.material_id}
+              onChange={setNewItemField("material_id")}
+              required
+              creatable
+              onCreated={materials.refetch}
+            />
+            <EntitySelect
+              entity="variety"
+              label="Variety (optional)"
+              value={newItem.variety_id}
+              onChange={setNewItemField("variety_id")}
+              creatable
+            />
+            <div className="sf-field">
+              <label>Qty</label>
+              <input name="qty" type="number" value={newItem.qty} onChange={handleNewItemChange} />
+            </div>
+            <div className="sf-field">
+              <label>Rate</label>
+              <input name="rate" type="number" step="0.01" value={newItem.rate} onChange={handleNewItemChange} />
+            </div>
+            <button type="button" className="sf-submit" onClick={handleAddItemToExistingPo}>
+              + Add Material to PO
+            </button>
+          </form>
+
+          <button type="button" className="sf-cancel" onClick={handleCancelEdit}>
+            Done Editing
+          </button>
+        </div>
       ) : (
         <>
           <form className="sf-form" onSubmit={(e) => e.preventDefault()}>
@@ -255,7 +442,8 @@ export default function PurchaseOrdersPage() {
             </form>
 
             {cartItems.length > 0 && (
-              <table className="dt-table" style={{ marginTop: 12 }}>
+              <div className="dt-wrapper" style={{ marginTop: 12 }}>
+                <table className="dt-table">
                 <thead>
                   <tr>
                     <th>Material</th>
@@ -278,7 +466,8 @@ export default function PurchaseOrdersPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+                </table>
+              </div>
             )}
 
             <button
@@ -296,50 +485,45 @@ export default function PurchaseOrdersPage() {
       <DataTable
         loading={loading}
         rows={orders}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
+        onEdit={handleEditPo}
+        onDelete={handleDeleteWholePoById}
         columns={[
           { key: "po_no", label: "PO No." },
           {
-            key: "vendor_id",
+            key: "vendor",
             label: "Vendor",
-            render: (row) => vendors.getLabel(row.vendor_id),
+            render: (row) => (row.vendor ? `${row.vendor.name} (${row.vendor.vendor_code})` : vendors.getLabel(row.vendor_id)),
           },
           {
-            key: "material_id",
-            label: "Material",
-            render: (row) => materials.getLabel(row.material_id),
-          },
-          {
-            key: "variety_id",
-            label: "Variety",
-            render: (row) => varietyLabel(row.variety_id),
-          },
-          { key: "qty", label: "Qty" },
-          { key: "rate", label: "Rate" },
-          { key: "po_date", label: "PO Date" },
-          {
-            key: "view_action",
-            label: "",
+            key: "materials",
+            label: "Materials",
             render: (row) => (
-              <button className="dt-btn" onClick={() => setViewingPoNo(row.po_no)}>
-                View
-              </button>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {row.items.map((i) => (
+                  <span key={i.id}>
+                    {i.material?.name || materialLabel(i.material_id)}
+                    {i.variety ? ` (${i.variety.variety_name})` : ""} — {i.qty} @ {i.rate}
+                  </span>
+                ))}
+              </div>
             ),
           },
+          {
+            key: "total_qty",
+            label: "Total Qty",
+            render: (row) => row.total_qty ?? row.items.reduce((s, i) => s + Number(i.qty), 0),
+          },
+          { key: "po_date", label: "PO Date" },
         ]}
       />
-
-      {viewingPoNo && (
-        <PurchaseOrderDetailModal poNo={viewingPoNo} onClose={() => setViewingPoNo(null)} />
-      )}
 
       <ModuleGuide
         title="multi-item Purchase Orders"
         steps={[
           "Pick the vendor and PO date once, then add as many materials/varieties as that vendor is supplying — each becomes its own line item under the same PO number.",
           "The PO number is generated automatically once you submit — you don't need to type one.",
-          "Click View on any row to see every line item under that PO together, with a total amount, and download it as a PDF from there.",
+          "The list below shows ONE row per PO, with all its materials listed together — not one confusing duplicate row per material.",
+          "Edit opens that PO's full details: change vendor/date/DO No. once for the whole order, edit or remove any existing material line, and add more materials to it at any time — a PO stays editable until it's fully processed.",
           "Each line item still moves through Gate → Weighbridge independently, since each is its own material with its own quantity.",
           "There's no manual \"Convert\" step — once a truck against a line item is gated in, sampled, lab-accepted, and weighed, the Purchase record is created automatically.",
         ]}

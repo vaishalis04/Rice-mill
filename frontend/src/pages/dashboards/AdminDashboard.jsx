@@ -22,19 +22,7 @@ export default function AdminDashboard() {
   const [tab, setTab] = useState("dashboard");
 
   return (
-    <DashboardLayout title="Admin Dashboard">
-      <div className="section-tabs">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            className={`section-tab ${tab === t.key ? "active" : ""}`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
+    <DashboardLayout title="Admin Dashboard" tabs={TABS} activeTab={tab} onTabChange={setTab}>
       {tab === "dashboard" && <AdminAnalyticsPage />}
       {tab === "master" && <MasterSettingsPage />}
       {tab === "vehicles" && <VehiclesDriversPage />}

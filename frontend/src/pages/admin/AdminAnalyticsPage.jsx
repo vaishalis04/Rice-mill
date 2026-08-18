@@ -254,7 +254,8 @@ export default function AdminAnalyticsPage() {
           <div className="dashboard-panel-row" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
             <div className="dashboard-panel">
               <h3>Gate Register — Live Activity</h3>
-              <table className="dt-table">
+              <div className="dt-wrapper">
+                <table className="dt-table">
                 <thead>
                   <tr>
                     <th>Token</th>
@@ -280,7 +281,8 @@ export default function AdminAnalyticsPage() {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+                </table>
+              </div>
             </div>
 
             <div className="dashboard-panel">

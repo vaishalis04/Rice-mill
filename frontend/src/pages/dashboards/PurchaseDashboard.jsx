@@ -14,19 +14,7 @@ export default function PurchaseDashboard() {
   const [tab, setTab] = useState("vendors");
 
   return (
-    <DashboardLayout title="Purchase Dashboard">
-      <div className="section-tabs">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            className={`section-tab ${tab === t.key ? "active" : ""}`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
+    <DashboardLayout title="Purchase Dashboard" tabs={TABS} activeTab={tab} onTabChange={setTab}>
       {tab === "vendors" && <VendorsPage />}
       {tab === "orders" && <PurchaseOrdersPage />}
       {tab === "negotiations" && <NegotiationsPage />}

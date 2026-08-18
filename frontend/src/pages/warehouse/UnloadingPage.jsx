@@ -4,6 +4,7 @@ import {
   startUnloadingApi,
   completeUnloadingApi,
   routeLotApi,
+  getWeightSlipsApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import ModuleGuide from "../../components/ModuleGuide";
@@ -32,6 +33,7 @@ export default function UnloadingPage() {
   const [inProgressLots, setInProgressLots] = useState([]); // started, bags not counted yet
   const [pendingRouteLots, setPendingRouteLots] = useState([]); // completed, not yet routed
   const [loading, setLoading] = useState(true);
+  const [weighbridgeGateEntryIds, setWeighbridgeGateEntryIds] = useState(new Set());
   const [startFormState, setStartFormState] = useState(startForm0);
   const [showOptional, setShowOptional] = useState(false);
   const [bagEntryLotId, setBagEntryLotId] = useState(null);
@@ -43,13 +45,16 @@ export default function UnloadingPage() {
 
   const load = () => {
     setLoading(true);
-    getLotsApi()
+    Promise.all([getLotsApi(), getWeightSlipsApi()])
       .then((res) => {
-        const all = res.data.data ?? res.data;
-        setInProgressLots((all || []).filter((lot) => lot.unloading_status === "in_progress"));
+        const lotsRes = res[0].data.data ?? res[0].data;
+        const slipsRes = res[1].data.data ?? res[1].data;
+        setInProgressLots((lotsRes || []).filter((lot) => lot.unloading_status === "in_progress"));
         setPendingRouteLots(
-          (all || []).filter((lot) => lot.unloading_status === "completed" && !lot.destination)
+          (lotsRes || []).filter((lot) => lot.unloading_status === "completed" && !lot.destination)
         );
+        const ids = new Set((slipsRes || []).map((s) => Number(s.gate_entry_id)).filter(Boolean));
+        setWeighbridgeGateEntryIds(ids);
       })
       .catch(() => setError("Failed to load unloading queue"))
       .finally(() => setLoading(false));
@@ -152,7 +157,9 @@ export default function UnloadingPage() {
           label="Gate Entry"
           value={startFormState.gate_entry_id}
           onChange={(id) => setStartFormState({ ...startFormState, gate_entry_id: id })}
-          filter={(row) => row.gate_status === "in_process"}
+          filter={(row) =>
+            row.gate_status === "in_process" && weighbridgeGateEntryIds.has(Number(row.id))
+          }
           required
         />
         <EntitySelect

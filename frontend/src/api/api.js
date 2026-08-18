@@ -65,6 +65,11 @@ export const createPurchaseOrderApi = (data) =>
 export const createPurchaseOrderBulkApi = (data) =>
   axiosInstance.post("/purchases/bulk", data);
 export const getPurchaseOrdersApi = () => axiosInstance.get("/purchases");
+// One row per po_no (a real "purchase order"), all its materials nested
+// under `items` — this is what the PO list page and the Gate Entry PO
+// picker use instead of the flat one-row-per-material list above.
+export const getPurchaseOrdersGroupedApi = () =>
+  axiosInstance.get("/purchases/grouped");
 export const getPurchaseOrderByIdApi = (id) =>
   axiosInstance.get(`/purchases/${id}`);
 export const updatePurchaseOrderApi = (id, data) =>
@@ -76,6 +81,14 @@ export const getPurchaseOrderByPoNoApi = (po_no) =>
   axiosInstance.get(`/purchases/po/${po_no}`);
 export const getPurchaseOrderPdfApi = (po_no) =>
   axiosInstance.get(`/purchases/po/${po_no}/pdf`, { responseType: "blob" });
+
+// Adds one more material line item to an existing PO (by po_no).
+export const addPurchaseOrderItemApi = (po_no, data) =>
+  axiosInstance.post(`/purchases/po/${encodeURIComponent(po_no)}/items`, data);
+// Edits the shared header fields (vendor/po_date/validity/do_no) across
+// every line item of a PO at once.
+export const updatePurchaseOrderHeaderApi = (po_no, data) =>
+  axiosInstance.put(`/purchases/po/${encodeURIComponent(po_no)}/header`, data);
 
 // Converts a weighed gate entry into a final purchase.
 // NOTE: will fail with "Invalid weight_slip_id" until the weighbridge
@@ -244,8 +257,20 @@ export const deleteCustomerApi = (id) =>
 export const createSalesOrderApi = (data) =>
   axiosInstance.post("/sales-orders", data);
 
+// Creates one so_no shared across every material line item passed in
+// `items` — this is how a customer can order multiple materials under a
+// single Sales Order (mirrors createPurchaseOrderBulkApi).
+export const createSalesOrderBulkApi = (data) =>
+  axiosInstance.post("/sales-orders/bulk", data);
+
 export const getSalesOrdersApi = (params = {}) =>
   axiosInstance.get("/sales-orders", { params });
+
+// One row per so_no (a real "sales order"), all its materials nested
+// under `items` — this is what the SO list page and the Gate Entry SO
+// picker use instead of the flat one-row-per-material list above.
+export const getSalesOrdersGroupedApi = (params = {}) =>
+  axiosInstance.get("/sales-orders/grouped", { params });
 
 export const getSalesOrderByIdApi = (id) =>
   axiosInstance.get(`/sales-orders/${id}`);
@@ -255,6 +280,15 @@ export const updateSalesOrderApi = (id, data) =>
 
 export const deleteSalesOrderApi = (id) =>
   axiosInstance.delete(`/sales-orders/${id}`); // soft delete
+
+// Adds one more material line item to an existing SO (by so_no).
+export const addSalesOrderItemApi = (so_no, data) =>
+  axiosInstance.post(`/sales-orders/so/${encodeURIComponent(so_no)}/items`, data);
+
+// Edits the shared header fields (customer/order_type/order_date) across
+// every line item of a SO at once.
+export const updateSalesOrderHeaderApi = (so_no, data) =>
+  axiosInstance.put(`/sales-orders/so/${encodeURIComponent(so_no)}/header`, data);
 
 // ---------------- DISPATCH (role: dispatch) ----------------
 // Every id in finished_goods_ids must be fg_status: "ready" — a 400 lists

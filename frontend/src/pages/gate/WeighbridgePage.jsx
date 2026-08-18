@@ -26,6 +26,7 @@ const toLocal = (iso) => (iso ? iso.slice(0, 16) : "");
 export default function WeighbridgePage() {
   const [slips, setSlips] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("pending");
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
@@ -95,6 +96,13 @@ export default function WeighbridgePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.gate_entry_id, slips.length]);
 
+  // Filtered view for the DataTable: Pending = missing tare_weight, Slip Generated = has tare
+  const visibleSlips = useMemo(() => {
+    if (tab === "pending") return slips.filter((s) => s.tare_weight == null || s.tare_weight === "");
+    if (tab === "generated") return slips.filter((s) => s.tare_weight != null && s.tare_weight !== "");
+    return slips;
+  }, [tab, slips]);
+
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
 
@@ -115,8 +123,8 @@ export default function WeighbridgePage() {
           gate_entry_id: Number(form.gate_entry_id),
           slip_no: form.slip_no,
           gross_weight: Number(form.gross_weight),
-          tare_weight: Number(form.tare_weight),
         };
+        if (form.tare_weight !== "" && form.tare_weight != null) payload.tare_weight = Number(form.tare_weight);
         if (form.weighed_at) payload.weighed_at = toIso(form.weighed_at);
         // final_rate is only relevant for a purchase entry with no PO — leave
         // it out entirely rather than send an empty string (and it's not
@@ -124,11 +132,17 @@ export default function WeighbridgePage() {
         if (!isOtherEntry && form.final_rate !== "") payload.final_rate = Number(form.final_rate);
 
         await createWeightSlipApi(payload);
-        setInfo(
-          isOtherEntry
-            ? "Weight slip created — net weight computed, gate entry moved to in_process. Send it to Warehouse next."
-            : "Weight slip created — net weight computed, purchase finalized, gate entry moved to in_process."
-        );
+        if (payload.tare_weight == null) {
+          setInfo(
+            "First weight recorded — gate entry moved to in_process. Go to Unloading to start the manual unload."
+          );
+        } else {
+          setInfo(
+            isOtherEntry
+              ? "Weight slip created — net weight computed, gate entry moved to in_process. Send it to Warehouse next."
+              : "Weight slip created — net weight computed, purchase finalized, gate entry moved to in_process."
+          );
+        }
         gateEntries.refetch();
       }
       setForm(emptyForm);
@@ -215,7 +229,7 @@ export default function WeighbridgePage() {
             type="number"
             value={form.tare_weight}
             onChange={handleChange}
-            required
+            required={!!editingId}
           />
           {!editingId && form.gate_entry_id && form.tare_weight !== "" && (
             <p className="field-hint">
@@ -275,7 +289,11 @@ export default function WeighbridgePage() {
         )}
         <div style={{ display: "flex", gap: 8 }}>
           <button className="sf-submit" type="submit">
-            {editingId ? "Update Weight Slip" : "Generate Weight Slip"}
+            {editingId
+              ? "Update Weight Slip"
+              : form.tare_weight === "" || form.tare_weight == null
+              ? "Start Unloading"
+              : "Generate Weight Slip"}
           </button>
           {editingId && (
             <button type="button" className="sf-cancel" onClick={handleCancel}>
@@ -284,10 +302,30 @@ export default function WeighbridgePage() {
           )}
         </div>
       </form>
+      <div style={{ display: "flex", gap: 8, marginTop: 12, marginBottom: 8 }}>
+        <button
+          className={tab === "pending" ? "dt-btn" : "dt-btn dt-ghost"}
+          onClick={() => setTab("pending")}
+        >
+          Pending
+        </button>
+        <button
+          className={tab === "generated" ? "dt-btn" : "dt-btn dt-ghost"}
+          onClick={() => setTab("generated")}
+        >
+          Slip Generated
+        </button>
+        <button
+          className={tab === "all" ? "dt-btn" : "dt-btn dt-ghost"}
+          onClick={() => setTab("all")}
+        >
+          All
+        </button>
+      </div>
 
       <DataTable
         loading={loading}
-        rows={slips}
+        rows={visibleSlips}
         onEdit={handleEdit}
         onDelete={handleDelete}
         columns={[

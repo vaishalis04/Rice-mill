@@ -13,7 +13,7 @@ import {
   createVehicleDriverApi,
   getMasterSettingsApi,
   createMasterSettingApi,
-  getPurchaseOrdersApi,
+  getPurchaseOrdersGroupedApi,
   createPurchaseOrderApi,
   getGateEntriesApi,
   getSamplingsApi,
@@ -28,6 +28,7 @@ import {
   getCustomersApi,
   createCustomerApi,
   getSalesOrdersApi,
+  getSalesOrdersGroupedApi,
   getFinishedGoodsApi,
   getRolesApi,
 } from "../api/api";
@@ -179,12 +180,25 @@ export const ENTITY_OPTIONS = {
     getLabel: (row) => row.role_name,
   },
   purchase_order: {
-    fetch: () => getPurchaseOrdersApi().then(unwrap),
-    // Deliberately just the PO number — no vendor name or rate. Gate Entry
-    // (and anywhere else this dropdown is used) auto-fills Vendor/Material
-    // from the picked PO itself, so those details would just be noise here
-    // rather than something the person needs to compare in the list.
-    getLabel: (row) => row.po_no,
+    fetch: () => getPurchaseOrdersGroupedApi().then(unwrap),
+    // One PO number, one line per material it covers — e.g.
+    // "PO-20260818-002 — ABCD (101) — 2 materials: Polished Rice 15kg,
+    // Jute Bag 20kg" so a multi-material PO reads as ONE order, not as
+    // several confusingly-duplicated rows sharing the same PO number.
+    // Falls back to a flat single-line label for a just-quick-created PO
+    // (which doesn't have `items` yet, only the fields it was created with).
+    getLabel: (row) => {
+      const vendorLabel = row.vendor
+        ? `${row.vendor.name}${row.vendor.vendor_code ? ` (${row.vendor.vendor_code})` : ""}`
+        : "?";
+      if (Array.isArray(row.items)) {
+        const itemsSummary = row.items
+          .map((i) => `${i.material?.name || "?"} ${i.qty}kg`)
+          .join(", ");
+        return `${row.po_no} — ${vendorLabel} — ${row.items.length === 1 ? "1 material" : `${row.items.length} materials`}: ${itemsSummary}`;
+      }
+      return `${row.po_no} — ${vendorLabel} — ${row.material?.name || "?"} ${row.qty ?? "?"}kg`;
+    },
     quickCreate: {
       label: "Purchase Order",
       fields: [
@@ -321,6 +335,29 @@ export const ENTITY_OPTIONS = {
     getLabel: (row) => {
       const remaining = Number(row.qty || 0) - Number(row.dispatched_qty || 0);
       return `${row.so_no || `SO #${row.id}`} — ${row.customer?.name || "?"} — ${row.material?.name || "?"} (${remaining}/${row.qty ?? "?"}kg left) [${row.so_status}]`;
+    },
+  },
+  // Grouped view: one SO number, one option per option list, with EVERY
+  // material it covers nested under `items` — same idea as purchase_order
+  // above. Used by Gate Entry's Sales Order picker so a multi-material SO
+  // reads as ONE order, and every material on it can be shown/auto-selected
+  // together rather than picking just one flat line.
+  sales_order_grouped: {
+    fetch: () => getSalesOrdersGroupedApi().then(unwrap),
+    getLabel: (row) => {
+      const customerLabel = row.customer
+        ? `${row.customer.name}${row.customer.customer_code ? ` (${row.customer.customer_code})` : ""}`
+        : "?";
+      if (Array.isArray(row.items)) {
+        const itemsSummary = row.items
+          .map((i) => {
+            const remaining = Number(i.qty || 0) - Number(i.dispatched_qty || 0);
+            return `${i.material?.name || "?"} (${remaining}/${i.qty}kg left)`;
+          })
+          .join(", ");
+        return `${row.so_no} — ${customerLabel} — ${row.items.length === 1 ? "1 material" : `${row.items.length} materials`}: ${itemsSummary}`;
+      }
+      return `${row.so_no} — ${customerLabel}`;
     },
   },
   // Only "ready" FG rows are ever pickable for dispatch — see DispatchPage,

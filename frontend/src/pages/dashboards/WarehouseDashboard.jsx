@@ -18,19 +18,7 @@ export default function WarehouseDashboard() {
   const [tab, setTab] = useState("unloading");
 
   return (
-    <DashboardLayout title="Warehouse Dashboard">
-      <div className="section-tabs">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            className={`section-tab ${tab === t.key ? "active" : ""}`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
+    <DashboardLayout title="Warehouse Dashboard" tabs={TABS} activeTab={tab} onTabChange={setTab}>
       {tab === "unloading" && <UnloadingPage />}
       {tab === "lots" && <LotsPage />}
       {tab === "warehouse" && <WarehousePage />}
