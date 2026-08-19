@@ -115,8 +115,37 @@ module.exports = {
         throw createError(400, `Cannot start unloading for a gate entry with status '${gateEntry.gate_status}'; it must be 'in_process' (weighed)`);
       }
 
-      const purchase = await Purchase.findOne({ where: { gate_entry_id, is_deleted: false } });
-      if (!purchase) throw createError(400, "No finalized purchase found for this gate entry; complete the weighbridge step first");
+      let purchase = await Purchase.findOne({ where: { gate_entry_id, is_deleted: false } });
+      if (!purchase) {
+        // Try to create a placeholder Purchase from an existing weight slip so
+        // the operator can Start Unloading immediately after first weighment.
+        // This uses the linked PO's rate if available, otherwise falls back to 0.
+        const weightSlip = await require('../models/index').WeightSlip.findOne({ where: { gate_entry_id, is_deleted: false } });
+        if (!weightSlip) throw createError(400, "No finalized purchase found for this gate entry; complete the weighbridge step first");
+
+        // Resolve rate from PO if available
+        let resolvedRate = null;
+        if (gateEntry.po_id) {
+          const po = await PurchaseOrder.findOne({ where: { id: gateEntry.po_id, is_deleted: false } });
+          if (po) resolvedRate = Number(po.rate);
+        }
+
+        // If we can't resolve a rate, use 0 as placeholder so lot creation may proceed.
+        const placeholderRate = resolvedRate != null ? resolvedRate : 0;
+        const netQty = weightSlip.tare_weight != null ? Number(weightSlip.gross_weight) - Number(weightSlip.tare_weight) : 0;
+
+        purchase = await Purchase.create({
+          po_id: gateEntry.po_id || null,
+          gate_entry_id,
+          weight_slip_id: weightSlip.id,
+          final_rate: placeholderRate,
+          final_qty: netQty,
+          amount: netQty * placeholderRate,
+          purchase_date: new Date().toISOString().slice(0, 10),
+          plant_id: gateEntry.plant_id || (req.user ? req.user.plant_id : null),
+          created_by: req.user ? req.user.id : null,
+        });
+      }
 
       const existingLot = await Lot.findOne({ where: { purchase_id: purchase.id, is_deleted: false } });
       if (existingLot) throw createError(409, `A lot (${existingLot.lot_no}) already exists for this gate entry's purchase`);

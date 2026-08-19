@@ -22,6 +22,71 @@ const poIncludes = [
 ];
 
 module.exports = {
+  // GET /api/purchase/grouped?search=&vendor_id=&plant_id=
+  // One row per po_no (a real "purchase order"), with all its material line
+  // items nested under `items`. This is what the PO list page and the Gate
+  // Entry PO picker use — the flat one-row-per-material getAll() below is
+  // still there for anything that specifically needs a single PO line.
+  getAllGrouped: async (req, res, next) => {
+    try {
+      const { search, vendor_id, plant_id } = req.query;
+
+      const where = { is_deleted: false };
+      if (vendor_id) where.vendor_id = vendor_id;
+      if (plant_id) where.plant_id = plant_id;
+      if (search) {
+        where[Op.or] = [{ po_no: { [Op.like]: `%${search}%` } }, { do_no: { [Op.like]: `%${search}%` } }];
+      }
+
+      const rows = await PurchaseOrder.findAll({
+        where,
+        include: poIncludes,
+        order: [["po_no", "DESC"], ["created_at", "ASC"]],
+      });
+
+      const groups = new Map();
+      for (const row of rows) {
+        if (!groups.has(row.po_no)) {
+          groups.set(row.po_no, {
+            po_no: row.po_no,
+            vendor_id: row.vendor_id,
+            vendor: row.vendor,
+            po_date: row.po_date,
+            validity: row.validity,
+            do_no: row.do_no,
+            plant_id: row.plant_id,
+            items: [],
+          });
+        }
+        groups.get(row.po_no).items.push({
+          id: row.id,
+          material_id: row.material_id,
+          material: row.material,
+          variety_id: row.variety_id,
+          variety: row.variety,
+          qty: row.qty,
+          rate: row.rate,
+        });
+      }
+
+      const grouped = Array.from(groups.values()).map((g) => ({
+        ...g,
+        // Synthetic id for the frontend's generic EntitySelect (which needs
+        // exactly one `id` per option) — the first line item's real row id.
+        // Submitting a gate entry against this PO still resolves to the
+        // SPECIFIC line item matching whichever material the truck is
+        // actually delivering, not this placeholder (see gate.controller.js).
+        id: g.items[0].id,
+        item_count: g.items.length,
+        total_qty: g.items.reduce((s, i) => s + Number(i.qty), 0),
+      }));
+
+      res.status(200).json({ success: true, data: grouped });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   // GET /api/purchase?search=&vendor_id=&material_id=&page=&limit=
   getAll: async (req, res, next) => {
     try {
@@ -210,6 +275,88 @@ module.exports = {
         return next(createError(400, `Validation failed — ${detail}`));
       }
 
+      next(err);
+    }
+  },
+
+  // POST /api/purchase/po/:po_no/items  { material_id, variety_id?, qty, rate }
+  // Adds one more material line to an EXISTING PO — this is what "Edit PO"
+  // uses to let you keep adding materials to the same po_no rather than
+  // only ever being able to edit the one line item you happened to open.
+  addItem: async (req, res, next) => {
+    try {
+      const { po_no } = req.params;
+      const { material_id, variety_id, qty, rate } = req.body;
+
+      if (!material_id || !qty || !rate) {
+        throw createError(400, "material_id, qty and rate are required");
+      }
+
+      // Any existing row for this po_no carries the shared header fields
+      // (vendor, po_date, validity, do_no) that the new line should inherit.
+      const anyRow = await PurchaseOrder.findOne({ where: { po_no, is_deleted: false } });
+      if (!anyRow) throw createError(404, "Purchase order not found");
+
+      const material = await MaterialMaster.findOne({ where: { id: material_id, is_deleted: false } });
+      if (!material) throw createError(400, "Invalid material_id");
+      if (variety_id) {
+        const variety = await VarietyMaster.findOne({ where: { id: variety_id, is_deleted: false } });
+        if (!variety) throw createError(400, "Invalid variety_id");
+      }
+
+      const dup = await PurchaseOrder.findOne({
+        where: { po_no, material_id, variety_id: variety_id || null, is_deleted: false },
+      });
+      if (dup) throw createError(409, "This material/variety is already on this PO");
+
+      const row = await PurchaseOrder.create({
+        po_no,
+        vendor_id: anyRow.vendor_id,
+        material_id,
+        variety_id: variety_id || null,
+        qty,
+        rate,
+        po_date: anyRow.po_date,
+        validity: anyRow.validity,
+        do_no: anyRow.do_no,
+        uploaded_by_vendor: anyRow.uploaded_by_vendor,
+        plant_id: anyRow.plant_id,
+        created_by: req.user ? req.user.id : null,
+      });
+
+      const created = await PurchaseOrder.findByPk(row.id, { include: poIncludes });
+      res.status(201).json({ success: true, msg: `Material added to PO ${po_no}`, data: created });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // PUT /api/purchase/po/:po_no/header  { vendor_id?, po_date?, validity?, do_no? }
+  // Edits the shared header fields across EVERY line item of this PO at
+  // once (e.g. correcting the PO date), as opposed to PUT /:id which only
+  // ever touches one line's own material/qty/rate.
+  updateHeader: async (req, res, next) => {
+    try {
+      const { po_no } = req.params;
+      const { vendor_id, po_date, validity, do_no } = req.body;
+
+      const rows = await PurchaseOrder.findAll({ where: { po_no, is_deleted: false } });
+      if (rows.length === 0) throw createError(404, "Purchase order not found");
+
+      if (vendor_id) {
+        const vendor = await Vendor.findOne({ where: { id: vendor_id, is_deleted: false } });
+        if (!vendor) throw createError(400, "Invalid vendor_id");
+      }
+
+      const updates = { vendor_id, po_date, validity, do_no };
+      Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
+      updates.updated_by = req.user ? req.user.id : null;
+
+      await PurchaseOrder.update(updates, { where: { po_no, is_deleted: false } });
+
+      const updated = await PurchaseOrder.findAll({ where: { po_no, is_deleted: false }, include: poIncludes });
+      res.status(200).json({ success: true, msg: `PO ${po_no} updated`, data: updated });
+    } catch (err) {
       next(err);
     }
   },

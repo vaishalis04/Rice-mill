@@ -9,8 +9,16 @@ WeightSlip.init(
     gate_entry_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "gate_entry", key: "id" } },
     slip_no: { type: DataTypes.STRING(30), allowNull: false, unique: true },
     gross_weight: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
-    tare_weight: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
-    net_weight: { type: DataTypes.VIRTUAL, get() { return this.getDataValue("gross_weight") - this.getDataValue("tare_weight"); } }, // improvement: derive instead of storing a value that can drift
+    tare_weight: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
+    net_weight: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        const g = this.getDataValue("gross_weight");
+        const t = this.getDataValue("tare_weight");
+        if (g == null || t == null) return null;
+        return Number(g) - Number(t);
+      },
+    }, // improvement: derive instead of storing a value that can drift
     weighed_at: { type: DataTypes.DATE },
     weighbridge_operator_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },

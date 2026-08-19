@@ -201,7 +201,9 @@ module.exports = {
   // Logout
   logout: async (req, res, next) => {
     try {
-      const { refreshToken } = req.body;
+      // req.body can be undefined here — the frontend's logout call sends no
+      // body at all, so express.json() never even attempts to parse it.
+      const { refreshToken } = req.body || {};
 
       if (!refreshToken) {
         return res.json({

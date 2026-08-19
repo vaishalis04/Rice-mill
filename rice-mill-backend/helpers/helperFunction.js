@@ -189,6 +189,13 @@ const generateChallanNo = async () => {
   return generateDailySequence(Dispatch, "challan_no", "CH", 3);
 };
 
+// Generate sequential daily loading numbers (Gate Sales-Loading flow)
+// Format: LD-YYYYMMDD-001
+const generateLoadingNo = async () => {
+  const { Loading } = require("../models/index");
+  return generateDailySequence(Loading, "loading_no", "LD", 3);
+};
+
 // Generate sequential customer codes (Module: Sales/Customers)
 // Format: CUST0001, CUST0002, ... — continuous, not reset daily, since
 // customers are master data rather than daily transactions. Robust against
@@ -230,4 +237,5 @@ module.exports = {
   generateTokenNo, generateLotNo, generateBatchNo, computeAgeDays,
   generateCustomerCode, generateVendorCode, generatePoNo,
   generatePackingBatchNo, generateEAN13, generateSoNo, generateChallanNo,
+  generateLoadingNo,
 };

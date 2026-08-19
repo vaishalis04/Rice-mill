@@ -327,14 +327,18 @@ CREATE TABLE `gate_entry` (
   `vehicle_id` BIGINT NOT NULL,
   `driver_id` BIGINT NOT NULL,
   `driver_photo_url` VARCHAR(255) NULL,
-  `vendor_id` BIGINT NOT NULL,
+  `entry_type` ENUM('purchase','other','sales') NOT NULL DEFAULT 'purchase',
+  `vendor_id` BIGINT NULL,  -- entry_type = 'purchase' only
   `po_id` BIGINT NULL,
+  `so_id` BIGINT NULL,  -- entry_type = 'sales' only (outbound loading)
   `challan_no` VARCHAR(30) NULL,
-  `material_id` BIGINT NOT NULL,
+  `material_id` BIGINT NULL,
   `expected_qty` DECIMAL(12, 2) NULL,
+  `remarks` VARCHAR(255) NULL,
+  `received_warehouse_id` BIGINT NULL,
   `entry_time` DATETIME NULL,
   `exit_time` DATETIME NULL,
-  `gate_status` ENUM('waiting_token', 'waiting_sampling', 'sampling_done', 'accepted', 'rejected', 'waiting_weighment', 'in_process', 'unloading', 'unloaded', 'parked', 'exited') NULL DEFAULT 'waiting_token',  -- notes #2,#5,#13
+  `gate_status` ENUM('waiting_token', 'waiting_sampling', 'sampling_done', 'accepted', 'rejected', 'waiting_weighment', 'in_process', 'unloading', 'unloaded', 'waiting_loading', 'loaded', 'parked', 'exited') NULL DEFAULT 'waiting_token',  -- notes #2,#5,#13
   `created_by` BIGINT UNSIGNED NULL,
   `updated_by` BIGINT UNSIGNED NULL,
   `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
@@ -345,10 +349,38 @@ CREATE TABLE `gate_entry` (
   FOREIGN KEY (`driver_id`) REFERENCES `drivers`(`id`),
   FOREIGN KEY (`vendor_id`) REFERENCES `vendors`(`id`),
   FOREIGN KEY (`po_id`) REFERENCES `purchase_order`(`id`),
+  FOREIGN KEY (`so_id`) REFERENCES `sales_order`(`id`),
   FOREIGN KEY (`material_id`) REFERENCES `material_master`(`id`),
+  FOREIGN KEY (`received_warehouse_id`) REFERENCES `warehouse_master`(`id`),
   FOREIGN KEY (`plant_id`) REFERENCES `plant_master`(`id`),
   KEY `idx_gate_entry_gate_status` (`gate_status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Outbound loading capture at the gate (entry_type = 'sales' flow).
+-- One row per gate entry: quantity-only record of what was loaded against
+-- a Sales Order, distinct from the more granular Dispatch/FinishedGoods
+-- picking flow used elsewhere.
+CREATE TABLE `loading` (
+  `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `loading_no` VARCHAR(30) NOT NULL UNIQUE,
+  `gate_entry_id` BIGINT NOT NULL UNIQUE,
+  `so_id` BIGINT NOT NULL,
+  `loaded_qty` DECIMAL(12, 2) NOT NULL,
+  `loaded_at` DATETIME NULL,
+  `loading_operator_id` BIGINT UNSIGNED NULL,
+  `remarks` VARCHAR(255) NULL,
+  `created_by` BIGINT UNSIGNED NULL,
+  `updated_by` BIGINT UNSIGNED NULL,
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
+  `plant_id` BIGINT UNSIGNED NULL,
+  `created_at` DATETIME NOT NULL,
+  `updated_at` DATETIME NOT NULL,
+  FOREIGN KEY (`gate_entry_id`) REFERENCES `gate_entry`(`id`),
+  FOREIGN KEY (`so_id`) REFERENCES `sales_order`(`id`),
+  FOREIGN KEY (`loading_operator_id`) REFERENCES `users`(`id`),
+  FOREIGN KEY (`plant_id`) REFERENCES `plant_master`(`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 
 CREATE TABLE `sampling` (
   `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -797,11 +829,12 @@ CREATE TABLE `by_product_inventory` (
 
 CREATE TABLE `sales_order` (
   `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  `so_no` VARCHAR(30) NOT NULL UNIQUE,
+  `so_no` VARCHAR(30) NOT NULL,  -- no longer unique: multiple line items (materials) can share one so_no
   `customer_id` BIGINT NOT NULL,
   `order_type` ENUM('fg', 'by_product') NOT NULL,  -- note #25
   `material_id` BIGINT NOT NULL,
   `qty` DECIMAL(12, 2) NOT NULL,
+  `dispatched_qty` DECIMAL(12, 2) NOT NULL DEFAULT 0,  -- running total loaded across (possibly multiple) trucks
   `rate` DECIMAL(10, 2) NOT NULL,
   `order_date` DATE NOT NULL,
   `so_status` ENUM('pending', 'confirmed', 'allocated', 'dispatched', 'closed', 'cancelled') NULL DEFAULT 'pending',  -- renamed from generic "status"

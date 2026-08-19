@@ -25,6 +25,7 @@ const Sampling = require("./sampling.model");
 const LabTest = require("./labTest.model");
 const Negotiation = require("./negotiation.model");
 const WeightSlip = require("./weightSlip.model");
+const Loading = require("./loading.model");
 const Purchase = require("./purchase.model");
 const Lot = require("./lot.model");
 const Stack = require("./stack.model");
@@ -76,6 +77,7 @@ GateEntry.belongsTo(Driver, { foreignKey: "driver_id", as: "driver" });
 GateEntry.belongsTo(Vendor, { foreignKey: "vendor_id", as: "vendor" });
 GateEntry.belongsTo(PurchaseOrder, { foreignKey: "po_id", as: "purchaseOrder" });
 GateEntry.belongsTo(MaterialMaster, { foreignKey: "material_id", as: "material" });
+GateEntry.belongsTo(SalesOrder, { foreignKey: "so_id", as: "salesOrder" }); // entry_type = "sales" only
 Sampling.belongsTo(GateEntry, { foreignKey: "gate_entry_id", as: "gateEntry" });
 Sampling.belongsTo(User, { foreignKey: "collected_by", as: "collector" });
 LabTest.belongsTo(Sampling, { foreignKey: "sampling_id", as: "sampling" });
@@ -85,6 +87,11 @@ Negotiation.belongsTo(LabTest, { foreignKey: "lab_test_id", as: "labTest" });
 Negotiation.belongsTo(User, { foreignKey: "negotiated_by", as: "negotiator" });
 WeightSlip.belongsTo(GateEntry, { foreignKey: "gate_entry_id", as: "gateEntry" });
 WeightSlip.belongsTo(User, { foreignKey: "weighbridge_operator_id", as: "operator" });
+
+Loading.belongsTo(GateEntry, { foreignKey: "gate_entry_id", as: "gateEntry" });
+Loading.belongsTo(SalesOrder, { foreignKey: "so_id", as: "salesOrder" });
+Loading.belongsTo(User, { foreignKey: "loading_operator_id", as: "operator" });
+GateEntry.hasOne(Loading, { foreignKey: "gate_entry_id", as: "loading" });
 Purchase.belongsTo(PurchaseOrder, { foreignKey: "po_id", as: "purchaseOrder" });
 Purchase.belongsTo(GateEntry, { foreignKey: "gate_entry_id", as: "gateEntry" });
 Purchase.belongsTo(WeightSlip, { foreignKey: "weight_slip_id", as: "weightSlip" });
@@ -172,6 +179,7 @@ Sampling.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 LabTest.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 Negotiation.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 WeightSlip.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
+Loading.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 Purchase.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 Lot.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 Stack.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
@@ -223,6 +231,7 @@ module.exports = {
   LabTest,
   Negotiation,
   WeightSlip,
+  Loading,
   Purchase,
   Lot,
   Stack,

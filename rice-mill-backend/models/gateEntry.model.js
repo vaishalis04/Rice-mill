@@ -15,11 +15,19 @@ GateEntry.init(
     // "other" is for empty trucks or trucks carrying miscellaneous/non-purchase
     // items — these skip Sampling/Lab/Negotiation entirely and go straight
     // from the gate to Weighbridge (optional) and then Warehouse.
-    entry_type: { type: DataTypes.ENUM("purchase", "other"), allowNull: false, defaultValue: "purchase" },
+    // "sales" is an OUTBOUND truck arriving empty to be loaded against a
+    // Sales Order (Gate -> Check-in -> Loading -> Check-out/Exit).
+    entry_type: { type: DataTypes.ENUM("purchase", "other", "sales"), allowNull: false, defaultValue: "purchase" },
     // Only required for entry_type = "purchase"; empty/misc trucks usually
     // have no vendor or material master record to link.
     vendor_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "vendors", key: "id" } },
     po_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "purchase_order", key: "id" } },
+    // Only used for entry_type = "sales" — which Sales Order this truck is
+    // collecting against. Picking a Sales Order auto-fills material_id below
+    // (and the customer, shown via the salesOrder association) — everything
+    // except the actual loaded quantity, which is only known once the truck
+    // is physically loaded (see loading.controller.js).
+    so_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "sales_order", key: "id" } },
     challan_no: { type: DataTypes.STRING(30) },
     material_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "material_master", key: "id" } },
     expected_qty: { type: DataTypes.DECIMAL(12, 2) },
@@ -49,6 +57,10 @@ gate_status: {
     // bags not yet counted (set by POST /api/lots/start-unloading).
     "unloading",
     "unloaded",
+    // Outbound (entry_type = "sales") equivalents of waiting_weighment/unloaded:
+    // checked in and waiting to be loaded against its Sales Order, then loaded.
+    "waiting_loading",
+    "loaded",
     "parked",
     "exited"
   ),

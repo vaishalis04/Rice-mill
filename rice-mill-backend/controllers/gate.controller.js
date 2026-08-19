@@ -9,6 +9,8 @@ const {
   MaterialMaster,
   PlantMaster,
   WarehouseMaster,
+  SalesOrder,
+  Customer,
 } = require("../models/index");
 const { generateTokenNo } = require("../helpers/helperFunction");
 
@@ -22,6 +24,15 @@ const detailIncludes = [
   { model: MaterialMaster, as: "material", attributes: ["id", "material_code", "name", "category"] },
   { model: PlantMaster, as: "plant", attributes: ["id", "plant_code", "name"] },
   { model: WarehouseMaster, as: "receivedWarehouse", attributes: ["id", "warehouse_code", "name"] },
+  {
+    model: SalesOrder,
+    as: "salesOrder",
+    attributes: ["id", "so_no", "customer_id", "material_id", "qty", "rate", "so_status"],
+    include: [
+      { model: Customer, as: "customer", attributes: ["id", "customer_code", "name"] },
+      { model: MaterialMaster, as: "material", attributes: ["id", "material_code", "name"] },
+    ],
+  },
 ];
 
 // Shared existence/validity checks for the entities a gate entry references.
@@ -29,7 +40,9 @@ const detailIncludes = [
 // generation needs vehicle.vehicle_no right after this runs).
 // vendor_id/material_id are only required for entry_type = "purchase" —
 // empty/miscellaneous trucks (entry_type = "other") usually have neither.
-const validateReferences = async ({ vehicle_id, driver_id, vendor_id, material_id, po_id, entry_type = "purchase" }) => {
+// entry_type = "sales" requires so_id instead; material_id is derived from
+// the Sales Order automatically rather than picked separately.
+const validateReferences = async ({ vehicle_id, driver_id, vendor_id, material_id, po_id, so_id, entry_type = "purchase" }) => {
   const [vehicle, driver] = await Promise.all([
     Vehicle.findOne({ where: { id: vehicle_id, is_deleted: false } }),
     Driver.findOne({ where: { id: driver_id, is_deleted: false } }),
@@ -41,6 +54,7 @@ const validateReferences = async ({ vehicle_id, driver_id, vendor_id, material_i
   let vendor = null;
   let material = null;
   let po = null;
+  let salesOrder = null;
 
   if (entry_type === "purchase") {
     if (!vendor_id) throw createError(400, "vendor_id is required for a purchase entry");
@@ -61,6 +75,19 @@ const validateReferences = async ({ vehicle_id, driver_id, vendor_id, material_i
         throw createError(400, "po_id does not belong to the given vendor_id");
       }
     }
+  } else if (entry_type === "sales") {
+    if (!so_id) throw createError(400, "so_id is required for a sales (outbound loading) entry");
+
+    salesOrder = await SalesOrder.findOne({ where: { id: so_id, is_deleted: false } });
+    if (!salesOrder) throw createError(400, "Invalid so_id");
+    if (["dispatched", "closed", "cancelled"].includes(salesOrder.so_status)) {
+      throw createError(400, `Sales Order ${salesOrder.so_no} is already '${salesOrder.so_status}' and cannot be assigned to a new gate entry`);
+    }
+
+    // material is always derived from the Sales Order for a sales entry —
+    // never picked separately, so it can't drift from what was actually ordered.
+    material = await MaterialMaster.findOne({ where: { id: salesOrder.material_id, is_deleted: false } });
+    if (!material) throw createError(400, "The Sales Order's material could not be found");
   } else {
     // entry_type = "other": vendor/material/PO are optional; validate only
     // whichever of them were actually supplied.
@@ -78,7 +105,7 @@ const validateReferences = async ({ vehicle_id, driver_id, vendor_id, material_i
     }
   }
 
-  return { vehicle, driver, vendor, material, po };
+  return { vehicle, driver, vendor, material, po, salesOrder };
 };
 
 module.exports = {
@@ -139,13 +166,13 @@ module.exports = {
   create: async (req, res, next) => {
     try {
       const {
-        vehicle_id, driver_id, vendor_id, po_id, material_id,
+        vehicle_id, driver_id, vendor_id, po_id, material_id, so_id,
         challan_no, expected_qty, driver_photo_url, plant_id,
         entry_type = "purchase", remarks,
       } = req.body;
 
-      if (!["purchase", "other"].includes(entry_type)) {
-        throw createError(400, "entry_type must be 'purchase' or 'other'");
+      if (!["purchase", "other", "sales"].includes(entry_type)) {
+        throw createError(400, "entry_type must be 'purchase', 'other' or 'sales'");
       }
       if (!vehicle_id || !driver_id) {
         throw createError(400, "vehicle_id and driver_id are required");
@@ -153,8 +180,13 @@ module.exports = {
       if (entry_type === "purchase" && (!vendor_id || !material_id)) {
         throw createError(400, "vendor_id and material_id are required for a purchase entry");
       }
+      if (entry_type === "sales" && !so_id) {
+        throw createError(400, "so_id is required for a sales (outbound loading) entry");
+      }
 
-      const { vehicle } = await validateReferences({ vehicle_id, driver_id, vendor_id, material_id, po_id, entry_type });
+      const { vehicle, material, salesOrder } = await validateReferences({
+        vehicle_id, driver_id, vendor_id, material_id, po_id, so_id, entry_type,
+      });
 
       const token_no = await generateTokenNo(vehicle.vehicle_no);
 
@@ -165,7 +197,10 @@ module.exports = {
         entry_type,
         vendor_id: vendor_id || null,
         po_id: po_id || null,
-        material_id: material_id || null,
+        so_id: entry_type === "sales" ? so_id : null,
+        // For "sales", material_id is always derived from the Sales Order —
+        // never taken from the request body.
+        material_id: entry_type === "sales" ? (salesOrder ? salesOrder.material_id : null) : (material_id || null),
         challan_no,
         expected_qty,
         remarks,
@@ -190,7 +225,7 @@ module.exports = {
       if (!entry) throw createError(404, "Gate entry not found");
 
       const {
-        vehicle_id, driver_id, vendor_id, po_id, material_id,
+        vehicle_id, driver_id, vendor_id, po_id, material_id, so_id,
         challan_no, expected_qty, driver_photo_url, plant_id, gate_status,
         entry_type, remarks,
       } = req.body;
@@ -201,11 +236,12 @@ module.exports = {
         vendor_id: vendor_id || entry.vendor_id,
         material_id: material_id || entry.material_id,
         po_id: po_id !== undefined ? po_id : entry.po_id,
+        so_id: so_id !== undefined ? so_id : entry.so_id,
         entry_type: entry_type || entry.entry_type,
       });
 
       const updates = {
-        vehicle_id, driver_id, vendor_id, po_id, material_id,
+        vehicle_id, driver_id, vendor_id, po_id, material_id, so_id,
         challan_no, expected_qty, driver_photo_url, plant_id, gate_status,
         entry_type, remarks,
       };
@@ -249,8 +285,11 @@ module.exports = {
 
       // Purchase trucks join the normal Sampling -> Lab -> Negotiation queue.
       // Empty/miscellaneous trucks (entry_type = "other") skip all of that and
-      // go straight into the weighment queue instead.
-      const nextStatus = entry.entry_type === "other" ? "waiting_weighment" : "waiting_sampling";
+      // go straight into the weighment queue instead. Sales (outbound loading)
+      // trucks go straight into the loading queue.
+      let nextStatus = "waiting_sampling";
+      if (entry.entry_type === "other") nextStatus = "waiting_weighment";
+      else if (entry.entry_type === "sales") nextStatus = "waiting_loading";
 
       await entry.update({ gate_status: nextStatus, updated_by: req.user ? req.user.id : null });
 
@@ -316,6 +355,9 @@ module.exports = {
       if (entry.gate_status === "waiting_token") {
         throw createError(400, "Vehicle has not been checked in yet; cannot check out");
       }
+      if (entry.entry_type === "sales" && entry.gate_status !== "loaded") {
+        throw createError(400, `Cannot check out a sales truck with status '${entry.gate_status}'; it must be 'loaded' first (see the Loading module)`);
+      }
 
       await entry.update({
         gate_status: "exited",
@@ -335,13 +377,13 @@ module.exports = {
   generateToken: async (req, res, next) => {
     try {
       const {
-        vehicle_id, driver_id, vendor_id, po_id, material_id,
+        vehicle_id, driver_id, vendor_id, po_id, material_id, so_id,
         challan_no, expected_qty, driver_photo_url, plant_id,
         entry_type = "purchase", remarks,
       } = req.body;
 
-      if (!["purchase", "other"].includes(entry_type)) {
-        throw createError(400, "entry_type must be 'purchase' or 'other'");
+      if (!["purchase", "other", "sales"].includes(entry_type)) {
+        throw createError(400, "entry_type must be 'purchase', 'other' or 'sales'");
       }
       if (!vehicle_id || !driver_id) {
         throw createError(400, "vehicle_id and driver_id are required");
@@ -349,8 +391,13 @@ module.exports = {
       if (entry_type === "purchase" && (!vendor_id || !material_id)) {
         throw createError(400, "vendor_id and material_id are required for a purchase entry");
       }
+      if (entry_type === "sales" && !so_id) {
+        throw createError(400, "so_id is required for a sales (outbound loading) entry");
+      }
 
-      const { vehicle } = await validateReferences({ vehicle_id, driver_id, vendor_id, material_id, po_id, entry_type });
+      const { vehicle, salesOrder } = await validateReferences({
+        vehicle_id, driver_id, vendor_id, material_id, po_id, so_id, entry_type,
+      });
 
       const token_no = await generateTokenNo(vehicle.vehicle_no);
 
@@ -361,7 +408,8 @@ module.exports = {
         entry_type,
         vendor_id: vendor_id || null,
         po_id: po_id || null,
-        material_id: material_id || null,
+        so_id: entry_type === "sales" ? so_id : null,
+        material_id: entry_type === "sales" ? (salesOrder ? salesOrder.material_id : null) : (material_id || null),
         challan_no,
         expected_qty,
         remarks,

@@ -4,13 +4,16 @@ const { attachUser, authorize } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Gross / Tare / Net capture, slip printing (Module 8)
-// TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorize("gate"));
+// Allow any authenticated user to READ weight slips (so Warehouse can query
+// which gate entries originated from the weighbridge), but keep create/update
+///delete restricted to the Gate role.
+router.use(verifyAccessToken, attachUser);
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);
-router.post("/",    Controller.create);
-router.put("/:id",  Controller.update);
-router.delete("/:id", Controller.delete);
+
+router.post("/",    authorize("gate"), Controller.create);
+router.put("/:id",  authorize("gate"), Controller.update);
+router.delete("/:id", authorize("gate"), Controller.delete);
 
 module.exports = router;
