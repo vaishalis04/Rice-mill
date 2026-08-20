@@ -55,7 +55,7 @@ module.exports = {
   create: async (req, res, next) => {
     try {
       const {
-        vendor_code: providedCode, name, gstin, address, bank_details,
+        name, gstin, address, bank_details,
         rating, credit_terms, vendor_type, plant_id,
       } = req.body;
 
@@ -67,7 +67,7 @@ module.exports = {
 
       // vendor_code is auto-generated (VEND0001, VEND0002, ...) unless the
       // caller explicitly supplies one.
-      const vendor_code = providedCode || (await generateVendorCode());
+      const vendor_code = await generateVendorCode();
 
       if (gstin) {
         const existing = await Vendor.findOne({ where: { gstin } });

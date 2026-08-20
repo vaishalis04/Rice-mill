@@ -1,6 +1,7 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
-const { GateEntry, Sampling, User } = require("../models/index");
+const { GateEntry, Sampling, User, PurchaseOrder, MaterialMaster } = require("../models/index");
+const { generateCode } = require("../helpers/helperFunction");
 
 // Sample collection & chain-of-custody (Module 5)
 // A sample can only be drawn once a vehicle has been checked in at the gate
@@ -8,7 +9,12 @@ const { GateEntry, Sampling, User } = require("../models/index");
 // forward to 'sampling_done', ready for the lab.
 
 const detailIncludes = [
-  { model: GateEntry, as: "gateEntry", attributes: ["id", "token_no", "gate_status", "vendor_id", "material_id"] },
+  {
+    model: GateEntry,
+    as: "gateEntry",
+    attributes: ["id", "token_no", "gate_status", "vendor_id", "material_id", "po_id"],
+    include: [{ model: MaterialMaster, as: "material", attributes: ["id", "material_code", "name"] }],
+  },
   { model: User, as: "collector", attributes: ["id", "username", "email"] },
 ];
 
@@ -59,10 +65,10 @@ module.exports = {
   // POST /api/sampling  { gate_entry_id, sample_code, collected_at?, sent_to_lab_at? }
   create: async (req, res, next) => {
     try {
-      const { gate_entry_id, sample_code, collected_at, sent_to_lab_at, plant_id } = req.body;
+      const { gate_entry_id, material_id, collected_at, sent_to_lab_at, plant_id } = req.body;
 
-      if (!gate_entry_id || !sample_code) {
-        throw createError(400, "gate_entry_id and sample_code are required");
+      if (!gate_entry_id) {
+        throw createError(400, "gate_entry_id is required");
       }
 
       const gateEntry = await GateEntry.findOne({ where: { id: gate_entry_id, is_deleted: false } });
@@ -71,8 +77,22 @@ module.exports = {
         throw createError(400, `Cannot draw a sample for a gate entry with status '${gateEntry.gate_status}'; it must be 'waiting_sampling'`);
       }
 
-      const existing = await Sampling.findOne({ where: { sample_code } });
-      if (existing) throw createError(409, "A sampling record with this sample_code already exists");
+      if (material_id) {
+        const selectedLine = await PurchaseOrder.findOne({ where: { id: material_id, is_deleted: false } });
+        const bookedLine = gateEntry.po_id
+          ? await PurchaseOrder.findOne({ where: { id: gateEntry.po_id, is_deleted: false } })
+          : null;
+        if (!selectedLine || !bookedLine || selectedLine.po_no !== bookedLine.po_no) {
+          throw createError(400, "Selected material is not on this Purchase Order");
+        }
+        await gateEntry.update({
+          po_id: selectedLine.id,
+          material_id: selectedLine.material_id,
+          updated_by: req.user ? req.user.id : null,
+        });
+      }
+
+      const sample_code = await generateCode(Sampling, "sample_code", "SAMP");
       const sample = await Sampling.create({
         gate_entry_id,
         sample_code,

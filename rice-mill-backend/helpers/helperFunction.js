@@ -167,6 +167,20 @@ const generateDailySequence = async (Model, field, prefixLabel, padLength) => {
   return `${prefix}${String(nextSeq).padStart(padLength, "0")}`;
 };
 
+const generateCode = async (Model, field, prefix, padLength = 4) => {
+  const { Op } = require("sequelize");
+  const last = await Model.findOne({
+    where: { [field]: { [Op.like]: `${prefix}%` } },
+    order: [["id", "DESC"]],
+  });
+  let nextSeq = 1;
+  if (last && last[field]) {
+    const match = String(last[field]).match(new RegExp(`^${prefix}(\\d+)$`));
+    if (match) nextSeq = parseInt(match[1], 10) + 1;
+  }
+  return `${prefix}${String(nextSeq).padStart(padLength, "0")}`;
+};
+
 // Generate sequential daily sales order numbers (Module 18)
 // Format: SO-YYYYMMDD-001
 const generateSoNo = async () => {
@@ -237,5 +251,5 @@ module.exports = {
   generateTokenNo, generateLotNo, generateBatchNo, computeAgeDays,
   generateCustomerCode, generateVendorCode, generatePoNo,
   generatePackingBatchNo, generateEAN13, generateSoNo, generateChallanNo,
-  generateLoadingNo,
+  generateLoadingNo, generateCode,
 };

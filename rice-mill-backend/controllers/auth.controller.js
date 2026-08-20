@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const { User, Role, PlantMaster } = require("../models");
+const { generateCode } = require("../helpers/helperFunction");
 
 const ACCESS_TOKEN_SECRET =
   process.env.ACCESS_TOKEN_SECRET || "access_secret";
@@ -20,7 +21,6 @@ module.exports = {
         phone,
         password,
         role_id,
-        employee_code,
         plant_id,
       } = req.body;
 
@@ -57,7 +57,7 @@ module.exports = {
         phone,
         password_hash,
         role_id,
-        employee_code,
+        employee_code: await generateCode(User, "employee_code", "EMP"),
         plant_id,
       });
 

@@ -410,6 +410,7 @@ CREATE TABLE `lab_test` (
   `smell` VARCHAR(30) NULL,
   `variety_detected` BIGINT NULL,
   `grain_size` VARCHAR(30) NULL,
+  `comment` VARCHAR(500) NULL,
   `verdict` ENUM('accepted', 'rejected', 'negotiation') NOT NULL,
   `tested_by` BIGINT NOT NULL,
   `tested_at` DATETIME NULL,

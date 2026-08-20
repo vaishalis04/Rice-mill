@@ -1,6 +1,7 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
 const { WarehouseMaster, BinStackMaster, Stack, Lot, Inventory, MaterialMaster } = require("../models/index");
+const { generateCode } = require("../helpers/helperFunction");
 
 // Warehouse / Bin / Stack, raw material storage (Module 9)
 // Fronts three related tables via `type` = "warehouse" | "bin" | "stack"
@@ -34,9 +35,10 @@ const getIncludes = (type) => {
 
 const validateAndBuildPayload = async (type, body, { isUpdate = false, existing = null } = {}) => {
   if (type === "warehouse") {
-    const { warehouse_code, name, location, capacity, warehouse_type, plant_id } = body;
-    if (!isUpdate && (!warehouse_code || !name || !warehouse_type)) {
-      throw createError(400, "warehouse_code, name and warehouse_type are required");
+    const { name, location, capacity, warehouse_type, plant_id } = body;
+    const warehouse_code = isUpdate ? body.warehouse_code : await generateCode(WarehouseMaster, "warehouse_code", "WH");
+    if (!isUpdate && (!name || !warehouse_type)) {
+      throw createError(400, "name and warehouse_type are required");
     }
     if (warehouse_type && !["raw", "fg"].includes(warehouse_type)) {
       throw createError(400, "warehouse_type must be 'raw' or 'fg'");
@@ -49,8 +51,9 @@ const validateAndBuildPayload = async (type, body, { isUpdate = false, existing 
   }
 
   if (type === "bin") {
-    const { bin_code, warehouse_id, capacity, plant_id } = body;
-    if (!isUpdate && (!bin_code || !warehouse_id)) throw createError(400, "bin_code and warehouse_id are required");
+    const { warehouse_id, capacity, plant_id } = body;
+    const bin_code = isUpdate ? body.bin_code : await generateCode(BinStackMaster, "bin_code", "BIN");
+    if (!isUpdate && !warehouse_id) throw createError(400, "warehouse_id is required");
     if (warehouse_id) {
       const warehouse = await WarehouseMaster.findOne({ where: { id: warehouse_id, is_deleted: false } });
       if (!warehouse) throw createError(400, "Invalid warehouse_id");
@@ -63,9 +66,10 @@ const validateAndBuildPayload = async (type, body, { isUpdate = false, existing 
   }
 
   // stack
-  const { stack_code, lot_id, warehouse_id, bin_id, qty, stacked_at, plant_id } = body;
-  if (!isUpdate && (!stack_code || !lot_id || !warehouse_id || !bin_id || qty === undefined)) {
-    throw createError(400, "stack_code, lot_id, warehouse_id, bin_id and qty are required");
+  const { lot_id, warehouse_id, bin_id, qty, stacked_at, plant_id } = body;
+  const stack_code = isUpdate ? body.stack_code : await generateCode(Stack, "stack_code", "STK");
+  if (!isUpdate && (!lot_id || !warehouse_id || !bin_id || qty === undefined)) {
+    throw createError(400, "lot_id, warehouse_id, bin_id and qty are required");
   }
   if (lot_id) {
     const lot = await Lot.findOne({ where: { id: lot_id, is_deleted: false } });

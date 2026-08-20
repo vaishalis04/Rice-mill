@@ -79,6 +79,8 @@ GateEntry.belongsTo(PurchaseOrder, { foreignKey: "po_id", as: "purchaseOrder" })
 GateEntry.belongsTo(MaterialMaster, { foreignKey: "material_id", as: "material" });
 GateEntry.belongsTo(SalesOrder, { foreignKey: "so_id", as: "salesOrder" }); // entry_type = "sales" only
 Sampling.belongsTo(GateEntry, { foreignKey: "gate_entry_id", as: "gateEntry" });
+Sampling.hasOne(LabTest, { foreignKey: "sampling_id", as: "labTest" });
+GateEntry.hasMany(Sampling, { foreignKey: "gate_entry_id", as: "samplings" });
 Sampling.belongsTo(User, { foreignKey: "collected_by", as: "collector" });
 LabTest.belongsTo(Sampling, { foreignKey: "sampling_id", as: "sampling" });
 LabTest.belongsTo(VarietyMaster, { foreignKey: "variety_detected", as: "detectedVariety" });

@@ -8,6 +8,7 @@ const {
   Permission,
   RolePermission,
 } = require("../models");
+const { generateCode } = require("../helpers/helperFunction");
 
 module.exports = {
   // ===========================
@@ -103,7 +104,6 @@ module.exports = {
         phone,
         password,
         role_id,
-        employee_code,
         plant_id,
       } = req.body;
 
@@ -136,7 +136,7 @@ module.exports = {
         phone,
         password_hash: hash,
         role_id,
-        employee_code,
+        employee_code: await generateCode(User, "employee_code", "EMP"),
         plant_id,
         created_by: req.user?.id || null,
       });

@@ -7,6 +7,7 @@ const {
   PlantMaster, MaterialMaster, VarietyMaster, UomMaster,
   RateMaster, QualityParameterMaster, ReasonCodeMaster,
 } = require("../models/index");
+const { generateCode } = require("../helpers/helperFunction");
 
 // Org / plant / UOM / variety / rate / reason-code masters (Module 25)
 // One generic module fronting several small master tables. Which table a
@@ -51,8 +52,9 @@ const getIncludes = (type) => {
 // Per-type required-field validation + FK checks + uniqueness checks.
 const validateAndBuildPayload = async (type, body, { isUpdate = false, existing = null } = {}) => {
   if (type === "plant") {
-    const { plant_code, name, address } = body;
-    if (!isUpdate && (!plant_code || !name)) throw createError(400, "plant_code and name are required");
+    const { name, address } = body;
+    const plant_code = isUpdate ? body.plant_code : await generateCode(PlantMaster, "plant_code", "PLANT");
+    if (!isUpdate && !name) throw createError(400, "name is required");
     if (plant_code) {
       const dup = await PlantMaster.findOne({ where: { plant_code, ...(existing ? { id: { [Op.ne]: existing.id } } : {}) } });
       if (dup) throw createError(409, "A plant with this plant_code already exists");
@@ -62,9 +64,10 @@ const validateAndBuildPayload = async (type, body, { isUpdate = false, existing 
 
   if (type === "material") {
     // eslint-disable-next-line prefer-const
-    let { material_code, name, category, uom_id, variety_id, hsn_code, plant_id } = body;
-    if (!isUpdate && (!material_code || !name || !category)) {
-      throw createError(400, "material_code, name and category are required");
+    let { name, category, uom_id, variety_id, hsn_code, plant_id } = body;
+    const material_code = isUpdate ? body.material_code : await generateCode(MaterialMaster, "material_code", "MAT");
+    if (!isUpdate && (!name || !category)) {
+      throw createError(400, "name and category are required");
     }
     // category used to be locked to a fixed 6-value enum; it's now free text
     // so new categories can be added on the fly (Purchase Orders quick-add,
@@ -106,8 +109,9 @@ const validateAndBuildPayload = async (type, body, { isUpdate = false, existing 
   }
 
   if (type === "uom") {
-    const { uom_code, name, conversion_factor, plant_id } = body;
-    if (!isUpdate && (!uom_code || !name)) throw createError(400, "uom_code and name are required");
+    const { name, conversion_factor, plant_id } = body;
+    const uom_code = isUpdate ? body.uom_code : await generateCode(UomMaster, "uom_code", "UOM");
+    if (!isUpdate && !name) throw createError(400, "name is required");
     if (uom_code) {
       const dup = await UomMaster.findOne({ where: { uom_code, ...(existing ? { id: { [Op.ne]: existing.id } } : {}) } });
       if (dup) throw createError(409, "A UOM with this uom_code already exists");
@@ -142,8 +146,9 @@ const validateAndBuildPayload = async (type, body, { isUpdate = false, existing 
   }
 
   // reason_code
-  const { category, code, description, plant_id } = body;
-  if (!isUpdate && (!category || !code)) throw createError(400, "category and code are required");
+  const { category, description, plant_id } = body;
+  const code = isUpdate ? body.code : await generateCode(ReasonCodeMaster, "code", "RSN");
+  if (!isUpdate && !category) throw createError(400, "category is required");
   if (category && !["rejection", "downtime", "waste"].includes(category)) {
     throw createError(400, "category must be 'rejection', 'downtime' or 'waste'");
   }

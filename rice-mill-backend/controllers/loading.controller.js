@@ -1,5 +1,5 @@
 const createError = require("http-errors");
-const { Loading, GateEntry, SalesOrder, Customer, MaterialMaster, Vehicle, Driver, User } = require("../models/index");
+const { Loading, GateEntry, SalesOrder, Customer, MaterialMaster, Vehicle, Driver, User, Sampling, LabTest } = require("../models/index");
 const { generateLoadingNo } = require("../helpers/helperFunction");
 
 // Outbound loading capture at the gate (entry_type = "sales" flow).
@@ -8,6 +8,13 @@ const { generateLoadingNo } = require("../helpers/helperFunction");
 // Creating a Loading record is only valid once the gate entry is at
 // 'waiting_loading'; it finalizes the loaded qty, moves the gate entry to
 // 'loaded', and marks the Sales Order 'dispatched'.
+//
+// Gate Entry only ever books the truck against a Sales Order NUMBER as a
+// whole (see gate.controller.js) — it does NOT ask which material on a
+// multi-material SO this truck is for. That choice happens here, right
+// before the load is recorded (see the `so_id` handling in create() below),
+// which is also why this module now lives on the Warehouse dashboard
+// alongside the rest of physical goods movement, not the Gate dashboard.
 
 const detailIncludes = [
   {
@@ -17,6 +24,12 @@ const detailIncludes = [
     include: [
       { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
       { model: Driver, as: "driver", attributes: ["id", "name", "mobile"] },
+      {
+        model: Sampling,
+        as: "samplings",
+        attributes: ["id", "sample_code"],
+        include: [{ model: LabTest, as: "labTest", attributes: ["id", "comment"] }],
+      },
     ],
   },
   {
@@ -85,7 +98,7 @@ module.exports = {
   // be opened against it for the remaining quantity.
   create: async (req, res, next) => {
     try {
-      const { gate_entry_id, loaded_qty, loaded_at, remarks, plant_id } = req.body;
+      const { gate_entry_id, loaded_qty, loaded_at, remarks, plant_id, so_id } = req.body;
       if (!gate_entry_id || loaded_qty === undefined) {
         throw createError(400, "gate_entry_id and loaded_qty are required");
       }
@@ -103,7 +116,32 @@ module.exports = {
       const existing = await Loading.findOne({ where: { gate_entry_id, is_deleted: false } });
       if (existing) throw createError(409, "A loading record already exists for this gate entry");
 
-      const so = await SalesOrder.findOne({ where: { id: gateEntry.so_id, is_deleted: false } });
+      // Which material is being loaded is decided HERE, not back at Gate
+      // Entry (which only books the truck against a Sales Order number as a
+      // whole). so_id, if provided, must point to a line item on the SAME
+      // so_no the gate entry was booked against — swapping it moves the
+      // gate entry onto that specific material's line before recording the
+      // load, so its own remaining qty/status track independently of the
+      // SO's other materials.
+      let effectiveSoId = gateEntry.so_id;
+      if (so_id && String(so_id) !== String(gateEntry.so_id)) {
+        const currentSo = gateEntry.so_id
+          ? await SalesOrder.findOne({ where: { id: gateEntry.so_id, is_deleted: false } })
+          : null;
+        const newSo = await SalesOrder.findOne({ where: { id: so_id, is_deleted: false } });
+        if (!newSo) throw createError(400, "Invalid so_id");
+        if (!currentSo || newSo.so_no !== currentSo.so_no) {
+          throw createError(400, "so_id must be a material line item on the same Sales Order this gate entry was booked against");
+        }
+        await gateEntry.update({
+          so_id: newSo.id,
+          material_id: newSo.material_id,
+          updated_by: req.user ? req.user.id : null,
+        });
+        effectiveSoId = newSo.id;
+      }
+
+      const so = await SalesOrder.findOne({ where: { id: effectiveSoId, is_deleted: false } });
       if (!so) throw createError(400, "This gate entry has no valid linked Sales Order");
       if (["dispatched", "closed", "cancelled"].includes(so.so_status)) {
         throw createError(400, `Sales Order ${so.so_no} is already '${so.so_status}' and cannot be loaded against`);
@@ -119,7 +157,7 @@ module.exports = {
       const loading = await Loading.create({
         loading_no,
         gate_entry_id,
-        so_id: gateEntry.so_id,
+        so_id: effectiveSoId,
         loaded_qty,
         loaded_at: loaded_at || new Date(),
         loading_operator_id: req.user ? req.user.id : null,

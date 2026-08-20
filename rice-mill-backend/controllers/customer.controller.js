@@ -107,7 +107,7 @@ module.exports = {
   // POST /api/customers
   create: async (req, res, next) => {
     try {
-      const { customer_code: providedCode, name, gstin, address, credit_limit, customer_type, plant_id } = req.body;
+      const { name, gstin, address, credit_limit, customer_type, plant_id } = req.body;
 
       if (!name) throw createError(400, "name is required");
       if (gstin && gstin.length !== 15) throw createError(400, "gstin must be 15 characters");
@@ -118,7 +118,7 @@ module.exports = {
       // customer_code is auto-generated (CUST0001, CUST0002, ...) unless the
       // caller explicitly supplies one — kept optional-override for admin
       // tooling/imports, but the UI no longer asks for it.
-      const customer_code = providedCode || (await generateCustomerCode());
+      const customer_code = await generateCustomerCode();
 
       if (gstin) {
         const existing = await Customer.findOne({ where: { gstin } });

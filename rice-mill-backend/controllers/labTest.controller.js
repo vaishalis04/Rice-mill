@@ -124,7 +124,7 @@ module.exports = {
     try {
       const {
         sampling_id, moisture_pct, broken_pct, fm_pct, color, smell,
-        variety_detected, grain_size, verdict, tested_at, plant_id,
+        variety_detected, grain_size, comment, verdict, tested_at, plant_id,
       } = req.body;
 
       if (!sampling_id || !verdict) throw createError(400, "sampling_id and verdict are required");
@@ -149,6 +149,7 @@ module.exports = {
         smell,
         variety_detected: variety_detected || null,
         grain_size,
+        comment,
         verdict,
         tested_by: req.user ? req.user.id : null,
         tested_at: tested_at || new Date(),
@@ -173,7 +174,7 @@ module.exports = {
 
       const {
         moisture_pct, broken_pct, fm_pct, color, smell,
-        variety_detected, grain_size, tested_at, plant_id,
+        variety_detected, grain_size, comment, tested_at, plant_id,
       } = req.body;
 
       if (variety_detected) {
@@ -181,7 +182,7 @@ module.exports = {
         if (!variety) throw createError(400, "Invalid variety_detected");
       }
 
-      const updates = { moisture_pct, broken_pct, fm_pct, color, smell, variety_detected, grain_size, tested_at, plant_id };
+      const updates = { moisture_pct, broken_pct, fm_pct, color, smell, variety_detected, grain_size, comment, tested_at, plant_id };
       Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
       updates.updated_by = req.user ? req.user.id : null;
 

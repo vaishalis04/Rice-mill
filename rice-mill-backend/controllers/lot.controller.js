@@ -1,6 +1,6 @@
 const createError = require("http-errors");
 const {
-  Lot, Purchase, GateEntry, MaterialMaster, VarietyMaster, PurchaseOrder,
+  Lot, Purchase, GateEntry, MaterialMaster, VarietyMaster, PurchaseOrder, Sampling, LabTest,
   Stack, WarehouseMaster, BinStackMaster, Inventory, User,
 } = require("../models/index");
 const { generateLotNo } = require("../helpers/helperFunction");
@@ -23,7 +23,22 @@ const { generateLotNo } = require("../helpers/helperFunction");
 // goes straight into a production batch.
 
 const lotIncludes = [
-  { model: Purchase, as: "purchase", attributes: ["id", "gate_entry_id", "final_qty", "final_rate"] },
+  {
+    model: Purchase,
+    as: "purchase",
+    attributes: ["id", "gate_entry_id", "final_qty", "final_rate"],
+    include: [{
+      model: GateEntry,
+      as: "gateEntry",
+      attributes: ["id", "token_no"],
+      include: [{
+        model: Sampling,
+        as: "samplings",
+        attributes: ["id", "sample_code"],
+        include: [{ model: LabTest, as: "labTest", attributes: ["id", "comment"] }],
+      }],
+    }],
+  },
   { model: MaterialMaster, as: "material", attributes: ["id", "material_code", "name"] },
   { model: VarietyMaster, as: "variety", attributes: ["id", "variety_name"] },
   { model: Lot, as: "parentLot", attributes: ["id", "lot_no"] },
@@ -105,8 +120,8 @@ module.exports = {
         gate_entry_id, warehouse_id, bin_id, material_id, variety_id,
         parent_lot_id, plant_id,
       } = req.body;
-      if (!gate_entry_id || !warehouse_id || !bin_id) {
-        throw createError(400, "gate_entry_id, warehouse_id and bin_id are required");
+      if (!gate_entry_id || !warehouse_id) {
+        throw createError(400, "gate_entry_id and warehouse_id are required");
       }
 
       const gateEntry = await GateEntry.findOne({ where: { id: gate_entry_id, is_deleted: false } });
@@ -153,10 +168,12 @@ module.exports = {
       const warehouse = await WarehouseMaster.findOne({ where: { id: warehouse_id, is_deleted: false } });
       if (!warehouse) throw createError(400, "Invalid warehouse_id");
 
-      const bin = await BinStackMaster.findOne({ where: { id: bin_id, is_deleted: false } });
-      if (!bin) throw createError(400, "Invalid bin_id");
-      if (Number(bin.warehouse_id) !== Number(warehouse_id)) {
-        throw createError(400, "bin_id does not belong to the given warehouse_id");
+      if (bin_id) {
+        const bin = await BinStackMaster.findOne({ where: { id: bin_id, is_deleted: false } });
+        if (!bin) throw createError(400, "Invalid bin_id");
+        if (Number(bin.warehouse_id) !== Number(warehouse_id)) {
+          throw createError(400, "bin_id does not belong to the given warehouse_id");
+        }
       }
 
       const resolvedMaterialId = material_id || gateEntry.material_id;

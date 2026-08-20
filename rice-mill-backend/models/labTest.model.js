@@ -14,6 +14,7 @@ LabTest.init(
     smell: { type: DataTypes.STRING(30) },
     variety_detected: { type: DataTypes.BIGINT, allowNull: true, references: { model: "variety_master", key: "id" } },
     grain_size: { type: DataTypes.STRING(30) },
+    comment: { type: DataTypes.STRING(500), allowNull: true },
     verdict: { type: DataTypes.ENUM("accepted", "rejected", "negotiation"), allowNull: false },
     tested_by: { type: DataTypes.BIGINT, allowNull: false, references: { model: "users", key: "id" } },
     tested_at: { type: DataTypes.DATE },

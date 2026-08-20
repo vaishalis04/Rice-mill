@@ -4,7 +4,7 @@ const { attachUser, authorize } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Outbound loading capture at the gate (entry_type = "sales" flow, Gate module)
-router.use(verifyAccessToken, attachUser, authorize("gate"));
+router.use(verifyAccessToken, attachUser, authorize("gate", "warehouse"));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

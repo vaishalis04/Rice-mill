@@ -10,6 +10,7 @@ router.get("/batches/:id", Controller.getById);
 router.post("/batches",    Controller.create);
 router.put("/batches/:id", Controller.update);
 router.delete("/batches/:id", Controller.delete);
+router.patch("/batches/:id/finalize", Controller.finalize);
 
 router.patch("/batches/:id/dryer",          Controller.dryerStage);
 router.patch("/batches/:id/milling",        Controller.millingStage);

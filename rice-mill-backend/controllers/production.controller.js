@@ -174,8 +174,10 @@ module.exports = {
   // POST /api/production/batches  { lot_id, process_type, input_qty?, production_date? }
   create: async (req, res, next) => {
     try {
-      const { lot_id, process_type, input_qty, production_date, plant_id } = req.body;
-console.log("req.body", req.body);
+      const {
+        lot_id, process_type, input_qty, production_date, plant_id,
+        long_qty, medium_qty, broken_qty, small_broken_qty,
+      } = req.body;
       if (!lot_id || !process_type) throw createError(400, "lot_id and process_type are required");
       if (!["dry", "wet"].includes(process_type)) throw createError(400, "process_type must be 'dry' or 'wet'");
 
@@ -190,8 +192,12 @@ console.log("lot", lot);
 console.log("existing", existing);
       const batch_no = await generateBatchNo();
       console.log("batch_no", batch_no);
+      const hasFinalResults = long_qty !== undefined;
+      if (hasFinalResults) {
+        const finalQuantities = [long_qty, medium_qty, broken_qty, small_broken_qty].map((value) => Number(value) || 0);
+        if (finalQuantities.some((value) => value < 0)) throw createError(400, "Final quantities cannot be negative");
+      }
       const order = STAGE_ORDER[process_type];
-      console.log("order", order);
 
       const batch = await ProductionBatch.create({
         batch_no,
@@ -199,17 +205,33 @@ console.log("existing", existing);
         process_type,
         input_qty: input_qty !== undefined ? input_qty : lot.qty,
         production_date: production_date || new Date().toISOString().slice(0, 10),
-        batch_status: "in_progress",
-        current_stage: order[0],
+        batch_status: hasFinalResults ? "completed" : "in_progress",
+        current_stage: hasFinalResults ? "completed" : order[0],
         plant_id: plant_id || lot.plant_id || (req.user ? req.user.plant_id : null),
         created_by: req.user ? req.user.id : null,
       });
 
+      let lengthGrading = null;
+      if (hasFinalResults) {
+        lengthGrading = await LengthGrading.create({
+          batch_id: batch.id,
+          input_qty: input_qty !== undefined ? Number(input_qty) : Number(lot.qty),
+          long_qty: Number(long_qty) || 0,
+          medium_qty: Number(medium_qty) || 0,
+          broken_qty: Number(broken_qty) || 0,
+          small_broken_qty: Number(small_broken_qty) || 0,
+          plant_id: batch.plant_id,
+          created_by: req.user ? req.user.id : null,
+        });
+      }
+
       const created = await ProductionBatch.findByPk(batch.id, { include: detailIncludes });
       res.status(201).json({
         success: true,
-        msg: `Batch ${batch_no} created`,
-        data: { ...created.toJSON(), checklist: buildChecklist(created) },
+        msg: hasFinalResults
+          ? `Batch ${batch_no} completed and sent to Packing`
+          : `Batch ${batch_no} created`,
+        data: { ...created.toJSON(), checklist: buildChecklist(created), lengthGrading },
       });
     } catch (err) {
   console.log("ERROR:", err);
@@ -238,6 +260,52 @@ console.log("existing", existing);
 
       const updated = await ProductionBatch.findByPk(batch.id, { include: detailIncludes });
       res.status(200).json({ success: true, msg: "Batch updated", data: { ...updated.toJSON(), checklist: buildChecklist(updated) } });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // PATCH /api/production/batches/:id/finalize
+  // Records the final production outputs without requiring stage-by-stage entries.
+  finalize: async (req, res, next) => {
+    try {
+      const batch = await ProductionBatch.findOne({ where: { id: req.params.id, is_deleted: false } });
+      if (!batch) throw createError(404, "Production batch not found");
+      if (batch.batch_status === "completed") throw createError(400, "This production batch is already completed");
+
+      const { input_qty, long_qty, medium_qty, broken_qty, small_broken_qty } = req.body;
+      if (long_qty === undefined) throw createError(400, "long_qty is required");
+
+      const resolvedInput = input_qty !== undefined ? Number(input_qty) : Number(batch.input_qty);
+      const quantities = [long_qty, medium_qty, broken_qty, small_broken_qty].map((value) => Number(value) || 0);
+      if (resolvedInput <= 0 || quantities.some((value) => value < 0)) {
+        throw createError(400, "Input and output quantities must be valid positive values");
+      }
+
+      const lengthGrading = await LengthGrading.create({
+        batch_id: batch.id,
+        input_qty: resolvedInput,
+        long_qty: quantities[0],
+        medium_qty: quantities[1],
+        broken_qty: quantities[2],
+        small_broken_qty: quantities[3],
+        plant_id: batch.plant_id,
+        created_by: req.user ? req.user.id : null,
+      });
+
+      await batch.update({
+        input_qty: resolvedInput,
+        current_stage: "completed",
+        batch_status: "completed",
+        updated_by: req.user ? req.user.id : null,
+      });
+
+      const updated = await ProductionBatch.findByPk(batch.id, { include: detailIncludes });
+      res.status(200).json({
+        success: true,
+        msg: `Batch ${updated.batch_no} completed and sent to Packing`,
+        data: { batch: { ...updated.toJSON(), checklist: buildChecklist(updated) }, lengthGrading },
+      });
     } catch (err) {
       next(err);
     }

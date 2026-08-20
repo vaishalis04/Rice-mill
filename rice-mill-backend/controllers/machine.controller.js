@@ -1,6 +1,7 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
 const { MachineMaster, MachineLog, MachineMaintenance, ProductionBatch, User } = require("../models/index");
+const { generateCode } = require("../helpers/helperFunction");
 
 // Machine master, run logs, recovery %, maintenance (Modules 13 & 29)
 // Fronts three related tables via `type` = "master" | "log" | "maintenance"
@@ -97,8 +98,9 @@ module.exports = {
       if (type === "log") throw createError(400, "Machine logs are created automatically by the production stage endpoints, not manually");
 
       if (!type || type === "master") {
-        const { machine_code, name, machine_type, capacity_per_hr, install_date, plant_id } = req.body;
-        if (!machine_code || !name || !machine_type) throw createError(400, "machine_code, name and machine_type are required");
+        const { name, machine_type, capacity_per_hr, install_date, plant_id } = req.body;
+        const machine_code = await generateCode(MachineMaster, "machine_code", "MCH");
+        if (!name || !machine_type) throw createError(400, "name and machine_type are required");
         if (!["huller", "separator", "shiner", "color_sorter", "grader", "dryer", "other"].includes(machine_type)) {
           throw createError(400, "Invalid machine_type");
         }
