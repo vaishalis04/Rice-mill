@@ -213,7 +213,7 @@ export default function WeighbridgePage() {
           />
         </div>
         <div className="sf-field">
-          <label>Gross Weight (truck + load)</label>
+          <label>First Weight (truck + load)</label>
           <input
             name="gross_weight"
             type="number"
@@ -223,7 +223,7 @@ export default function WeighbridgePage() {
           />
         </div>
         <div className="sf-field">
-          <label>Tare Weight (empty truck — must be less than gross)</label>
+          <label>Second Weight (empty truck — must be less than first)</label>
           <input
             name="tare_weight"
             type="number"
@@ -244,7 +244,7 @@ export default function WeighbridgePage() {
             type="text"
             value={liveNetWeight === null ? "" : liveNetWeight}
             disabled
-            placeholder="Enter gross & tare weight above"
+            placeholder="Enter first & second weight above"
             style={{
               fontWeight: 700,
               color: liveNetWeight !== null && liveNetWeight <= 0 ? "#b91c1c" : "#1d4ed8",
@@ -253,7 +253,7 @@ export default function WeighbridgePage() {
           />
           {liveNetWeight !== null && liveNetWeight <= 0 && (
             <p className="field-hint" style={{ color: "#b91c1c" }}>
-              Gross weight must be greater than tare weight.
+              First weight must be greater than second weight.
             </p>
           )}
         </div>
@@ -351,8 +351,8 @@ export default function WeighbridgePage() {
               return ge ? drivers.getLabel(ge.driver_id) : "—";
             },
           },
-          { key: "gross_weight", label: "Gross Wt." },
-          { key: "tare_weight", label: "Tare Wt." },
+          { key: "gross_weight", label: "First Wt." },
+          { key: "tare_weight", label: "Second Wt." },
           {
             key: "net_weight",
             label: "Net Wt.",
@@ -379,8 +379,8 @@ export default function WeighbridgePage() {
         title="Weighbridge"
         steps={[
           "A purchase truck must already be marked 'accepted' by Quality before it can be weighed. An Empty/Misc truck just needs to be checked in ('waiting_weighment') — pick either from the Gate Entry dropdown above.",
-          "Selecting a Gate Entry auto-fills Tare Weight from that same vehicle's last weighing, if there is one — adjust it if the empty weight has changed.",
-          "Enter the gross weight (truck + load) from the weighbridge readout — Net Weight is calculated live as you type, no calculator needed.",
+          "Selecting a Gate Entry auto-fills Second Weight from that same vehicle's last weighing, if there is one — adjust it if the empty weight has changed.",
+          "Enter the first weight (truck + load) from the weighbridge readout — Net Weight is calculated live as you type, no calculator needed.",
           "For a purchase truck, submitting finalizes the Purchase record and moves the gate entry on to 'in_process', ready for unloading in the Warehouse module. For an Empty/Misc truck, no purchase is created — it just moves to 'in_process', ready to be sent straight to Warehouse.",
           "If a purchase delivery has no linked Purchase Order, fill in Final Rate so the purchase can still be priced.",
         ]}

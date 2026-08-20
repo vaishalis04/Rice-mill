@@ -11,6 +11,7 @@ import SalesDashboard from "../pages/dashboards/SalesDashboard";
 import WarehouseDashboard from "../pages/dashboards/WarehouseDashboard";
 import QualityDashboard from "../pages/dashboards/QualityDashboard";
 import GateDashboard from "../pages/dashboards/GateDashboard";
+import WeighbridgeDashboard from "../pages/dashboards/WeighbridgeDashboard";
 import ProductionDashboard from "../pages/dashboards/ProductionDashboard";
 import DispatchDashboard from "../pages/dashboards/DispatchDashboard";
 
@@ -71,6 +72,15 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute allowedRoles={[ROLE_ID.gate]}>
             <GateDashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/weighbridge/dashboard"
+        element={
+          <ProtectedRoute allowedRoles={[ROLE_ID.gate]}>
+            <WeighbridgeDashboard />
           </ProtectedRoute>
         }
       />

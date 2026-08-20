@@ -14,7 +14,6 @@ const TYPE_CONFIG = {
     label: "Machine",
     readOnly: false,
     fields: [
-      { name: "machine_code", label: "Machine Code" },
       { name: "name", label: "Name" },
       // Backend expects "machine_type" in the request body but the
       // MachineMaster column — and therefore GET responses — is just

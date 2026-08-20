@@ -424,6 +424,9 @@ export const updateProductionBatchApi = (id, data) =>
 export const deleteProductionBatchApi = (id) =>
   axiosInstance.delete(`/production/batches/${id}`); // soft delete
 
+export const finalizeProductionBatchApi = (id, data) =>
+  axiosInstance.patch(`/production/batches/${id}/finalize`, data);
+
 // Stage-gated PATCH endpoints. Each checks the batch's current_stage
 // server-side and 400s if called out of order — dryer only applies to
 // "wet" batches ("dry" batches start straight at milling).

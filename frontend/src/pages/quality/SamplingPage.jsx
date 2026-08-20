@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   getSamplingsApi,
+  getPurchaseOrdersGroupedApi,
   createSamplingApi,
   updateSamplingApi,
   deleteSamplingApi,
@@ -12,7 +13,7 @@ import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyForm = {
   gate_entry_id: "",
-  sample_code: "",
+  material_id: "",
   collected_at: "",
   sent_to_lab_at: "",
 };
@@ -28,8 +29,22 @@ export default function SamplingPage() {
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
 
   const gateEntries = useEntityLookup("gate_entry");
+
+  useEffect(() => {
+    getPurchaseOrdersGroupedApi()
+      .then((res) => setPurchaseOrders(res.data.data ?? res.data))
+      .catch(() => setError("Failed to load Purchase Order materials"));
+  }, []);
+
+  const selectedGateEntry = gateEntries.rows.find(
+    (row) => String(row.id) === String(form.gate_entry_id)
+  );
+  const selectedPo = purchaseOrders.find((po) =>
+    po.items?.some((item) => String(item.id) === String(selectedGateEntry?.po_id))
+  );
 
   const load = () => {
     setLoading(true);
@@ -57,7 +72,7 @@ export default function SamplingPage() {
       } else {
         await createSamplingApi({
           gate_entry_id: Number(form.gate_entry_id),
-          sample_code: form.sample_code,
+          material_id: form.material_id ? Number(form.material_id) : undefined,
           collected_at: toIso(form.collected_at),
         });
         setInfo("Sample created — linked gate entry moved to sampling_done.");
@@ -77,7 +92,7 @@ export default function SamplingPage() {
     setEditingId(row.id);
     setForm({
       gate_entry_id: row.gate_entry_id || "",
-      sample_code: row.sample_code || "",
+      material_id: row.gateEntry?.material_id || "",
       collected_at: toLocal(row.collected_at),
       sent_to_lab_at: toLocal(row.sent_to_lab_at),
     });
@@ -113,20 +128,41 @@ export default function SamplingPage() {
           entity="gate_entry"
           label="Gate Entry"
           value={form.gate_entry_id}
-          onChange={(id) => setForm({ ...form, gate_entry_id: id })}
+          onChange={(id) => {
+            const nextGateEntry = gateEntries.rows.find((row) => String(row.id) === String(id));
+            const nextPo = purchaseOrders.find((po) =>
+              po.items?.some((item) => String(item.id) === String(nextGateEntry?.po_id))
+            );
+            const matchingItem = nextPo?.items?.find(
+              (item) => String(item.id) === String(nextGateEntry?.po_id)
+            );
+            setForm({
+              ...form,
+              gate_entry_id: id,
+              material_id: nextPo?.items?.length > 1 ? "" : matchingItem?.id || "",
+            });
+          }}
           filter={(row) => row.gate_status === "waiting_sampling"}
           required={!editingId}
         />
-        <div className="sf-field">
-          <label>Sample Code</label>
-          <input
-            name="sample_code"
-            value={form.sample_code}
-            onChange={handleChange}
-            disabled={!!editingId}
-            required={!editingId}
-          />
-        </div>
+        {!editingId && selectedPo?.items?.length > 1 && (
+          <div className="sf-field">
+            <label>Material Being Sampled</label>
+            <select
+              name="material_id"
+              value={form.material_id}
+              onChange={handleChange}
+              required
+            >
+              <option value="">Select material</option>
+              {selectedPo.items.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.material?.name || "Material"} ({item.qty} kg)
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="sf-field">
           <label>Collected At</label>
           <input
@@ -169,6 +205,7 @@ export default function SamplingPage() {
         onDelete={handleDelete}
         columns={[
           { key: "sample_code", label: "Sample Code" },
+          { key: "material", label: "Material", render: (row) => row.gateEntry?.material?.name || "—" },
           {
             key: "gate_entry_id",
             label: "Gate Entry",

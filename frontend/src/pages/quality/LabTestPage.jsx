@@ -20,6 +20,7 @@ const emptyForm = {
   smell: "",
   variety_detected: "",
   grain_size: "long",
+  comment: "",
   verdict: "accepted",
 };
 
@@ -96,6 +97,7 @@ export default function LabTestPage() {
       smell: row.smell || "",
       variety_detected: row.variety_detected || "",
       grain_size: row.grain_size || "long",
+      comment: row.comment || "",
       verdict: row.verdict || "accepted",
     });
   };
@@ -196,11 +198,11 @@ export default function LabTestPage() {
         />
         <div className="sf-field">
           <label>Grain Size</label>
-          <select name="grain_size" value={form.grain_size} onChange={handleChange}>
-            <option value="long">Long</option>
-            <option value="medium">Medium</option>
-            <option value="short">Short</option>
-          </select>
+          <input name="grain_size" value={form.grain_size} onChange={handleChange} required />
+        </div>
+        <div className="sf-field">
+          <label>Comment</label>
+          <textarea name="comment" value={form.comment} onChange={handleChange} rows={3} />
         </div>
         <div className="sf-field">
           <label>Verdict</label>

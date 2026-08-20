@@ -15,7 +15,6 @@ const emptyForm = {
   phone: "",
   password: "",
   role_id: "",
-  employee_code: "",
 };
 
 export default function UsersPage() {
@@ -52,7 +51,6 @@ export default function UsersPage() {
       email: form.email,
       phone: form.phone || undefined,
       role_id: Number(form.role_id),
-      employee_code: form.employee_code || undefined,
     };
     // Password is required to create a user, but optional on edit — leaving
     // it blank while editing keeps the user's current password unchanged.
@@ -105,6 +103,16 @@ export default function UsersPage() {
     }
   };
 
+  const handleToggleDisabled = async (row) => {
+    try {
+      await updateUserApi(row.id, { is_active: !row.is_active });
+      setInfo(row.is_active ? "User disabled." : "User enabled.");
+      load();
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not change user status");
+    }
+  };
+
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>Users</h2>
@@ -149,10 +157,6 @@ export default function UsersPage() {
           onChange={setField("role_id")}
           required
         />
-        <div className="sf-field">
-          <label>Employee Code (optional)</label>
-          <input name="employee_code" value={form.employee_code} onChange={handleChange} />
-        </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="sf-submit" type="submit">
             {editingId ? "Update User" : "Create User"}
@@ -186,6 +190,15 @@ export default function UsersPage() {
             key: "is_active",
             label: "Active",
             render: (row) => (row.is_active ? "Yes" : "No"),
+          },
+          {
+            key: "user_status",
+            label: "Actions",
+            render: (row) => (
+              <button className="dt-btn" onClick={() => handleToggleDisabled(row)}>
+                {row.is_active ? "Disable" : "Enable"}
+              </button>
+            ),
           },
         ]}
       />

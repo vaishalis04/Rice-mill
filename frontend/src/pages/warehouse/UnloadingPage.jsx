@@ -70,8 +70,8 @@ export default function UnloadingPage() {
       const payload = {
         gate_entry_id: Number(startFormState.gate_entry_id),
         warehouse_id: Number(startFormState.warehouse_id),
-        bin_id: Number(startFormState.bin_id),
       };
+      if (startFormState.bin_id) payload.bin_id = Number(startFormState.bin_id);
       if (startFormState.material_id !== "") payload.material_id = Number(startFormState.material_id);
       if (startFormState.variety_id !== "") payload.variety_id = Number(startFormState.variety_id);
 
@@ -175,7 +175,6 @@ export default function UnloadingPage() {
           label="Bin"
           value={startFormState.bin_id}
           onChange={(id) => setStartFormState({ ...startFormState, bin_id: id })}
-          required
           creatable
           context={{ warehouse_id: startFormState.warehouse_id }}
         />
@@ -199,7 +198,7 @@ export default function UnloadingPage() {
             />
             <EntitySelect
               entity="variety"
-              label="Variety"
+              label="Variety (add new if found)"
               value={startFormState.variety_id}
               onChange={(id) => setStartFormState({ ...startFormState, variety_id: id })}
               creatable
@@ -242,6 +241,11 @@ export default function UnloadingPage() {
           },
           { key: "bin_id", label: "Bin", render: (row) => row.targetBin?.bin_code || "—" },
           { key: "material", label: "Material", render: (row) => row.material?.name || "—" },
+          {
+            key: "lab_comment",
+            label: "Lab Comment",
+            render: (row) => row.purchase?.gateEntry?.samplings?.find((s) => s.labTest?.comment)?.labTest?.comment || "—",
+          },
           {
             key: "bag_actions",
             label: "Bag Count",
@@ -335,6 +339,11 @@ export default function UnloadingPage() {
           { key: "rejected_bags", label: "Rejected Bags" },
           { key: "qty", label: "Accepted Qty" },
           { key: "rejected_qty", label: "Rejected Qty" },
+          {
+            key: "lab_comment",
+            label: "Lab Comment",
+            render: (row) => row.purchase?.gateEntry?.samplings?.find((s) => s.labTest?.comment)?.labTest?.comment || "—",
+          },
           {
             key: "route_actions",
             label: "Route",

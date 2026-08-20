@@ -5,6 +5,7 @@ import LotsPage from "../warehouse/LotsPage";
 import WarehousePage from "../warehouse/WarehousePage";
 import InventoryPage from "../warehouse/InventoryPage";
 import FinishedGoodsPage from "../warehouse/FinishedGoodsPage";
+import LoadingPage from "../gate/LoadingPage";
 
 const TABS = [
   { key: "unloading", label: "Unloading" },
@@ -12,6 +13,10 @@ const TABS = [
   { key: "warehouse", label: "Warehouse / Bin / Stack" },
   { key: "inventory", label: "Inventory" },
   { key: "finished_goods", label: "Finished Goods" },
+  // Moved here from the Gate dashboard — this is where an outbound Sales
+  // truck's actual loaded qty (and, for a multi-material Sales Order,
+  // which material) gets recorded, once Gate has already checked it in.
+  { key: "loading", label: "Loading" },
 ];
 
 export default function WarehouseDashboard() {
@@ -24,6 +29,7 @@ export default function WarehouseDashboard() {
       {tab === "warehouse" && <WarehousePage />}
       {tab === "inventory" && <InventoryPage />}
       {tab === "finished_goods" && <FinishedGoodsPage />}
+      {tab === "loading" && <LoadingPage />}
     </DashboardLayout>
   );
 }

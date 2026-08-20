@@ -15,7 +15,6 @@ const TYPE_CONFIG = {
   uom: {
     label: "UOM",
     fields: [
-      { name: "uom_code", label: "UOM Code" },
       { name: "name", label: "Name" },
       { name: "conversion_factor", label: "Conversion Factor", type: "number" },
     ],
@@ -30,7 +29,6 @@ const TYPE_CONFIG = {
   material: {
     label: "Material",
     fields: [
-      { name: "material_code", label: "Material Code" },
       { name: "name", label: "Name" },
       { name: "category", label: "Category", type: "entity", entity: "material_category", creatable: true },
       { name: "uom_id", label: "UOM", type: "entity", entity: "uom" },
@@ -40,7 +38,6 @@ const TYPE_CONFIG = {
   plant: {
     label: "Plant",
     fields: [
-      { name: "plant_code", label: "Plant Code" },
       { name: "name", label: "Name" },
       // Backend column is "address", not "location" — this was silently
       // never saving/showing before since the request body key didn't

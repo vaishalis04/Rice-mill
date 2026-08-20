@@ -43,10 +43,6 @@ const STATUS_FILTERS = [
   { key: "exited", label: "Exited" },
 ];
 
-// Which flow the truck belongs to — filters the list independently of
-// gate_status. "other" = empty trucks / trucks with miscellaneous items,
-// which skip Sampling/Lab/Negotiation entirely. "sales" = outbound trucks
-// arriving empty to be loaded against a Sales Order (see ModuleGuide below).
 const ENTRY_TYPE_FILTERS = [
   { key: "", label: "All Trucks" },
   { key: "purchase", label: "Purchase Trucks" },
@@ -60,55 +56,48 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
   const [statusFilter, setStatusFilter] = useState("");
   const [entryTypeFilter, setEntryTypeFilter] = useState("");
   const [form, setForm] = useState(emptyForm);
-  // The full grouped PO object (po_no + all its material line items) once
-  // one's been picked — used to resolve which SPECIFIC line item (po_id)
-  // matches whichever material the truck actually ends up delivering, and
-  // to constrain the Material field's choices to only what's on this PO.
   const [poGroup, setPoGroup] = useState(null);
-  // The full grouped Sales Order object (so_no + all its material line
-  // items) once one's been picked — same idea as poGroup above. Lets the
-  // "materials on this Sales Order" box below show EVERY material the SO
-  // covers, and (when there's more than one) resolves which SPECIFIC line
-  // item (so_id) matches whichever material this truck is collecting.
   const [soGroup, setSoGroup] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [lastToken, setLastToken] = useState("");
+  const [lastVendor, setLastVendor] = useState("");
   const [showCamera, setShowCamera] = useState(false);
-  // The captured image is shown locally (photoPreview) the instant it's
-  // taken, while it uploads in the background; form.driver_photo_url only
-  // gets set once the server confirms and hands back a real URL — that's
-  // the only thing that ever gets submitted with the gate entry.
   const [photoPreview, setPhotoPreview] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoUploadError, setPhotoUploadError] = useState("");
 
   const vehicles = useEntityLookup("vehicle");
   const drivers = useEntityLookup("driver");
-  // Used to auto-fill Vendor/Material the moment a PO is picked below — a
-  // PO always belongs to exactly one vendor + one material, so there's no
-  // reason to make the person pick those separately once they've chosen
-  // the PO that already pins them down.
   const purchaseOrders = useEntityLookup("purchase_order");
-  // Used to auto-fill Customer/Material the moment a Sales Order is picked
-  // for a sales (outbound loading) entry — flat, one row per material line,
-  // used for labels/details of a SPECIFIC line item (so_id).
   const salesOrders = useEntityLookup("sales_order");
-  // Grouped, one option per so_no with every material it covers nested
-  // under `items` — used for the Sales Order picker itself, so a
-  // multi-material SO reads as ONE order (see soGroup above).
   const salesOrderGroups = useEntityLookup("sales_order_grouped");
 
   // "Load New Truck for Remaining Qty" on the Loading tab jumps here with a
-  // Sales Order id already known — pre-select it and switch to the Sales
-  // entry type so the operator only has to pick the next Vehicle/Driver.
+  // specific Sales Order LINE ITEM id already known (prefillSoId) — resolve
+  // which grouped SO it belongs to (so the picker + box display correctly)
+  // and pre-select that exact item.
   useEffect(() => {
     if (!prefillSoId) return;
     setForm((prev) => ({ ...emptyForm, entry_type: "sales", so_id: prefillSoId }));
     setPoGroup(null);
-    setSoGroup(null);
+    const group = salesOrderGroups.rows.find(
+      (g) => Array.isArray(g.items) && g.items.some((i) => String(i.id) === String(prefillSoId))
+    );
+    setSoGroup(group || null);
     if (onPrefillConsumed) onPrefillConsumed();
   }, [prefillSoId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Guards against a race where salesOrderGroups hasn't finished its fetch
+  // yet at the moment the prefill effect above runs — once the grouped
+  // list does arrive, try again to resolve soGroup for display.
+  useEffect(() => {
+    if (!form.so_id || soGroup || form.entry_type !== "sales") return;
+    const group = salesOrderGroups.rows.find(
+      (g) => Array.isArray(g.items) && g.items.some((i) => String(i.id) === String(form.so_id))
+    );
+    if (group) setSoGroup(group);
+  }, [salesOrderGroups.rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isOther = form.entry_type === "other";
   const isSales = form.entry_type === "sales";
@@ -136,51 +125,61 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
 
-  // Used by EntitySelect fields — they hand back the picked row's id directly.
   const setField = (name) => (id) => setForm({ ...form, [name]: id });
 
-  // Picking a PO pins down its vendor too — auto-fill it so the person
-  // isn't asked to pick something the PO already answers (they can still
-  // override afterward). If the PO covers just one material, auto-fill
-  // that too. If it covers several, leave Material for the person to pick
-  // explicitly (constrained to just this PO's materials, see the Material
-  // field below) — the exact po_id line item is resolved once they do.
+  // Picking a PO shows every material it covers (poGroup below) and fills
+  // in Vendor. If it covers just one material, that line item is the only
+  // possible answer — resolve po_id/material_id to it immediately. If it
+  // covers several, po_id is left UNRESOLVED until the person taps which
+  // material this truck is actually delivering in the box below
+  // (handleSelectPoItem) — a truck can only carry one material's worth of
+  // this PO at a time, so guessing which one would silently mislink it.
   const handlePoChange = (po_id) => {
     const po = purchaseOrders.rows.find((r) => String(r.id) === String(po_id));
     setPoGroup(po || null);
-    // Use grouped PO id so a single gate entry represents the whole PO
+    const items = po && Array.isArray(po.items) ? po.items : [];
+    const singleItem = items.length === 1 ? items[0] : null;
     setForm((prev) => ({
       ...prev,
-      po_id: po ? po.id : po_id,
+      po_id: singleItem ? singleItem.id : "",
+      material_id: singleItem ? singleItem.material_id : "",
       vendor_id: po ? po.vendor_id : prev.vendor_id,
-      material_id: po && Array.isArray(po.items) && po.items[0] ? po.items[0].material_id : "",
     }));
   };
 
-  // Picking a Sales Order shows every material it covers (soGroup below).
-  // If it covers just one material, auto-select that line item's id as
-  // so_id — nothing else to pick. If it covers several, leave Material for
-  // the person to pick explicitly (constrained to just this SO's materials,
-  // see the Material field below) — the exact so_id line item is resolved
-  // once they do, same pattern as handlePoChange above.
+  // Tapping a material inside the "Materials on this Purchase Order" box —
+  // resolves po_id/material_id to THAT specific line item, so the gate
+  // entry (and everything downstream: Sampling, Lab, Weighbridge, the
+  // eventual Purchase record) is tied to the right material, not just
+  // whichever one happened to be first on the PO.
+  const handleSelectPoItem = (item) => {
+    setForm((prev) => ({ ...prev, po_id: item.id, material_id: item.material_id }));
+  };
+
+  // Same idea as handlePoChange, for Sales Orders: picking the SO shows
+  // it below and fills in the Customer automatically. UNLIKE Purchase
+  // Orders, no material is picked here even for a multi-material SO — that
+  // choice is deferred to the Loading tab (see LoadingPage.jsx), which is
+  // when a truck's material actually gets decided in practice. Gate Entry
+  // just needs SOME line item on this so_no to satisfy the DB link, so it
+  // auto-picks the first material that's still open (not yet fully
+  // dispatched/closed/cancelled) — Loading can move it to a different
+  // material on the same SO before recording the load.
   const handleSoChange = (so_id) => {
     const so = salesOrderGroups.rows.find((r) => String(r.id) === String(so_id));
     setSoGroup(so || null);
-    // Use grouped SO id so a single gate entry represents the whole Sales Order
+    const items = so && Array.isArray(so.items) ? so.items : [];
+    const openItem = items.find((i) => !["dispatched", "closed", "cancelled"].includes(i.so_status)) || items[0];
     setForm((prev) => ({
       ...prev,
-      so_id: so ? so.id : so_id,
-      material_id: so && Array.isArray(so.items) && so.items[0] ? so.items[0].material_id : "",
+      so_id: openItem ? openItem.id : "",
+      material_id: openItem ? openItem.material_id : "",
     }));
     salesOrders.refetch();
   };
-  
 
   const handleEntryTypeChange = (e) => {
     const entry_type = e.target.value;
-    // Switching away from "purchase" drops vendor/PO/material/qty so a
-    // half-filled purchase field doesn't silently get submitted with an
-    // empty/misc entry, and vice versa.
     setForm((prev) => ({
       ...emptyForm,
       entry_type,
@@ -192,10 +191,6 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
     setSoGroup(null);
   };
 
-  // Fired by <CameraCapture> once a frame is snapped (or a fallback file is
-  // picked, if the camera itself couldn't be opened). We show it locally
-  // right away, then upload it — driver_photo_url only gets set once that
-  // upload actually succeeds and the backend hands back a short URL.
   const handlePhotoCaptured = async (dataUrl) => {
     setShowCamera(false);
     setPhotoPreview(dataUrl);
@@ -231,8 +226,17 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
     setError("");
     setInfo("");
     setLastToken("");
+    setLastVendor("");
     if (uploadingPhoto) {
       setError("The driver photo is still uploading — wait a moment and try again.");
+      return;
+    }
+    if (form.entry_type === "purchase" && poGroup && poGroup.items.length > 1 && !form.po_id) {
+      setError("Tap which material on this PO the truck is delivering before generating the token.");
+      return;
+    }
+    if (form.entry_type === "sales" && soGroup && soGroup.items.length > 1 && !form.so_id) {
+      setError("Tap which material on this Sales Order the truck is collecting before generating the token.");
       return;
     }
     try {
@@ -245,13 +249,11 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
 
       if (form.entry_type === "purchase") {
         payload.vendor_id = Number(form.vendor_id);
-        // send grouped PO id so one gate entry represents the whole PO
         payload.po_id = form.po_id ? Number(form.po_id) : undefined;
         if (form.material_id) payload.material_id = Number(form.material_id);
         payload.challan_no = form.challan_no;
         payload.expected_qty = form.expected_qty ? Number(form.expected_qty) : undefined;
       } else if (form.entry_type === "sales") {
-        // send grouped Sales Order id so one gate entry represents the whole SO
         payload.so_id = Number(form.so_id);
         payload.challan_no = form.challan_no || undefined;
         payload.expected_qty = form.expected_qty ? Number(form.expected_qty) : undefined;
@@ -261,8 +263,11 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
       }
 
       const res = await generateGateTokenApi(payload);
-      const tokenNo = res.data.token_no ?? res.data.data?.token_no;
+      const generatedEntry = res.data.data;
+      const tokenNo = res.data.token_no ?? generatedEntry?.token_no;
+      const vendorName = generatedEntry?.vendor?.name || poGroup?.vendor?.name || "";
       setLastToken(tokenNo || "");
+      setLastVendor(vendorName);
       setInfo(
         tokenNo
           ? "Token generated — give this number to the driver."
@@ -323,6 +328,11 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
               <span className="token-chip token-chip-lg">{lastToken}</span>
             </div>
           )}
+          {lastVendor && (
+            <div style={{ marginTop: 8 }}>
+              <strong>Vendor:</strong> {lastVendor}
+            </div>
+          )}
         </div>
       )}
 
@@ -377,17 +387,16 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
               <EntitySelect
                 entity="purchase_order"
                 label="Purchase Order"
-                value={form.po_id}
+                value={poGroup ? poGroup.id : ""}
                 onChange={handlePoChange}
                 required
               />
               <p className="field-hint">
                 Picking a Purchase Order shows every material it covers below and fills in the
-                Vendor automatically. The gate entry will represent the whole Purchase Order
-                (all materials) for this vehicle.
+                Vendor automatically. If it covers just one material, that's used automatically —
+                if it covers several, tap which one this truck is actually delivering.
               </p>
             </div>
-            {/* Material selection removed — gate entry represents the whole PO */}
             {poGroup && (
               <div className="sf-field">
                 <label>Materials on this Purchase Order</label>
@@ -403,21 +412,33 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
                   <div style={{ marginBottom: 4 }}>
                     <strong>Vendor:</strong> {poGroup.vendor?.name || "—"}
                   </div>
+                  {poGroup.items.length > 1 && !form.po_id && (
+                    <div style={{ color: "#b45309", marginBottom: 6, fontWeight: 600 }}>
+                      Tap the material this truck is delivering ↓
+                    </div>
+                  )}
                   {poGroup.items.map((i, idx) => {
                     const isThisTruck = String(i.id) === String(form.po_id);
+                    const clickable = poGroup.items.length > 1;
                     return (
                       <div
                         key={i.id}
+                        onClick={clickable ? () => handleSelectPoItem(i) : undefined}
                         style={{
                           marginTop: idx === 0 ? 0 : 6,
                           paddingTop: idx === 0 ? 0 : 6,
                           borderTop: idx === 0 ? "none" : "1px dashed #e2e8f0",
                           color: isThisTruck ? "#1d4ed8" : undefined,
+                          cursor: clickable ? "pointer" : "default",
+                          background: isThisTruck ? "#eff6ff" : "transparent",
+                          borderRadius: 4,
+                          padding: isThisTruck ? "4px 6px" : "0",
+                          margin: isThisTruck ? "2px -6px" : undefined,
                         }}
                       >
                         <strong>{i.material?.name || "—"}</strong>
                         {i.variety?.variety_name ? ` (${i.variety.variety_name})` : ""} — Ordered {i.qty} @ ₹{i.rate}
-                        {isThisTruck ? " ← this truck" : ""}
+                        {isThisTruck ? " ← this truck" : clickable ? " (tap to select)" : ""}
                       </div>
                     );
                   })}
@@ -453,7 +474,7 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
               <EntitySelect
                 entity="sales_order_grouped"
                 label="Sales Order"
-                value={form.so_id}
+                value={soGroup ? soGroup.id : ""}
                 onChange={handleSoChange}
                 filter={(row) =>
                   Array.isArray(row.items) &&
@@ -462,49 +483,13 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
                 required
               />
               <p className="field-hint">
-                Picking a Sales Order shows every material it covers below and fills in the
-                Customer automatically. The gate entry will represent the whole Sales Order
-                (all materials) for this vehicle; the actual loaded quantity is entered later on
-                the Loading tab when the truck is loaded.
+                Picking a Sales Order books this truck against it and fills in the Customer
+                automatically. Which material this truck actually collects is decided later, on
+                the Loading tab (in Warehouse) when the truck is physically loaded — that's also
+                where the loaded quantity is entered, and it can't exceed the Sales Order's
+                remaining qty.
               </p>
             </div>
-            {/* Material selection removed — gate entry represents the whole Sales Order */}
-            {soGroup && (
-              <div className="sf-field">
-                <label>Materials on this Sales Order</label>
-                <div
-                  style={{
-                    padding: "8px 10px",
-                    background: "#f8fafc",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 6,
-                    fontSize: 13,
-                  }}
-                >
-                  <div style={{ marginBottom: 4 }}>
-                    <strong>Customer:</strong> {soGroup.customer?.name || "—"}
-                  </div>
-                  {soGroup.items.map((i, idx) => {
-                    const remaining = Math.round((Number(i.qty || 0) - Number(i.dispatched_qty || 0)) * 100) / 100;
-                    const isThisTruck = String(i.id) === String(form.so_id);
-                    return (
-                      <div
-                        key={i.id}
-                        style={{
-                          marginTop: idx === 0 ? 0 : 6,
-                          paddingTop: idx === 0 ? 0 : 6,
-                          borderTop: idx === 0 ? "none" : "1px dashed #e2e8f0",
-                          color: isThisTruck ? "#1d4ed8" : undefined,
-                        }}
-                      >
-                        <strong>{i.material?.name || "—"}</strong> — Ordered {i.qty}, Remaining {remaining}
-                        {isThisTruck ? " ← this truck" : ""}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
             <div className="sf-field">
               <label>Challan No. (if any)</label>
               <input
@@ -656,7 +641,12 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
           {
             key: "vehicle_id",
             label: "Vehicle No.",
-            render: (row) => vehicles.getLabel(row.vehicle_id),
+            render: (row) => row.vehicle?.vehicle_no || vehicles.getLabel(row.vehicle_id),
+          },
+          {
+            key: "vendor_id",
+            label: "Vendor Name",
+            render: (row) => row.vendor?.name || "—",
           },
           {
             key: "driver_id",

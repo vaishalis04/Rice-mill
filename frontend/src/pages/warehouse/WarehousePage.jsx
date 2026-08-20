@@ -19,7 +19,6 @@ const TYPE_CONFIG = {
   warehouse: {
     label: "Warehouse",
     fields: [
-      { name: "warehouse_code", label: "Warehouse Code" },
       { name: "name", label: "Name" },
       // Backend expects "warehouse_type" in the request body but the
       // WarehouseMaster column — and therefore GET responses — is just
@@ -32,7 +31,6 @@ const TYPE_CONFIG = {
   bin: {
     label: "Bin",
     fields: [
-      { name: "bin_code", label: "Bin Code" },
       { name: "warehouse_id", label: "Warehouse", type: "entity", entity: "warehouse" },
       { name: "capacity", label: "Capacity", type: "number" },
     ],
@@ -40,7 +38,6 @@ const TYPE_CONFIG = {
   stack: {
     label: "Stack",
     fields: [
-      { name: "stack_code", label: "Stack Code" },
       { name: "lot_id", label: "Lot", type: "entity", entity: "lot" },
       { name: "warehouse_id", label: "Warehouse", type: "entity", entity: "warehouse" },
       { name: "bin_id", label: "Bin", type: "entity", entity: "bin" },

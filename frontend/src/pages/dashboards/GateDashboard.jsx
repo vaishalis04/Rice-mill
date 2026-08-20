@@ -1,38 +1,21 @@
-import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import DashboardLayout from "./DashboardLayout";
 import GateEntryPage from "../gate/GateEntryPage";
-import WeighbridgePage from "../gate/WeighbridgePage";
-import LoadingPage from "../gate/LoadingPage";
 
-const TABS = [
-  { key: "entries", label: "Gate Entry" },
-  { key: "weighbridge", label: "Weighbridge" },
-  { key: "loading", label: "Loading" },
-];
-
+// Weighbridge moved out to its own dashboard (see WeighbridgeDashboard.jsx)
+// — it's no longer a tab here. Loading also lives elsewhere now (Warehouse
+// dashboard). This dashboard is just Gate Entry (tokening trucks in/out).
 export default function GateDashboard() {
-  const [tab, setTab] = useState("entries");
-  // Set by LoadingPage's "Load New Truck for Remaining Qty" action — jumps
-  // to the Gate Entry tab with entry_type "sales" and this Sales Order
-  // pre-selected, so the operator only has to pick a Vehicle/Driver for the
-  // next truck instead of re-finding the same Sales Order.
-  const [prefillSoId, setPrefillSoId] = useState(null);
-
-  const handleLoadNewTruck = (soId) => {
-    setPrefillSoId(soId);
-    setTab("entries");
-  };
+  const navigate = useNavigate();
 
   return (
-    <DashboardLayout title="Gate Dashboard" tabs={TABS} activeTab={tab} onTabChange={setTab}>
-      {tab === "entries" && (
-        <GateEntryPage
-          prefillSoId={prefillSoId}
-          onPrefillConsumed={() => setPrefillSoId(null)}
-        />
-      )}
-      {tab === "weighbridge" && <WeighbridgePage />}
-      {tab === "loading" && <LoadingPage onLoadNewTruck={handleLoadNewTruck} />}
+    <DashboardLayout title="Gate Dashboard">
+      <div style={{ marginBottom: 12 }}>
+        <button className="dt-btn dt-ghost" onClick={() => navigate("/weighbridge/dashboard")}>
+          Open Weighbridge →
+        </button>
+      </div>
+      <GateEntryPage />
     </DashboardLayout>
   );
 }
