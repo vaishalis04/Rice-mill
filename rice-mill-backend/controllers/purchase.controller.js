@@ -202,11 +202,16 @@ module.exports = {
       items,
     } = req.body;
 
-    if (!vendor_id || !po_date) {
-      throw createError(
-        400,
-        "vendor_id and po_date are required"
-      );
+    // ============================================================
+    // 1. BASIC VALIDATION
+    // ============================================================
+
+    if (!vendor_id) {
+      throw createError(400, "vendor_id is required");
+    }
+
+    if (!po_date) {
+      throw createError(400, "po_date is required");
     }
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -216,93 +221,253 @@ module.exports = {
       );
     }
 
-    // Validate vendor
+    // ============================================================
+    // 2. VALIDATE VENDOR
+    // ============================================================
+
     const vendor = await Vendor.findOne({
       where: {
         id: vendor_id,
         is_deleted: false,
       },
+      transaction: t,
     });
 
     if (!vendor) {
-      throw createError(400, "Invalid vendor_id");
+      throw createError(
+        400,
+        `Invalid vendor_id: ${vendor_id}`
+      );
     }
 
-    // Validate items
-    for (const item of items) {
+    // ============================================================
+    // 3. DUPLICATE MATERIAL + VARIETY CHECK
+    //
+    // Same material is allowed if variety is different.
+    //
+    // Example:
+    // material 3 + variety 1  ✅
+    // material 3 + variety 2  ✅
+    //
+    // material 3 + variety 1  ❌ duplicate
+    // ============================================================
+
+    const seen = new Set();
+
+    // ============================================================
+    // 4. VALIDATE EACH ITEM
+    // ============================================================
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+
+      // ----------------------------------------------------------
+      // Material ID
+      // ----------------------------------------------------------
+
+      const materialId = Number(item.material_id);
+
       if (
-        !item.material_id ||
-        item.qty === undefined ||
-        item.rate === undefined
+        !Number.isInteger(materialId) ||
+        materialId <= 0
       ) {
         throw createError(
           400,
-          "Every item needs material_id, qty and rate"
+          `Item ${i + 1}: valid material_id is required`
         );
       }
 
+      // ----------------------------------------------------------
+      // Quantity
+      // ----------------------------------------------------------
+
+      const qty = Number(item.qty);
+
+      if (
+        item.qty === undefined ||
+        item.qty === null ||
+        item.qty === ""
+      ) {
+        throw createError(
+          400,
+          `Item ${i + 1}: qty is required`
+        );
+      }
+
+      if (!Number.isFinite(qty) || qty <= 0) {
+        throw createError(
+          400,
+          `Item ${i + 1}: qty must be greater than 0`
+        );
+      }
+
+      // ----------------------------------------------------------
+      // Rate
+      // ----------------------------------------------------------
+
+      const rate = Number(item.rate);
+
+      if (
+        item.rate === undefined ||
+        item.rate === null ||
+        item.rate === ""
+      ) {
+        throw createError(
+          400,
+          `Item ${i + 1}: rate is required`
+        );
+      }
+
+      if (!Number.isFinite(rate) || rate < 0) {
+        throw createError(
+          400,
+          `Item ${i + 1}: rate must be a valid number`
+        );
+      }
+
+      // ----------------------------------------------------------
+      // Variety ID
+      // ----------------------------------------------------------
+
+      let varietyId = null;
+
+      if (
+        item.variety_id !== undefined &&
+        item.variety_id !== null &&
+        item.variety_id !== ""
+      ) {
+        varietyId = Number(item.variety_id);
+
+        if (
+          !Number.isInteger(varietyId) ||
+          varietyId <= 0
+        ) {
+          throw createError(
+            400,
+            `Item ${i + 1}: invalid variety_id`
+          );
+        }
+      }
+
+      // ==========================================================
+      // 5. VALIDATE MATERIAL
+      // ==========================================================
+
       const material = await MaterialMaster.findOne({
         where: {
-          id: item.material_id,
+          id: materialId,
           is_deleted: false,
         },
+        transaction: t,
       });
 
       if (!material) {
         throw createError(
           400,
-          `Invalid material_id: ${item.material_id}`
+          `Item ${i + 1}: Invalid material_id: ${materialId}`
         );
       }
 
-      if (item.variety_id) {
+      // ==========================================================
+      // 6. VALIDATE VARIETY
+      // ==========================================================
+
+      if (varietyId !== null) {
         const variety = await VarietyMaster.findOne({
           where: {
-            id: item.variety_id,
+            id: varietyId,
             is_deleted: false,
           },
+          transaction: t,
         });
 
         if (!variety) {
           throw createError(
             400,
-            `Invalid variety_id: ${item.variety_id}`
+            `Item ${i + 1}: Invalid variety_id: ${varietyId}`
           );
         }
+
+        // --------------------------------------------------------
+        // If VarietyMaster contains material_id,
+        // verify variety belongs to selected material.
+        // --------------------------------------------------------
+
+        if (
+          variety.material_id !== undefined &&
+          variety.material_id !== null
+        ) {
+          if (
+            Number(variety.material_id) !== materialId
+          ) {
+            throw createError(
+              400,
+              `Item ${i + 1}: Variety ${varietyId} does not belong to material ${materialId}`
+            );
+          }
+        }
       }
-    }
 
-    // Check duplicate material + variety
-    const seen = new Set();
+      // ==========================================================
+      // 7. CHECK DUPLICATE MATERIAL + VARIETY
+      // ==========================================================
 
-    for (const item of items) {
-      const key = `${item.material_id}-${item.variety_id || "none"}`;
+      const key = `${materialId}-${varietyId ?? "null"}`;
 
       if (seen.has(key)) {
         throw createError(
           400,
-          "Duplicate material/variety in the same PO submission"
+          `Duplicate material/variety combination at item ${
+            i + 1
+          }: material ${materialId}, variety ${
+            varietyId ?? "none"
+          }`
         );
       }
 
       seen.add(key);
+
+      // ==========================================================
+      // 8. NORMALIZE VALUES
+      // ==========================================================
+
+      item.material_id = materialId;
+      item.variety_id = varietyId;
+      item.qty = qty;
+      item.rate = rate;
     }
 
-    // Generate PO number
+    // ============================================================
+    // 9. GENERATE PO NUMBER
+    // ============================================================
+
     const po_no = await generatePoNo();
+
+    // ============================================================
+    // 10. RESOLVE PLANT
+    // ============================================================
 
     const resolvedPlantId =
       plant_id ||
       (req.user ? req.user.plant_id : null);
 
-    // Create ONE SQL row
+    // ============================================================
+    // 11. CREATE PURCHASE ORDER
+    //
+    // ONE PO ROW
+    // ALL ITEMS STORED IN JSON COLUMN
+    // ============================================================
+
     const purchaseOrder = await PurchaseOrder.create(
       {
         po_no,
+
         vendor_id,
 
         po_date,
+
         validity,
+
         do_no,
 
         uploaded_by_vendor:
@@ -315,10 +480,9 @@ module.exports = {
 
         approval_status: "pending_approval",
 
-        // Store ALL items in one JSON column
         items: items.map((item) => ({
           material_id: item.material_id,
-          variety_id: item.variety_id || null,
+          variety_id: item.variety_id,
           qty: item.qty,
           rate: item.rate,
         })),
@@ -328,9 +492,16 @@ module.exports = {
       }
     );
 
+    // ============================================================
+    // 12. COMMIT TRANSACTION
+    // ============================================================
+
     await t.commit();
 
-    // Fetch created PO
+    // ============================================================
+    // 13. FETCH CREATED PO
+    // ============================================================
+
     const fullRow = await PurchaseOrder.findOne({
       where: {
         id: purchaseOrder.id,
@@ -338,23 +509,39 @@ module.exports = {
       include: poIncludes,
     });
 
+    // ============================================================
+    // 14. SUCCESS RESPONSE
+    // ============================================================
+
     return res.status(201).json({
       success: true,
+
       msg: `PO ${po_no} created successfully`,
+
       data: fullRow,
     });
-
   } catch (err) {
+    // ============================================================
+    // ROLLBACK
+    // ============================================================
+
     if (!t.finished) {
       await t.rollback();
     }
+
+    // ============================================================
+    // SEQUELIZE VALIDATION ERROR
+    // ============================================================
 
     if (
       err.name === "SequelizeValidationError" &&
       Array.isArray(err.errors)
     ) {
       const detail = err.errors
-        .map((e) => `${e.path}: ${e.message}`)
+        .map(
+          (e) =>
+            `${e.path}: ${e.message}`
+        )
         .join("; ");
 
       return next(
@@ -365,7 +552,34 @@ module.exports = {
       );
     }
 
-    next(err);
+    // ============================================================
+    // SEQUELIZE UNIQUE ERROR
+    // ============================================================
+
+    if (
+      err.name === "SequelizeUniqueConstraintError" &&
+      Array.isArray(err.errors)
+    ) {
+      const detail = err.errors
+        .map(
+          (e) =>
+            `${e.path}: ${e.message}`
+        )
+        .join("; ");
+
+      return next(
+        createError(
+          400,
+          `Duplicate entry — ${detail}`
+        )
+      );
+    }
+
+    // ============================================================
+    // OTHER ERRORS
+    // ============================================================
+
+    return next(err);
   }
 },
 

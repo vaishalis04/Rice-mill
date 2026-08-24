@@ -2,32 +2,6 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { ENTITY_OPTIONS } from "../config/entityOptions";
 import "./EntitySelect.css";
 
-/**
- * Searchable dropdown for any "pick an ID from another table" field.
- *
- * <EntitySelect
- *   entity="vendor"              // key into ENTITY_OPTIONS
- *   label="Vendor"
- *   value={form.vendor_id}       // the id currently stored on the form
- *   onChange={(id) => setForm({ ...form, vendor_id: id })}
- *   required
- * />
- *
- * The user types to search by name/code, clicks a row, and onChange
- * fires with that row's numeric id — the payload still just gets an id,
- * the person just never has to know or type it.
- *
- * Pass `creatable` to also let the user create a brand-new row on the spot
- * (e.g. a gateman registering a truck that was never added by Admin) when
- * ENTITY_OPTIONS[entity].quickCreate is configured. If that entity's
- * quickCreate declares `requiresContext` (e.g. purchase_order needs a
- * vendor + material already chosen), pass those values in via `context`.
- *
- * Pass `onCreated(newRow)` to be notified when the quick-create panel adds a
- * new row — e.g. a sibling `useEntityLookup(entity)` on the same page can
- * refetch so labels elsewhere on the page (table columns, other dropdowns)
- * pick up the new record immediately instead of on next page load.
- */
 export default function EntitySelect({
   entity,
   label,
@@ -77,16 +51,11 @@ export default function EntitySelect({
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entity]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (boxRef.current && !boxRef.current.contains(e.target)) {
-        // Don't silently wipe out a half-filled "+ Add new" form just
-        // because the click landed outside the box — that was destroying
-        // whatever the person had already typed. Require an explicit
-        // Save or Cancel instead.
         if (creating) return;
         setOpen(false);
         setQuery("");
@@ -101,9 +70,6 @@ export default function EntitySelect({
     [options, value]
   );
 
-  // `filter` narrows which rows are pickable (e.g. only gate entries at
-  // "waiting_sampling"). Applied here, not in the fetch effect, so an
-  // inline arrow-function prop doesn't retrigger a network call.
   const visibleOptions = useMemo(
     () => (filter ? options.filter(filter) : options),
     [options, filter]
@@ -130,9 +96,6 @@ export default function EntitySelect({
   };
 
   const startCreating = () => {
-    // Prefill the first field with whatever the user already typed, so
-    // e.g. typing a truck number that doesn't exist and hitting "+ Add new"
-    // doesn't make them retype it.
     const firstField = quickCreate.fields[0]?.name;
     setCreateValues(firstField ? { [firstField]: query } : {});
     setCreateError("");
@@ -162,8 +125,7 @@ export default function EntitySelect({
             payload[f.name] = Number(payload[f.name]);
           }
         });
-      // "combo" fields (e.g. Material category) are free-typed but should
-      // still be a clean, consistent key — trim + lowercase before saving.
+     
       quickCreate.fields
         .filter((f) => f.type === "combo")
         .forEach((f) => {
@@ -173,13 +135,6 @@ export default function EntitySelect({
         });
       let newRow = await quickCreate.create(payload, context);
 
-      // Defensive: if the backend's create response isn't shaped the way
-      // `unwrap` expects (e.g. it comes back nested under a different key
-      // than `data`), newRow.id can end up undefined. Rather than silently
-      // clearing the field with nothing selected, refetch the real list and
-      // try to find the row we just created by matching the first field the
-      // person typed (e.g. vehicle_no). This is what stops a *successful*
-      // save from looking like the details "disappeared".
       if (!newRow || newRow.id == null) {
         const freshList = await config.fetch();
         const matchField = quickCreate.fields[0]?.name;
@@ -205,10 +160,6 @@ export default function EntitySelect({
       setQuery("");
       setOpen(false);
     } catch (err) {
-      // Backend error responses use { success:false, msg: "..." } (see
-      // app.js's global error handler), not `message` — check `msg` first
-      // so the real validation reason (e.g. "Invalid category") reaches
-      // the user instead of a generic axios error string.
       setCreateError(
         err.response?.data?.msg ||
           err.response?.data?.message ||

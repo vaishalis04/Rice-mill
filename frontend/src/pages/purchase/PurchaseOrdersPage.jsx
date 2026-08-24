@@ -276,12 +276,14 @@ export default function PurchaseOrdersPage() {
 
           <form className="sf-form" onSubmit={(e) => e.preventDefault()}>
             <EntitySelect
-              entity="vendor"
-              label="Vendor"
-              value={editHeader.vendor_id}
-              onChange={setEditHeaderField("vendor_id")}
-              required
-            />
+  entity="vendor"
+  label="Vendor"
+  value={editHeader.vendor_id}
+  onChange={setEditHeaderField("vendor_id")}
+  required
+  creatable
+  onCreated={vendors.refetch}
+/>
             <div className="sf-field">
               <label>PO Date</label>
               <input name="po_date" type="date" value={editHeader.po_date} onChange={handleEditHeaderChange} required />
@@ -306,7 +308,7 @@ export default function PurchaseOrdersPage() {
                 <tr>
                   <th>Material</th>
                   <th>Variety</th>
-                  <th>Qty</th>
+                  <th>Qty (Tons)</th>
                   <th>Rate</th>
                   <th></th>
                 </tr>
@@ -374,7 +376,7 @@ export default function PurchaseOrdersPage() {
               creatable
             />
             <div className="sf-field">
-              <label>Qty</label>
+              <label>Qty (Tons)</label>
               <input name="qty" type="number" value={newItem.qty} onChange={handleNewItemChange} />
             </div>
             <div className="sf-field">
@@ -393,8 +395,15 @@ export default function PurchaseOrdersPage() {
       ) : (
         <>
           <form className="sf-form" onSubmit={(e) => e.preventDefault()}>
-            <h3 style={{ width: "100%", marginBottom: 0 }}>New Purchase Order</h3>
-            <EntitySelect entity="vendor" label="Vendor" value={header.vendor_id} onChange={setHeaderField("vendor_id")} required />
+           <EntitySelect
+  entity="vendor"
+  label="Vendor"
+  value={header.vendor_id}
+  onChange={setHeaderField("vendor_id")}
+  required
+  creatable
+  onCreated={vendors.refetch}
+/>
             <div className="sf-field">
               <label>PO Date</label>
               <input name="po_date" type="date" value={header.po_date} onChange={handleHeaderChange} required />
@@ -429,7 +438,7 @@ export default function PurchaseOrdersPage() {
                 creatable
               />
               <div className="sf-field">
-                <label>Qty</label>
+                <label>Qty (Tons)</label>
                 <input name="qty" type="number" value={currentItem.qty} onChange={handleItemChange} />
               </div>
               <div className="sf-field">
@@ -448,7 +457,7 @@ export default function PurchaseOrdersPage() {
                   <tr>
                     <th>Material</th>
                     <th>Variety</th>
-                    <th>Qty</th>
+                    <th>Qty (Tons)</th>
                     <th>Rate</th>
                     <th></th>
                   </tr>
@@ -510,7 +519,7 @@ export default function PurchaseOrdersPage() {
           },
           {
             key: "total_qty",
-            label: "Total Qty",
+            label: "Total Qty (Tons)",
             render: (row) => row.total_qty ?? row.items.reduce((s, i) => s + Number(i.qty), 0),
           },
           { key: "po_date", label: "PO Date" },

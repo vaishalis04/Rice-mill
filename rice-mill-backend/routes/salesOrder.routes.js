@@ -29,7 +29,7 @@ router.patch("/so/:so_no/approve", authorize("admin"), Controller.approve);
 
 // Admin reject SO
 router.patch("/so/:so_no/reject", authorize("admin"), Controller.reject);
-router.get("/grouped", Controller.getAllGrouped); // must be before "/:id" (GET) or it'd be swallowed as id="grouped"
+router.get("/grouped", Controller.getAllGrouped);
 router.get("/", Controller.getAll);
 router.get("/:id", Controller.getById);
 router.post("/", Controller.create);

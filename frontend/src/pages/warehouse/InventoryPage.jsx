@@ -78,7 +78,7 @@ export default function InventoryPage() {
             render: (row) => row.warehouse?.name ?? warehouses.getLabel(row.warehouse_id),
           },
           { key: "stage", label: "Stage" },
-          { key: "balance_qty", label: "Qty" },
+          { key: "balance_qty", label: "Qty (Tons)" },
         ]}
       />
     </div>

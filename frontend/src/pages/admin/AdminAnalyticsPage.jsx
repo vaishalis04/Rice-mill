@@ -209,8 +209,8 @@ export default function AdminAnalyticsPage() {
                     <YAxis yAxisId="right" orientation="right" unit="%" />
                     <Tooltip />
                     <Legend />
-                    <Bar yAxisId="left" dataKey="input_qty" fill="#3b6fb4" name="Input Qty" />
-                    <Bar yAxisId="left" dataKey="output_qty" fill="#8a7f5a" name="Output Qty" />
+                    <Bar yAxisId="left" dataKey="input_qty" fill="#3b6fb4" name="Input Qty (Tons)" />
+                    <Bar yAxisId="left" dataKey="output_qty" fill="#8a7f5a" name="Output Qty (Tons)" />
                     <Line yAxisId="right" type="monotone" dataKey="recovery_pct" stroke="#2b2b2b" name="Recovery %" />
                   </ComposedChart>
                 </ResponsiveContainer>

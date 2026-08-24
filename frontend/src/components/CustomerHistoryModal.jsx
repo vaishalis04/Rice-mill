@@ -123,7 +123,7 @@ export default function CustomerHistoryModal({ customerId, onClose }) {
                   label: "Material",
                   render: (row) => row.material?.name || "—",
                 },
-                { key: "qty", label: "Qty" },
+                { key: "qty", label: "Qty (Tons)" },
                 { key: "rate", label: "Rate" },
                 { key: "order_date", label: "Order Date" },
                 {

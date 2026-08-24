@@ -60,11 +60,35 @@ export const ENTITY_OPTIONS = {
       `${row.vehicle_no}${row.vehicle_type ? ` — ${row.vehicle_type}` : ""}`,
     quickCreate: {
       label: "Vehicle",
-      fields: [
-        { name: "vehicle_no", label: "Vehicle No.", required: true },
-        { name: "vehicle_type", label: "Vehicle Type" },
-        { name: "capacity", label: "Capacity", type: "number" },
-      ],
+    fields: [
+  {
+    name: "vehicle_no",
+    label: "Vehicle No.",
+    required: true,
+  },
+  {
+    name: "vehicle_type",
+    label: "Vehicle Type",
+    type: "select",
+    required: true,
+    placeholder: "Select Vehicle Type",
+    options: [
+      {
+        value: "truck",
+        label: "Truck",
+      },
+      {
+        value: "tractor_trolley",
+        label: "Tractor Trolley",
+      },
+    ],
+  },
+  {
+    name: "capacity",
+    label: "Capacity",
+    type: "number",
+  },
+],
       create: (values) =>
         createVehicleDriverApi({ type: "vehicle", ...values }).then(unwrap),
     },
@@ -203,7 +227,7 @@ export const ENTITY_OPTIONS = {
       label: "Purchase Order",
       fields: [
         { name: "po_no", label: "PO No.", required: true },
-        { name: "qty", label: "Qty", type: "number", required: true },
+        { name: "qty", label: "Qty (Tons)", type: "number", required: true },
         { name: "rate", label: "Rate", type: "number", required: true },
         { name: "po_date", label: "PO Date", type: "date" },
       ],
@@ -315,21 +339,25 @@ export const ENTITY_OPTIONS = {
         row.pack_size ? ` — ${row.pack_size}kg x${row.bag_count ?? "?"}` : ""
       }`,
   },
-  customer: {
-    fetch: () => getCustomersApi().then(unwrap),
-    getLabel: (row) =>
-      `${row.name}${row.customer_code ? ` (${row.customer_code})` : ""}`,
-    quickCreate: {
-      label: "Customer",
-      fields: [
-        { name: "name", label: "Name", required: true },
-        { name: "customer_code", label: "Customer Code", required: true },
-        { name: "gstin", label: "GSTIN" },
-        { name: "address", label: "Address" },
-      ],
-      create: (values) => createCustomerApi(values).then(unwrap),
-    },
+ customer: {
+  fetch: () => getCustomersApi().then(unwrap),
+
+  getLabel: (row) =>
+    `${row.name}${row.customer_code ? ` (${row.customer_code})` : ""}`,
+
+  quickCreate: {
+    label: "Customer",
+
+    fields: [
+      { name: "name", label: "Name", required: true },
+      { name: "gstin", label: "GSTIN" },
+      { name: "address", label: "Address" },
+    ],
+
+    create: (values) =>
+      createCustomerApi(values).then(unwrap),
   },
+},
   sales_order: {
     fetch: () => getSalesOrdersApi().then(unwrap),
     getLabel: (row) => {

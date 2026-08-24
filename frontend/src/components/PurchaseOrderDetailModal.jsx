@@ -140,7 +140,7 @@ export default function PurchaseOrderDetailModal({ poNo, onClose }) {
                   label: "Variety",
                   render: (row) => row.variety?.variety_name || "—",
                 },
-                { key: "qty", label: "Qty" },
+                { key: "qty", label: "Qty (Tons)" },
                 { key: "rate", label: "Rate" },
                 {
                   key: "amount",

@@ -4,7 +4,7 @@ const { attachUser, authorize } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Batch/Lot/Barcode/QR generation (Module 16)
-router.use(verifyAccessToken, attachUser, authorize("production"));
+router.use(verifyAccessToken, attachUser, authorize("production", "warehouse", "admin", "sales", "gate")); // Protected routes
 
 router.get("/",     Controller.getAll);
 router.get("/graded-outputs/:batch_id", Controller.getGradedOutputs);
