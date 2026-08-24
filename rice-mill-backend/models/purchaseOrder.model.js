@@ -76,6 +76,11 @@ PurchaseOrder.init(
       allowNull: true,
       references: { model: "plant_master", key: "id" },
     }, // multi-plant scalability
+    items: {
+  type: DataTypes.JSON,
+  allowNull: false,
+  defaultValue: [],
+},
   },
   {
     sequelize,

@@ -189,99 +189,185 @@ module.exports = {
   // Creates one PO number shared across every line item — this is how a
   // vendor can supply multiple materials/varieties under a single PO.
   bulkCreate: async (req, res, next) => {
-    const t = await sequelize.transaction();
-    try {
-      const { vendor_id, po_date, validity, do_no, uploaded_by_vendor, plant_id, items } = req.body;
+  const t = await sequelize.transaction();
 
-      if (!vendor_id || !po_date) throw createError(400, "vendor_id and po_date are required");
-      if (!Array.isArray(items) || items.length === 0) {
-        throw createError(400, "items must be a non-empty array of { material_id, variety_id, qty, rate }");
-      }
+  try {
+    const {
+      vendor_id,
+      po_date,
+      validity,
+      do_no,
+      uploaded_by_vendor,
+      plant_id,
+      items,
+    } = req.body;
 
-      const vendor = await Vendor.findOne({ where: { id: vendor_id, is_deleted: false } });
-      if (!vendor) throw createError(400, "Invalid vendor_id");
-
-      for (const item of items) {
-        if (!item.material_id || !item.qty || !item.rate) {
-          throw createError(400, "Every item needs material_id, qty and rate");
-        }
-        const material = await MaterialMaster.findOne({ where: { id: item.material_id, is_deleted: false } });
-        if (!material) throw createError(400, `Invalid material_id: ${item.material_id}`);
-        if (item.variety_id) {
-          const variety = await VarietyMaster.findOne({ where: { id: item.variety_id, is_deleted: false } });
-          if (!variety) throw createError(400, `Invalid variety_id: ${item.variety_id}`);
-        }
-      }
-
-      // Reject exact duplicate material+variety combos within the same submission.
-      const seen = new Set();
-      for (const item of items) {
-        const key = `${item.material_id}-${item.variety_id || "none"}`;
-        if (seen.has(key)) throw createError(400, "Duplicate material/variety in the same PO submission");
-        seen.add(key);
-      }
-
-      const po_no = await generatePoNo();
-      const resolvedPlantId = plant_id || (req.user ? req.user.plant_id : null);
-
-      const created = [];
-      for (const item of items) {
-        const row = await PurchaseOrder.create(
-          {
-            po_no,
-            vendor_id,
-            material_id: item.material_id,
-            variety_id: item.variety_id || null,
-            qty: item.qty,
-            rate: item.rate,
-            po_date,
-            validity,
-            do_no,
-            uploaded_by_vendor: uploaded_by_vendor ?? false,
-            plant_id: resolvedPlantId,
-            created_by: req.user ? req.user.id : null,
-            approval_status: "pending_approval",
-          },
-          { transaction: t }
-        );
-        created.push(row);
-      }
-
-      await t.commit();
-
-      const fullRows = await PurchaseOrder.findAll({
-        where: { po_no, id: { [Op.in]: created.map((r) => r.id) } },
-        include: poIncludes,
-      });
-
-      res.status(201).json({
-        success: true,
-        msg: `PO ${po_no} created with ${items.length} line item(s)`,
-        data: fullRows,
-      });
-    } catch (err) {
-      if (!t.finished) await t.rollback();
-
-      // Surface exactly which field(s) tripped a leftover DB-level
-      // constraint or Sequelize validator, instead of letting Sequelize's
-      // generic "Validation error" reach the user with no detail.
-      if (err.name === "SequelizeUniqueConstraintError") {
-        const fields = err.fields ? Object.keys(err.fields).join(", ") : "unknown field(s)";
-        return next(createError(
-          500,
-          `A database constraint still exists on: ${fields}. This is very likely a leftover unique index from ` +
-          `before multi-item POs were supported. Run "SHOW INDEX FROM purchase_order;" in MySQL Workbench, find ` +
-          `the index covering [${fields}], and drop it with: ALTER TABLE purchase_order DROP INDEX <index_name>;`
-        ));
-      }
-      if (err.name === "SequelizeValidationError" && Array.isArray(err.errors)) {
-        const detail = err.errors.map((e) => `${e.path}: ${e.message}`).join("; ");
-        return next(createError(400, `Validation failed — ${detail}`));
-      }
-
-      next(err);
+    if (!vendor_id || !po_date) {
+      throw createError(
+        400,
+        "vendor_id and po_date are required"
+      );
     }
-  },
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw createError(
+        400,
+        "items must be a non-empty array"
+      );
+    }
+
+    // Validate vendor
+    const vendor = await Vendor.findOne({
+      where: {
+        id: vendor_id,
+        is_deleted: false,
+      },
+    });
+
+    if (!vendor) {
+      throw createError(400, "Invalid vendor_id");
+    }
+
+    // Validate items
+    for (const item of items) {
+      if (
+        !item.material_id ||
+        item.qty === undefined ||
+        item.rate === undefined
+      ) {
+        throw createError(
+          400,
+          "Every item needs material_id, qty and rate"
+        );
+      }
+
+      const material = await MaterialMaster.findOne({
+        where: {
+          id: item.material_id,
+          is_deleted: false,
+        },
+      });
+
+      if (!material) {
+        throw createError(
+          400,
+          `Invalid material_id: ${item.material_id}`
+        );
+      }
+
+      if (item.variety_id) {
+        const variety = await VarietyMaster.findOne({
+          where: {
+            id: item.variety_id,
+            is_deleted: false,
+          },
+        });
+
+        if (!variety) {
+          throw createError(
+            400,
+            `Invalid variety_id: ${item.variety_id}`
+          );
+        }
+      }
+    }
+
+    // Check duplicate material + variety
+    const seen = new Set();
+
+    for (const item of items) {
+      const key = `${item.material_id}-${item.variety_id || "none"}`;
+
+      if (seen.has(key)) {
+        throw createError(
+          400,
+          "Duplicate material/variety in the same PO submission"
+        );
+      }
+
+      seen.add(key);
+    }
+
+    // Generate PO number
+    const po_no = await generatePoNo();
+
+    const resolvedPlantId =
+      plant_id ||
+      (req.user ? req.user.plant_id : null);
+
+    // Create ONE SQL row
+    const purchaseOrder = await PurchaseOrder.create(
+      {
+        po_no,
+        vendor_id,
+
+        po_date,
+        validity,
+        do_no,
+
+        uploaded_by_vendor:
+          uploaded_by_vendor ?? false,
+
+        plant_id: resolvedPlantId,
+
+        created_by:
+          req.user ? req.user.id : null,
+
+        approval_status: "pending_approval",
+
+        // Store ALL items in one JSON column
+        items: items.map((item) => ({
+          material_id: item.material_id,
+          variety_id: item.variety_id || null,
+          qty: item.qty,
+          rate: item.rate,
+        })),
+      },
+      {
+        transaction: t,
+      }
+    );
+
+    await t.commit();
+
+    // Fetch created PO
+    const fullRow = await PurchaseOrder.findOne({
+      where: {
+        id: purchaseOrder.id,
+      },
+      include: poIncludes,
+    });
+
+    return res.status(201).json({
+      success: true,
+      msg: `PO ${po_no} created successfully`,
+      data: fullRow,
+    });
+
+  } catch (err) {
+    if (!t.finished) {
+      await t.rollback();
+    }
+
+    if (
+      err.name === "SequelizeValidationError" &&
+      Array.isArray(err.errors)
+    ) {
+      const detail = err.errors
+        .map((e) => `${e.path}: ${e.message}`)
+        .join("; ");
+
+      return next(
+        createError(
+          400,
+          `Validation failed — ${detail}`
+        )
+      );
+    }
+
+    next(err);
+  }
+},
 
   getPendingApprovals: async (req, res, next) => {
   try {
