@@ -20,17 +20,15 @@ const detailIncludes = [
 ];
 
 module.exports = {
-  // GET /api/sales-orders/grouped?search=&customer_id=&plant_id=
-  // One row per so_no (a real "sales order"), with all its material line
-  // items nested under `items`. This is what the SO list page and the Gate
-  // Entry SO picker use — the flat one-row-per-material getAll() below is
-  // still there for anything that specifically needs a single SO line
-  // (Loading, Dispatch, dashboards).
+ 
   getAllGrouped: async (req, res, next) => {
     try {
       const { search, customer_id, plant_id } = req.query;
 
       const where = { is_deleted: false };
+       if (req.user.role !== "admin") {
+      where.approval_status = "approved";
+    }
       if (customer_id) where.customer_id = customer_id;
       if (plant_id) where.plant_id = plant_id;
       if (search) where.so_no = { [Op.like]: `%${search}%` };
@@ -84,38 +82,31 @@ module.exports = {
     }
   },
 
-  // GET /api/sales-orders?customer_id=&so_status=&page=&limit=
   getAll: async (req, res, next) => {
-    try {
-      const { customer_id, so_status, plant_id, page = 1, limit = 20 } = req.query;
+  try {
+    const where = {
+      is_deleted: false,
+    };
 
-      const where = { is_deleted: false };
-      if (customer_id) where.customer_id = customer_id;
-      if (so_status) where.so_status = so_status;
-      if (plant_id) where.plant_id = plant_id;
-
-      const offset = (Number(page) - 1) * Number(limit);
-
-      const { rows, count } = await SalesOrder.findAndCountAll({
-        where,
-        include: detailIncludes,
-        order: [["created_at", "DESC"]],
-        limit: Number(limit),
-        offset,
-        distinct: true,
-      });
-
-      res.status(200).json({
-        success: true,
-        data: rows,
-        pagination: { total: count, page: Number(page), limit: Number(limit), totalPages: Math.ceil(count / limit) },
-      });
-    } catch (err) {
-      next(err);
+    if (req.user.role !== "admin") {
+      where.approval_status = "approved";
     }
+
+    const rows = await SalesOrder.findAll({
+      where,
+      include: detailIncludes,
+      order: [["created_at", "DESC"]],
+    });
+
+    res.status(200).json({
+      success: true,
+      data: rows,
+    });
+  } catch (err) {
+    next(err);
+  }
   },
 
-  // GET /api/sales-orders/:id
   getById: async (req, res, next) => {
     try {
       const so = await SalesOrder.findOne({ where: { id: req.params.id, is_deleted: false }, include: detailIncludes });
@@ -126,9 +117,6 @@ module.exports = {
     }
   },
 
-  // POST /api/sales-orders  { customer_id, order_type, material_id, qty, rate, order_date? }
-  // Creates a single-line-item SO (its own so_no). For a multi-material SO,
-  // use POST /api/sales-orders/bulk instead.
   create: async (req, res, next) => {
     try {
       const { customer_id, order_type, material_id, qty, rate, order_date, plant_id } = req.body;
@@ -166,10 +154,6 @@ module.exports = {
     }
   },
 
-  // POST /api/sales-orders/bulk
-  // { customer_id, order_type, order_date?, plant_id?, items: [{ material_id, qty, rate }, ...] }
-  // Creates one SO number shared across every line item — this is how a
-  // customer can order multiple materials under a single Sales Order.
   bulkCreate: async (req, res, next) => {
     const t = await sequelize.transaction();
     try {
@@ -215,6 +199,7 @@ module.exports = {
             rate: item.rate,
             order_date: resolvedOrderDate,
             so_status: "confirmed",
+            approval_status: "pending_approval",
             plant_id: resolvedPlantId,
             created_by: req.user ? req.user.id : null,
           },
@@ -258,10 +243,276 @@ module.exports = {
     }
   },
 
-  // POST /api/sales-orders/so/:so_no/items  { material_id, qty, rate }
-  // Adds one more material line to an EXISTING SO — this is what "Edit SO"
-  // uses to let you keep adding materials to the same so_no rather than
-  // only ever being able to edit the one line item you happened to open.
+  getPendingApprovals: async (req, res, next) => {
+  try {
+    const salesOrders = await SalesOrder.findAll({
+      where: {
+        approval_status: "pending_approval",
+        is_deleted: false,
+      },
+      include: detailIncludes,
+      order: [["created_at", "DESC"]],
+    });
+
+    res.status(200).json({
+      success: true,
+      data: salesOrders,
+    });
+  } catch (err) {
+    next(err);
+  }
+  },
+
+  updateBeforeApproval: async (req, res, next) => {
+  const t = await sequelize.transaction();
+
+  try {
+    const { so_no } = req.params;
+    const {
+      customer_id,
+      order_type,
+      order_date,
+      plant_id,
+      items,
+    } = req.body;
+
+    const existingRows = await SalesOrder.findAll({
+      where: {
+        so_no,
+        approval_status: "pending_approval",
+        is_deleted: false,
+      },
+      transaction: t,
+    });
+
+    if (!existingRows.length) {
+      throw createError(
+        404,
+        "Pending sales order not found"
+      );
+    }
+
+    if (customer_id) {
+      const customer = await Customer.findOne({
+        where: {
+          id: customer_id,
+          is_deleted: false,
+        },
+        transaction: t,
+      });
+
+      if (!customer) {
+        throw createError(400, "Invalid customer_id");
+      }
+    }
+
+    if (
+      order_type &&
+      !["fg", "by_product"].includes(order_type)
+    ) {
+      throw createError(
+        400,
+        "order_type must be 'fg' or 'by_product'"
+      );
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw createError(
+        400,
+        "items must be a non-empty array"
+      );
+    }
+
+    // Validate materials
+    for (const item of items) {
+      if (!item.material_id || !item.qty || !item.rate) {
+        throw createError(
+          400,
+          "Every item needs material_id, qty and rate"
+        );
+      }
+
+      const material = await MaterialMaster.findOne({
+        where: {
+          id: item.material_id,
+          is_deleted: false,
+        },
+        transaction: t,
+      });
+
+      if (!material) {
+        throw createError(
+          400,
+          `Invalid material_id: ${item.material_id}`
+        );
+      }
+    }
+
+    // Check duplicate materials
+    const seen = new Set();
+
+    for (const item of items) {
+      if (seen.has(item.material_id)) {
+        throw createError(
+          400,
+          "Duplicate material in the same SO"
+        );
+      }
+
+      seen.add(item.material_id);
+    }
+
+    // Delete old line items
+    await SalesOrder.destroy({
+      where: {
+        so_no,
+        approval_status: "pending_approval",
+      },
+      transaction: t,
+    });
+
+    // Create updated line items
+    for (const item of items) {
+      await SalesOrder.create(
+        {
+          so_no,
+          customer_id:
+            customer_id ?? existingRows[0].customer_id,
+
+          order_type:
+            order_type ?? existingRows[0].order_type,
+
+          material_id: item.material_id,
+          qty: item.qty,
+          rate: item.rate,
+
+          order_date:
+            order_date ?? existingRows[0].order_date,
+
+          so_status: "confirmed",
+
+          // Still pending after editing
+          approval_status: "pending_approval",
+
+          plant_id:
+            plant_id ?? existingRows[0].plant_id,
+
+          created_by: existingRows[0].created_by,
+          updated_by: req.user.id,
+        },
+        { transaction: t }
+      );
+    }
+
+    await t.commit();
+
+    const updatedRows = await SalesOrder.findAll({
+      where: {
+        so_no,
+      },
+      include: detailIncludes,
+    });
+
+    res.status(200).json({
+      success: true,
+      msg: `Sales order ${so_no} updated successfully`,
+      data: updatedRows,
+    });
+  } catch (err) {
+    if (!t.finished) {
+      await t.rollback();
+    }
+
+    next(err);
+  }
+  },
+
+  approve: async (req, res, next) => {
+  try {
+    const { so_no } = req.params;
+
+    const [updated] = await SalesOrder.update(
+      {
+        approval_status: "approved",
+        approved_by: req.user.id,
+        approved_at: new Date(),
+      },
+      {
+        where: {
+          so_no,
+          approval_status: "pending_approval",
+          is_deleted: false,
+        },
+      }
+    );
+
+    if (!updated) {
+      throw createError(
+        404,
+        "Pending sales order not found"
+      );
+    }
+
+    const rows = await SalesOrder.findAll({
+      where: {
+        so_no,
+      },
+      include: detailIncludes,
+    });
+
+    res.status(200).json({
+      success: true,
+      msg: `Sales order ${so_no} approved successfully`,
+      data: rows,
+    });
+  } catch (err) {
+    next(err);
+  }
+  },
+
+  reject: async (req, res, next) => {
+  try {
+    const { so_no } = req.params;
+    const { rejection_reason } = req.body;
+
+    if (!rejection_reason) {
+      throw createError(
+        400,
+        "rejection_reason is required"
+      );
+    }
+
+    const [updated] = await SalesOrder.update(
+      {
+        approval_status: "rejected",
+        rejection_reason,
+        updated_by: req.user.id,
+      },
+      {
+        where: {
+          so_no,
+          approval_status: "pending_approval",
+          is_deleted: false,
+        },
+      }
+    );
+
+    if (!updated) {
+      throw createError(
+        404,
+        "Pending sales order not found"
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      msg: `Sales order ${so_no} rejected successfully`,
+    });
+  } catch (err) {
+    next(err);
+  }
+  },
+
   addItem: async (req, res, next) => {
     try {
       const { so_no } = req.params;
@@ -304,10 +555,6 @@ module.exports = {
     }
   },
 
-  // PUT /api/sales-orders/so/:so_no/header  { customer_id?, order_type?, order_date? }
-  // Edits the shared header fields across EVERY line item of this SO at
-  // once (e.g. correcting the order date), as opposed to PUT /:id which
-  // only ever touches one line's own material/qty/rate.
   updateHeader: async (req, res, next) => {
     try {
       const { so_no } = req.params;
@@ -337,7 +584,6 @@ module.exports = {
     }
   },
 
-  // PUT /api/sales-orders/:id
   update: async (req, res, next) => {
     try {
       const so = await SalesOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
@@ -371,7 +617,6 @@ module.exports = {
     }
   },
 
-  // DELETE /api/sales-orders/:id  (soft delete)
   delete: async (req, res, next) => {
     try {
       const so = await SalesOrder.findOne({ where: { id: req.params.id, is_deleted: false } });

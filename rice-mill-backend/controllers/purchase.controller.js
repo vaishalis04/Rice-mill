@@ -32,6 +32,9 @@ module.exports = {
       const { search, vendor_id, plant_id } = req.query;
 
       const where = { is_deleted: false };
+       if (req.user.role !== "admin") {
+      where.approval_status = "approved";
+    }
       if (vendor_id) where.vendor_id = vendor_id;
       if (plant_id) where.plant_id = plant_id;
       if (search) {
