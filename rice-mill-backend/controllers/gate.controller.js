@@ -14,8 +14,6 @@ const {
 } = require("../models/index");
 const { generateTokenNo } = require("../helpers/helperFunction");
 
-// Gate entry/exit, token & queue, driver photo capture (Module 1)
-
 const detailIncludes = [
   { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no", "type", "capacity"] },
   { model: Driver, as: "driver", attributes: ["id", "name", "mobile", "license_no", "photo_url"] },
@@ -35,13 +33,6 @@ const detailIncludes = [
   },
 ];
 
-// Shared existence/validity checks for the entities a gate entry references.
-// Returns the fetched rows so callers don't have to re-query (e.g. token
-// generation needs vehicle.vehicle_no right after this runs).
-// vendor_id/material_id are only required for entry_type = "purchase" —
-// empty/miscellaneous trucks (entry_type = "other") usually have neither.
-// entry_type = "sales" requires so_id instead; material_id is derived from
-// the Sales Order automatically rather than picked separately.
 const validateReferences = async ({ vehicle_id, driver_id, vendor_id, material_id, po_id, so_id, entry_type = "purchase" }) => {
   const [vehicle, driver] = await Promise.all([
     Vehicle.findOne({ where: { id: vehicle_id, is_deleted: false } }),
@@ -109,7 +100,7 @@ const validateReferences = async ({ vehicle_id, driver_id, vendor_id, material_i
 };
 
 module.exports = {
-  // GET /api/gate?status=&vendor_id=&vehicle_id=&plant_id=&from=&to=&page=&limit=
+
   getAll: async (req, res, next) => {
     try {
       const { status, entry_type, vendor_id, vehicle_id, material_id, plant_id, from, to, page = 1, limit = 20 } = req.query;
@@ -148,7 +139,6 @@ module.exports = {
     }
   },
 
-  // GET /api/gate/:id
   getById: async (req, res, next) => {
     try {
       const entry = await GateEntry.findOne({
@@ -162,7 +152,6 @@ module.exports = {
     }
   },
 
-  // POST /api/gate  (manual/admin creation - does not auto-generate a token; use /generatetoken for the gate workflow)
   create: async (req, res, next) => {
     try {
       const {
@@ -218,7 +207,6 @@ module.exports = {
     }
   },
 
-  // PUT /api/gate/:id
   update: async (req, res, next) => {
     try {
       const entry = await GateEntry.findOne({ where: { id: req.params.id, is_deleted: false } });
@@ -257,7 +245,6 @@ module.exports = {
     }
   },
 
-  // DELETE /api/gate/:id  (soft delete)
   delete: async (req, res, next) => {
     try {
       const entry = await GateEntry.findOne({ where: { id: req.params.id, is_deleted: false } });
@@ -270,7 +257,6 @@ module.exports = {
     }
   },
 
-  // POST /api/gate/checkin  { id }  -- move a token'd vehicle forward into the yard for sampling
   checkIn: async (req, res, next) => {
     try {
       const { id } = req.body;
@@ -300,15 +286,6 @@ module.exports = {
     }
   },
 
-  // POST /api/gate/send-to-warehouse  { id, warehouse_id?, remarks? }
-  // For entry_type = "other" (empty trucks / miscellaneous items) only.
-  // Skips Sampling/Lab/Negotiation and, when there's nothing worth putting
-  // through the full Lot/Stack/Inventory flow, sends the truck straight to
-  // Warehouse for record-keeping. Valid from 'waiting_weighment' (no weighing
-  // needed at all — e.g. a genuinely empty truck) or 'in_process' (already
-  // weighed via Weighbridge, but with no material to open a Lot for).
-  // If the load does need to be tracked as stock, use the normal
-  // Unloading/Lot flow instead once the entry reaches 'in_process'.
   sendToWarehouse: async (req, res, next) => {
     try {
       const { id, warehouse_id, remarks } = req.body;
@@ -340,7 +317,6 @@ module.exports = {
     }
   },
 
-  // POST /api/gate/checkout  { id }  -- vehicle leaves the plant
   checkOut: async (req, res, next) => {
     try {
       const { id } = req.body;
@@ -372,65 +348,278 @@ module.exports = {
     }
   },
 
-  // POST /api/gate/generatetoken  -- primary gate-keeper workflow: validates entities, issues a
-  // sequential token number and opens a new gate entry record with status 'waiting_token'.
-  generateToken: async (req, res, next) => {
-    try {
-      const {
-        vehicle_id, driver_id, vendor_id, po_id, material_id, so_id,
-        challan_no, expected_qty, driver_photo_url, plant_id,
-        entry_type = "purchase", remarks,
-      } = req.body;
+ generateToken: async (req, res, next) => {
+  try {
+    const {
+      vehicle_id,
+      driver_id,
+      vendor_id,
+      challan_no,
+      expected_qty,
+      driver_photo_url,
+      plant_id,
+      entry_type = "purchase",
+      remarks,
+      purchase_orders,
+      so_id,
+    } = req.body;
 
-      if (!["purchase", "other", "sales"].includes(entry_type)) {
-        throw createError(400, "entry_type must be 'purchase', 'other' or 'sales'");
-      }
-      if (!vehicle_id || !driver_id) {
-        throw createError(400, "vehicle_id and driver_id are required");
-      }
-      if (entry_type === "purchase" && (!vendor_id || !material_id)) {
-        throw createError(400, "vendor_id and material_id are required for a purchase entry");
-      }
-      if (entry_type === "sales" && !so_id) {
-        throw createError(400, "so_id is required for a sales (outbound loading) entry");
+    if (!["purchase", "other", "sales"].includes(entry_type)) {
+      throw createError(
+        400,
+        "entry_type must be 'purchase', 'other' or 'sales'"
+      );
+    }
+
+    if (!vehicle_id || !driver_id) {
+      throw createError(
+        400,
+        "vehicle_id and driver_id are required"
+      );
+    }
+
+    // =====================================================
+    // PURCHASE VALIDATION
+    // =====================================================
+
+    if (entry_type === "purchase") {
+      if (!vendor_id) {
+        throw createError(
+          400,
+          "vendor_id is required for a purchase entry"
+        );
       }
 
-      const { vehicle, salesOrder } = await validateReferences({
-        vehicle_id, driver_id, vendor_id, material_id, po_id, so_id, entry_type,
-      });
+      if (
+        !Array.isArray(purchase_orders) ||
+        purchase_orders.length === 0
+      ) {
+        throw createError(
+          400,
+          "purchase_orders must be a non-empty array"
+        );
+      }
+    }
 
-      const token_no = await generateTokenNo(vehicle.vehicle_no);
+    // =====================================================
+    // SALES VALIDATION
+    // =====================================================
 
-      const entry = await GateEntry.create({
-        token_no,
+    if (entry_type === "sales" && !so_id) {
+      throw createError(
+        400,
+        "so_id is required for a sales entry"
+      );
+    }
+
+    // =====================================================
+    // VALIDATE VEHICLE / DRIVER
+    // =====================================================
+
+    const { vehicle, salesOrder } =
+      await validateReferences({
         vehicle_id,
         driver_id,
+        vendor_id,
+        so_id,
         entry_type,
-        vendor_id: vendor_id || null,
-        po_id: po_id || null,
-        so_id: entry_type === "sales" ? so_id : null,
-        material_id: entry_type === "sales" ? (salesOrder ? salesOrder.material_id : null) : (material_id || null),
-        challan_no,
-        expected_qty,
-        remarks,
-        driver_photo_url,
-        entry_time: new Date(),
-        gate_status: "waiting_token",
-        plant_id: plant_id || (req.user ? req.user.plant_id : null),
-        created_by: req.user ? req.user.id : null,
       });
 
-      const created = await GateEntry.findByPk(entry.id, { include: detailIncludes });
-      res.status(201).json({ success: true, msg: "Token generated", data: created });
-    } catch (err) {
-      next(err);
-    }
-  },
+    // =====================================================
+    // TRANSACTION
+    // =====================================================
 
-  // POST /api/gate/upload-photo  (multipart, field name "photo") -- saves a
-  // driver photo to disk and returns its URL; driver_photo_url only ever
-  // stores this short URL, never the raw image data (the column is a
-  // VARCHAR(255), a base64 data URL would blow past that).
+    const t = await sequelize.transaction();
+
+    try {
+      // Generate token
+      const token_no = await generateTokenNo(
+        vehicle.vehicle_no
+      );
+
+      // ===================================================
+      // CREATE GATE ENTRY HEADER
+      // ===================================================
+
+      const entry = await GateEntry.create(
+        {
+          token_no,
+          vehicle_id,
+          driver_id,
+          entry_type,
+
+          vendor_id: vendor_id || null,
+
+          // For multi-PO purchase entry we don't use
+          // the old single po_id field.
+          po_id: null,
+
+          so_id:
+            entry_type === "sales"
+              ? so_id
+              : null,
+
+          // For purchase this is also no longer stored
+          // as a single material.
+          material_id:
+            entry_type === "sales"
+              ? salesOrder
+                ? salesOrder.material_id
+                : null
+              : null,
+
+          challan_no,
+          expected_qty,
+          remarks,
+          driver_photo_url,
+
+          entry_time: new Date(),
+
+          gate_status: "waiting_token",
+
+          plant_id:
+            plant_id ||
+            (req.user ? req.user.plant_id : null),
+
+          created_by:
+            req.user ? req.user.id : null,
+        },
+        {
+          transaction: t,
+        }
+      );
+
+      // ===================================================
+      // CREATE MULTIPLE PO + MATERIAL RELATIONS
+      // ===================================================
+
+      if (entry_type === "purchase") {
+        const GateEntryPurchaseOrder =
+          require("../models/gateEntryPurchaseOrder.model");
+
+        for (const po of purchase_orders) {
+          if (!po.po_id) {
+            throw createError(
+              400,
+              "Each purchase order needs po_id"
+            );
+          }
+
+          if (
+            !Array.isArray(po.materials) ||
+            po.materials.length === 0
+          ) {
+            throw createError(
+              400,
+              `PO ${po.po_id} must contain at least one material`
+            );
+          }
+
+          // Check PO
+          const purchaseOrder =
+            await PurchaseOrder.findOne({
+              where: {
+                id: po.po_id,
+                vendor_id,
+                approval_status: "approved",
+                is_deleted: false,
+              },
+              transaction: t,
+            });
+
+          if (!purchaseOrder) {
+            throw createError(
+              400,
+              `Invalid or unapproved purchase order: ${po.po_id}`
+            );
+          }
+
+          for (const material of po.materials) {
+            if (!material.material_id) {
+              throw createError(
+                400,
+                `material_id is required for PO ${po.po_id}`
+              );
+            }
+
+            // Make sure material exists
+            const materialMaster =
+              await MaterialMaster.findOne({
+                where: {
+                  id: material.material_id,
+                  is_deleted: false,
+                },
+                transaction: t,
+              });
+
+            if (!materialMaster) {
+              throw createError(
+                400,
+                `Invalid material_id: ${material.material_id}`
+              );
+            }
+
+            // Make sure material belongs to this PO
+            const poMaterial =
+              await PurchaseOrder.findOne({
+                where: {
+                  id: po.po_id,
+                  material_id: material.material_id,
+                  is_deleted: false,
+                },
+                transaction: t,
+              });
+
+            if (!poMaterial) {
+              throw createError(
+                400,
+                `Material ${material.material_id} does not belong to PO ${po.po_id}`
+              );
+            }
+
+            await GateEntryPurchaseOrder.create(
+              {
+                gate_entry_id: entry.id,
+                po_id: po.po_id,
+                material_id: material.material_id,
+                qty: material.qty || null,
+              },
+              {
+                transaction: t,
+              }
+            );
+          }
+        }
+      }
+
+      await t.commit();
+
+      // ===================================================
+      // RETURN COMPLETE ENTRY
+      // ===================================================
+
+      const created =
+        await GateEntry.findByPk(
+          entry.id,
+          {
+            include: detailIncludes,
+          }
+        );
+
+      res.status(201).json({
+        success: true,
+        msg: "Token generated",
+        data: created,
+      });
+    } catch (error) {
+      await t.rollback();
+      throw error;
+    }
+  } catch (err) {
+    next(err);
+  }
+},
+
   uploadPhoto: async (req, res, next) => {
     try {
       if (!req.file) throw createError(400, "No photo file received (field name must be 'photo')");
