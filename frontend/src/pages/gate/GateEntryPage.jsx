@@ -138,22 +138,21 @@ const handleAddPurchaseOrder = (po_id) => {
 
   if (!po) return;
 
-  // Don't add same PO twice
-  if (
-    selectedPOs.some(
-      (p) => String(p.id) === String(po.id)
-    )
-  ) {
+  if (selectedPOs.some((p) => String(p.id) === String(po.id))) {
     return;
   }
 
   setSelectedPOs((prev) => [...prev, po]);
 
-  // IMPORTANT:
-  // Start with NO materials selected.
+  // Automatically select all materials initially
+  const materials = Array.isArray(po.items) ? po.items : [];
+
   setSelectedMaterials((prev) => ({
     ...prev,
-    [po.id]: [],
+    [po.id]: materials.map((m) => ({
+      material_id: m.material_id,
+      qty: m.qty || "",
+    })),
   }));
 
   // Vendor comes from PO
@@ -161,7 +160,7 @@ const handleAddPurchaseOrder = (po_id) => {
     ...prev,
     vendor_id: po.vendor_id,
   }));
-};  
+};
   
 const handleRemovePurchaseOrder = (poId) => {
   setSelectedPOs((prev) =>
@@ -178,48 +177,33 @@ const handleToggleMaterial = (poId, material) => {
   setSelectedMaterials((prev) => {
     const current = prev[poId] || [];
 
-    const materialId = String(material.material_id);
-
     const exists = current.some(
-      (m) => String(m.material_id) === materialId
+      (m) => String(m.material_id) === String(material.material_id)
     );
-
-    if (exists) {
-      return {
-        ...prev,
-        [poId]: current.filter(
-          (m) =>
-            String(m.material_id) !== materialId
-        ),
-      };
-    }
 
     return {
       ...prev,
-      [poId]: [
-        ...current,
-        {
-          material_id: material.material_id,
-          qty: "",
-        },
-      ],
+      [poId]: exists
+        ? current.filter(
+            (m) =>
+              String(m.material_id) !== String(material.material_id)
+          )
+        : [
+            ...current,
+            {
+              material_id: material.material_id,
+              qty: material.qty || "",
+            },
+          ],
     };
   });
 };
-const handleMaterialQtyChange = (
-  poId,
-  materialId,
-  qty
-) => {
+const handleMaterialQtyChange = (poId, materialId, qty) => {
   setSelectedMaterials((prev) => ({
     ...prev,
-
     [poId]: (prev[poId] || []).map((m) =>
       String(m.material_id) === String(materialId)
-        ? {
-            ...m,
-            qty,
-          }
+        ? { ...m, qty }
         : m
     ),
   }));
@@ -307,94 +291,47 @@ const handleMaterialQtyChange = (
         driver_photo_url: form.driver_photo_url,
       };
 
-   if (form.entry_type === "purchase") {
-  // ---------------------------------------------
-  // At least one PO
-  // ---------------------------------------------
-
+      if (form.entry_type === "purchase") {
   if (selectedPOs.length === 0) {
-    setError(
-      "Please select at least one Purchase Order."
-    );
+    setError("Please select at least one Purchase Order.");
     return;
   }
 
-  // ---------------------------------------------
-  // Build PO + materials payload
-  // ---------------------------------------------
+  const purchase_orders = selectedPOs.map((po) => {
+    const materials = selectedMaterials[po.id] || [];
 
-  const purchase_orders = [];
-
-  for (const po of selectedPOs) {
-    const materials =
-      selectedMaterials[po.id] || [];
-
-    // PO must have material
-    if (materials.length === 0) {
-      setError(
-        `Please select at least one material for PO ${
-          po.po_no || po.id
-        }.`
-      );
-      return;
-    }
-
-    // Validate quantities
-    
-    purchase_orders.push({
+    return {
       po_id: Number(po.id),
 
-      materials: materials.map(
-        (material) => ({
-          material_id: Number(
-            material.material_id
-          ),
-          qty: Number(material.qty),
-        })
-      ),
-    });
-  }
+      materials: materials.map((material) => ({
+        material_id: Number(material.material_id),
+        qty: material.qty
+          ? Number(material.qty)
+          : null,
+      })),
+    };
+  });
 
-  // ---------------------------------------------
-  // Vendor
-  // ---------------------------------------------
+  const invalidPO = purchase_orders.find(
+    (po) => po.materials.length === 0
+  );
 
-  if (!form.vendor_id) {
+  if (invalidPO) {
     setError(
-      "Vendor is required for a purchase entry."
+      `Please select at least one material for PO ${invalidPO.po_id}.`
     );
     return;
   }
 
-  payload.vendor_id = Number(
-    form.vendor_id
-  );
+  payload.vendor_id = Number(form.vendor_id);
 
-  // ---------------------------------------------
-  // Purchase Orders
-  // ---------------------------------------------
+  payload.purchase_orders = purchase_orders;
 
-  payload.purchase_orders =
-    purchase_orders;
+  payload.challan_no = form.challan_no;
 
-  // ---------------------------------------------
-  // Challan
-  // ---------------------------------------------
-
-  if (form.challan_no) {
-    payload.challan_no =
-      form.challan_no;
-  }
-
-  // ---------------------------------------------
-  // Expected quantity
-  // ---------------------------------------------
-
-  if (form.expected_qty) {
-    payload.expected_qty = Number(
-      form.expected_qty
-    );
-  }
+  payload.expected_qty = form.expected_qty
+    ? Number(form.expected_qty)
+    : undefined;
 }else if (form.entry_type === "sales") {
         payload.so_id = Number(form.so_id);
         payload.challan_no = form.challan_no || undefined;

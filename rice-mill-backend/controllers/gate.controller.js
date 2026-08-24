@@ -885,16 +885,13 @@ module.exports = {
           /*
            * IMPORTANT:
            *
-           * purchase_order contains:
-           *   id
-           *   vendor_id
-           *   material_id
-           *   qty
-           *   approval_status
-           *   is_deleted
-           *
-           * Therefore this is the correct table to
-           * validate the PO.
+           * purchase_order now stores its materials in the
+           * JSON `items` column — [{ material_id, variety_id,
+           * qty, rate }, ...] — NOT in a flat material_id
+           * column on this row (that column is legacy/unused
+           * by bulkCreate). Fetch the PO itself here; material
+           * membership + ordered qty are checked below against
+           * `purchaseOrder.items`.
            */
 
           const purchaseOrder =
@@ -920,6 +917,10 @@ module.exports = {
               `Invalid or unapproved purchase order: ${poId}`,
             );
           }
+
+          const poItems = Array.isArray(purchaseOrder.items)
+            ? purchaseOrder.items
+            : [];
 
           // ===============================================
           // PREVENT DUPLICATE MATERIALS IN SAME PO
@@ -1012,31 +1013,18 @@ module.exports = {
             /*
              * VERY IMPORTANT:
              *
-             * Do NOT use GateEntryPurchaseOrder here.
-             *
-             * purchase_order itself contains material_id.
+             * Do NOT re-query PurchaseOrder with a flat
+             * material_id filter here — bulkCreate never
+             * populates that column, so it would always miss.
+             * Membership + ordered qty live in
+             * purchaseOrder.items (JSON), fetched above.
              */
 
-            const poMaterial =
-              await PurchaseOrder.findOne({
-                where: {
-                  id: poId,
+            const poItem = poItems.find(
+              (it) => Number(it.material_id) === materialId,
+            );
 
-                  vendor_id: Number(vendor_id),
-
-                  material_id: materialId,
-
-                  approval_status: "approved",
-
-                  is_deleted: false,
-                },
-
-                transaction: t,
-
-                lock: t.LOCK.UPDATE,
-              });
-
-            if (!poMaterial) {
+            if (!poItem) {
               throw createError(
                 400,
                 `Material ${materialId} does not belong to PO ${poId}`,
@@ -1048,7 +1036,7 @@ module.exports = {
             // ---------------------------------------------
 
             const orderedQty = Number(
-              poMaterial.qty,
+              poItem.qty,
             );
 
             if (

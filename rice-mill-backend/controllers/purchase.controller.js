@@ -27,55 +27,69 @@ module.exports = {
   // items nested under `items`. This is what the PO list page and the Gate
   // Entry PO picker use — the flat one-row-per-material getAll() below is
   // still there for anything that specifically needs a single PO line.
-  getAllGrouped: async (req, res, next) => {
+ getAllGrouped: async (req, res, next) => {
   try {
     const { search, vendor_id, plant_id } = req.query;
 
-    const where = {
-      is_deleted: false,
-    };
-
-    if (req.user.role !== "admin") {
-      where.approval_status = "approved";
-    }
-
-    if (vendor_id) {
-      where.vendor_id = vendor_id;
-    }
-
-    if (plant_id) {
-      where.plant_id = plant_id;
-    }
-
+    const where = { is_deleted: false };
+    if (req.user.role !== "admin") where.approval_status = "approved";
+    if (vendor_id) where.vendor_id = vendor_id;
+    if (plant_id) where.plant_id = plant_id;
     if (search) {
       where[Op.or] = [
-        {
-          po_no: {
-            [Op.like]: `%${search}%`,
-          },
-        },
-        {
-          do_no: {
-            [Op.like]: `%${search}%`,
-          },
-        },
+        { po_no: { [Op.like]: `%${search}%` } },
+        { do_no: { [Op.like]: `%${search}%` } },
       ];
     }
 
     const rows = await PurchaseOrder.findAll({
       where,
       include: poIncludes,
-      order: [
-        ["po_no", "DESC"],
-        ["created_at", "ASC"],
-      ],
+      order: [["po_no", "DESC"], ["created_at", "ASC"]],
     });
+
+    // JSON `items` only stores {material_id, variety_id, qty, rate} — no
+    // nested objects — so batch-fetch names for everything referenced.
+    const materialIds = new Set();
+    const varietyIds = new Set();
+    for (const row of rows) {
+      for (const item of row.items || []) {
+        if (item.material_id) materialIds.add(item.material_id);
+        if (item.variety_id) varietyIds.add(item.variety_id);
+      }
+    }
+
+    const [materials, varieties] = await Promise.all([
+      materialIds.size
+        ? MaterialMaster.findAll({
+            where: { id: Array.from(materialIds) },
+            attributes: ["id", "material_code", "name"],
+          })
+        : [],
+      varietyIds.size
+        ? VarietyMaster.findAll({
+            where: { id: Array.from(varietyIds) },
+            attributes: ["id", "variety_name"],
+          })
+        : [],
+    ]);
+    const materialById = new Map(materials.map((m) => [String(m.id), m]));
+    const varietyById = new Map(varieties.map((v) => [String(v.id), v]));
 
     const groups = new Map();
 
     for (const row of rows) {
       if (!groups.has(row.po_no)) {
+        const enrichedItems = (row.items || []).map((item) => ({
+          ...item,
+          material: materialById.get(String(item.material_id)) || null,
+          variety: item.variety_id
+            ? varietyById.get(String(item.variety_id)) || null
+            : null,
+        }));
+
         groups.set(row.po_no, {
+          id: row.id, // real PurchaseOrder PK — was previously items[0].id (always null)
           po_no: row.po_no,
           vendor_id: row.vendor_id,
           vendor: row.vendor,
@@ -83,30 +97,18 @@ module.exports = {
           validity: row.validity,
           do_no: row.do_no,
           plant_id: row.plant_id,
-
-          // Get JSON items
-          items: row.items || [],
+          items: enrichedItems,
         });
       }
     }
 
     const grouped = Array.from(groups.values()).map((g) => ({
       ...g,
-
-      id: g.items?.[0]?.id || null,
-
       item_count: g.items?.length || 0,
-
-      total_qty: (g.items || []).reduce(
-        (sum, item) => sum + Number(item.qty || 0),
-        0
-      ),
+      total_qty: (g.items || []).reduce((sum, i) => sum + Number(i.qty || 0), 0),
     }));
 
-    res.status(200).json({
-      success: true,
-      data: grouped,
-    });
+    res.status(200).json({ success: true, data: grouped });
   } catch (err) {
     next(err);
   }
