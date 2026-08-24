@@ -28,67 +28,89 @@ module.exports = {
   // Entry PO picker use — the flat one-row-per-material getAll() below is
   // still there for anything that specifically needs a single PO line.
   getAllGrouped: async (req, res, next) => {
-    try {
-      const { search, vendor_id, plant_id } = req.query;
+  try {
+    const { search, vendor_id, plant_id } = req.query;
 
-      const where = { is_deleted: false };
-       if (req.user.role !== "admin") {
+    const where = {
+      is_deleted: false,
+    };
+
+    if (req.user.role !== "admin") {
       where.approval_status = "approved";
     }
-      if (vendor_id) where.vendor_id = vendor_id;
-      if (plant_id) where.plant_id = plant_id;
-      if (search) {
-        where[Op.or] = [{ po_no: { [Op.like]: `%${search}%` } }, { do_no: { [Op.like]: `%${search}%` } }];
-      }
 
-      const rows = await PurchaseOrder.findAll({
-        where,
-        include: poIncludes,
-        order: [["po_no", "DESC"], ["created_at", "ASC"]],
-      });
+    if (vendor_id) {
+      where.vendor_id = vendor_id;
+    }
 
-      const groups = new Map();
-      for (const row of rows) {
-        if (!groups.has(row.po_no)) {
-          groups.set(row.po_no, {
-            po_no: row.po_no,
-            vendor_id: row.vendor_id,
-            vendor: row.vendor,
-            po_date: row.po_date,
-            validity: row.validity,
-            do_no: row.do_no,
-            plant_id: row.plant_id,
-            items: [],
-          });
-        }
-        groups.get(row.po_no).items.push({
-          id: row.id,
-          material_id: row.material_id,
-          material: row.material,
-          variety_id: row.variety_id,
-          variety: row.variety,
-          qty: row.qty,
-          rate: row.rate,
+    if (plant_id) {
+      where.plant_id = plant_id;
+    }
+
+    if (search) {
+      where[Op.or] = [
+        {
+          po_no: {
+            [Op.like]: `%${search}%`,
+          },
+        },
+        {
+          do_no: {
+            [Op.like]: `%${search}%`,
+          },
+        },
+      ];
+    }
+
+    const rows = await PurchaseOrder.findAll({
+      where,
+      include: poIncludes,
+      order: [
+        ["po_no", "DESC"],
+        ["created_at", "ASC"],
+      ],
+    });
+
+    const groups = new Map();
+
+    for (const row of rows) {
+      if (!groups.has(row.po_no)) {
+        groups.set(row.po_no, {
+          po_no: row.po_no,
+          vendor_id: row.vendor_id,
+          vendor: row.vendor,
+          po_date: row.po_date,
+          validity: row.validity,
+          do_no: row.do_no,
+          plant_id: row.plant_id,
+
+          // Get JSON items
+          items: row.items || [],
         });
       }
-
-      const grouped = Array.from(groups.values()).map((g) => ({
-        ...g,
-        // Synthetic id for the frontend's generic EntitySelect (which needs
-        // exactly one `id` per option) — the first line item's real row id.
-        // Submitting a gate entry against this PO still resolves to the
-        // SPECIFIC line item matching whichever material the truck is
-        // actually delivering, not this placeholder (see gate.controller.js).
-        id: g.items[0].id,
-        item_count: g.items.length,
-        total_qty: g.items.reduce((s, i) => s + Number(i.qty), 0),
-      }));
-
-      res.status(200).json({ success: true, data: grouped });
-    } catch (err) {
-      next(err);
     }
-  },
+
+    const grouped = Array.from(groups.values()).map((g) => ({
+      ...g,
+
+      id: g.items?.[0]?.id || null,
+
+      item_count: g.items?.length || 0,
+
+      total_qty: (g.items || []).reduce(
+        (sum, item) => sum + Number(item.qty || 0),
+        0
+      ),
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: grouped,
+    });
+  } catch (err) {
+    next(err);
+  }
+},
 
   // GET /api/purchase?search=&vendor_id=&material_id=&page=&limit=
   getAll: async (req, res, next) => {
