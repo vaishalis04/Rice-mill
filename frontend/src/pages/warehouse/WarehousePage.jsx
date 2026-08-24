@@ -41,7 +41,7 @@ const TYPE_CONFIG = {
       { name: "lot_id", label: "Lot", type: "entity", entity: "lot" },
       { name: "warehouse_id", label: "Warehouse", type: "entity", entity: "warehouse" },
       { name: "bin_id", label: "Bin", type: "entity", entity: "bin" },
-      { name: "qty", label: "Qty", type: "number" },
+      { name: "qty", label: "Qty (Tons)", type: "number" },
       { name: "stacked_at", label: "Stacked At", type: "datetime-local" },
     ],
   },
@@ -125,7 +125,7 @@ function StockTab() {
             label: "Warehouse",
             render: (row) => row.warehouse?.name ?? warehouses.getLabel(row.warehouse_id),
           },
-          { key: "qty", label: "Qty" },
+          { key: "qty", label: "Qty (Tons)" },
           { key: "stage", label: "Stage" },
         ]}
       />

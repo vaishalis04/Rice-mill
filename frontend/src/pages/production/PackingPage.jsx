@@ -356,7 +356,7 @@ export default function PackingPage() {
             )}
           </div>
           <div className="sf-field">
-            <label>Qty Override (total kg, optional)</label>
+            <label>Qty (Tons) Override (total kg, optional)</label>
             <input
               name="qty_override"
               type="number"
@@ -488,7 +488,7 @@ export default function PackingPage() {
           "Pick a Production Batch that's finished Length Grading — its graded breakdown and remaining quantity show up automatically.",
           "Choose a pack size from the presets, or pick 'Custom…' and type in any exact weight (e.g. 15 kg, 2 kg) — it's saved as a real number either way.",
           "The bag count is worked out for you (remaining qty ÷ pack size) — adjust it if needed.",
-          "Qty Override is optional — only use it to correct the total by hand (e.g. a part-filled last bag); otherwise it's pack size × bag count.",
+          "Qty (Tons) Override is optional — only use it to correct the total by hand (e.g. a part-filled last bag); otherwise it's pack size × bag count.",
           "Submitting generates a packing number and barcode, and opens a matching Finished Goods record with status 'ready'.",
           "From there, Sales can book an order against it and Dispatch can allocate it to a delivery.",
         ]}

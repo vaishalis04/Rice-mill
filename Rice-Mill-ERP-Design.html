@@ -320,7 +320,7 @@
 <tr>
 <td>1</td>
 <td>Gate Entry</td>
-<td>Vehicle No., Driver details + photo, Vendor, Challan, PO (optional), Material, Expected Qty</td>
+<td>Vehicle No., Driver details + photo, Vendor, Challan, PO (optional), Material, Expected Qty (Tons)</td>
 <td>Gate Entry record, <strong>Token Number</strong>, Vehicle Status = <em>Waiting for Sampling</em></td>
 <td>Gate Security</td>
 </tr>
@@ -370,7 +370,7 @@
 <td>7</td>
 <td>Quick QC (bag level)</td>
 <td>Bags from store/direct</td>
-<td>Accepted Qty, Rejected Qty, Reason</td>
+<td>Accepted Qty (Tons), Rejected Qty (Tons), Reason</td>
 <td>QA Operator</td>
 </tr>
 <tr>
@@ -1316,9 +1316,9 @@ purchase_order, gate_entry, sampling, lab_test, negotiation, weight_slip, purcha
 <hr />
 <h2 id="13-inventory-movement-flow">13. Inventory Movement Flow</h2>
 <pre><code>Raw Paddy (Gate-In) → Sampling (no stock impact, sample qty negligible/tracked) 
- → Weighbridge (Gross Qty booked as &quot;In-Transit Stock&quot;)
+ → Weighbridge (Gross Qty (Tons) booked as &quot;In-Transit Stock&quot;)
  → Unloading (Stock moves to Warehouse Stack OR Production Floor)
- → Quick QC (Accepted Qty stays in flow; Rejected Qty moves to Reject Store)
+ → Quick QC (Accepted Qty (Tons) stays in flow; Rejected Qty (Tons) moves to Reject Store)
  → Drying (Stock stays in &quot;WIP - Drying&quot; location; qty unchanged, moisture changes)
  → Milling (Input Paddy Stock decreases; Output Stock created: Brown Rice + Husk + Broken + Waste)
  → Separator (Brown Rice decreases; Cleaned Rice + Impurities created)

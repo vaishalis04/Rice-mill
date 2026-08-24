@@ -1,12 +1,12 @@
 export const ROLE_ID = {
-  admin: 9,
   purchase: 2,
   gate: 3,
   lab: 4,
   warehouse: 5,
-  production: 10,
   sales: 7,
+  admin: 9,
   dispatch: 8,
+  production: 10,
 };
 
 // role_id -> readable name (lowercase as in DB)

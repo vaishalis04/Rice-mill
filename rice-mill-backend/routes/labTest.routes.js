@@ -5,7 +5,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Lab test parameters & verdicts (Module 6)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorize("lab"));
+router.use(verifyAccessToken, attachUser, authorize("lab","purchase","admin","sales","gate","warehouse")); // Protected routes
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

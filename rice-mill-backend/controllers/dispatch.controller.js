@@ -218,7 +218,7 @@ module.exports = {
       doc.fontSize(13).text("Material Details", { underline: true });
       doc.fontSize(11);
       doc.text(`Material: ${material ? material.name : "-"} (${material ? material.material_code : "-"})`);
-      doc.text(`Ordered Qty: ${so ? so.qty : "-"}`);
+      doc.text(`Ordered Qty (Tons): ${so ? so.qty : "-"}`);
       doc.text(`Rate: ${so ? so.rate : "-"}`);
       doc.text(`Dispatched Weight: ${dispatch.dispatch_weight} kg`);
       doc.moveDown();

@@ -4,14 +4,14 @@ import "./KpiBar.css";
 
 const KPI_FIELDS = [
   { key: "trucks_at_gate", label: "Trucks at Gate" },
-  { key: "today_intake_qty", label: "Today Intake Qty" },
+  { key: "today_intake_qty", label: "Today Intake Qty (Tons)" },
   {
     key: "lab_rejection_rate",
     label: "Lab Rejection Rate",
     format: (v) => (v != null ? `${Number(v).toFixed(1)}%` : "—"),
   },
   { key: "active_batches", label: "Active Batches" },
-  { key: "fg_stock_qty", label: "FG Stock Qty" },
+  { key: "fg_stock_qty", label: "FG Stock Qty (Tons)" },
   { key: "pending_dispatch_count", label: "Pending Dispatch" },
   {
     key: "today_dispatch_value",

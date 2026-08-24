@@ -299,8 +299,8 @@ export default function UnloadingPage() {
           </div>
 
           <p className="field-hint">
-            Accepted Qty: <strong>{acceptedQtyPreview}</strong> &nbsp;|&nbsp; Rejected Qty:{" "}
-            <strong>{rejectedQtyPreview}</strong> &nbsp;|&nbsp; Total Qty:{" "}
+            Accepted Qty (Tons): <strong>{acceptedQtyPreview}</strong> &nbsp;|&nbsp; Rejected Qty (Tons):{" "}
+            <strong>{rejectedQtyPreview}</strong> &nbsp;|&nbsp; Total Qty (Tons):{" "}
             <strong>{Math.round((acceptedQtyPreview + rejectedQtyPreview) * 100) / 100}</strong>
           </p>
 
@@ -337,8 +337,8 @@ export default function UnloadingPage() {
           { key: "bin_id", label: "Bin", render: (row) => row.stacks?.[0]?.bin?.bin_code || "—" },
           { key: "accepted_bags", label: "Accepted Bags" },
           { key: "rejected_bags", label: "Rejected Bags" },
-          { key: "qty", label: "Accepted Qty" },
-          { key: "rejected_qty", label: "Rejected Qty" },
+          { key: "qty", label: "Accepted Qty (Tons)" },
+          { key: "rejected_qty", label: "Rejected Qty (Tons)" },
           {
             key: "lab_comment",
             label: "Lab Comment",

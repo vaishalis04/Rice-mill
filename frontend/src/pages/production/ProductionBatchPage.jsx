@@ -116,7 +116,7 @@ export default function ProductionBatchPage() {
           </select>
         </div>
         <div className="sf-field">
-          <label>Input Qty</label>
+          <label>Input Qty (Tons)</label>
           <input name="input_qty" type="number" step="0.01" min="0.01" value={createForm.input_qty} onChange={handleCreateChange} required />
         </div>
         <button className="sf-submit" type="submit">Create Batch</button>
@@ -129,14 +129,14 @@ export default function ProductionBatchPage() {
             Enter the final quantities. Completing this output sends the batch to the Packing tab.
           </p>
           <div className="sf-field">
-            <label>Input Qty</label>
+            <label>Input Qty (Tons)</label>
             <input name="input_qty" type="number" step="0.01" min="0.01" value={outputForm.input_qty} onChange={handleOutputChange} required />
           </div>
         {[
-          ["long_qty", "Long Qty", true],
-          ["medium_qty", "Medium Qty", false],
-          ["broken_qty", "Broken Qty", false],
-          ["small_broken_qty", "Small Broken Qty", false],
+          ["long_qty", "Long Qty (Tons)", true],
+          ["medium_qty", "Medium Qty (Tons)", false],
+          ["broken_qty", "Broken Qty (Tons)", false],
+          ["small_broken_qty", "Small Broken Qty (Tons)", false],
         ].map(([name, label, required]) => (
           <div className="sf-field" key={name}>
             <label>{label}</label>

@@ -185,7 +185,7 @@ export default function FinishedGoodsPage() {
             label: "Warehouse",
             render: (row) => warehouses.getLabel(row.warehouse_id),
           },
-          { key: "qty", label: "Qty" },
+          { key: "qty", label: "Qty (Tons)" },
           { key: "pack_size", label: "Pack Size" },
           { key: "rack_id", label: "Rack" },
           {

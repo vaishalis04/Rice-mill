@@ -563,3 +563,63 @@ export const getFleetSnapshotApi = (params = {}) =>
 
 export const getGateActivityApi = (params = {}) =>
   axiosInstance.get("/analytics/gate-activity", { params });
+
+// ---------------- PURCHASE ORDER APPROVAL (role: admin) ----------------
+
+// Get purchase orders waiting for admin approval
+export const getPendingPurchaseOrdersApi = () =>
+  axiosInstance.get("/purchases/pending-approval");
+
+// Admin edits a PO before approving it
+export const updatePurchaseOrderBeforeApprovalApi = (po_no, data) =>
+  axiosInstance.put(
+    `/purchases/po/${encodeURIComponent(po_no)}/approval-edit`,
+    data
+  );
+
+// Admin approves the complete PO
+export const approvePurchaseOrderApi = (po_no) =>
+  axiosInstance.patch(
+    `/purchases/po/${encodeURIComponent(po_no)}/approve`
+  );
+
+// Admin rejects the complete PO
+export const rejectPurchaseOrderApi = (po_no, data) =>
+  axiosInstance.patch(
+    `/purchases/po/${encodeURIComponent(po_no)}/reject`,
+    data
+  );
+
+// ---------------- SALES ORDER APPROVAL (role: admin) ----------------
+// Mirrors the Purchase Order Approval block above, against the
+// salesOrder.controller / sales-orders router.
+
+// Get sales orders waiting for admin approval
+export const getPendingSalesOrdersApi = () =>
+  axiosInstance.get("/sales-orders/pending-approval");
+
+// Admin edits a SO's header fields before approving it
+export const updateSalesOrderBeforeApprovalApi = (so_no, data) =>
+  axiosInstance.put(
+    `/sales-orders/so/${encodeURIComponent(so_no)}/approval-edit`,
+    data
+  );
+
+// Admin approves the complete SO
+export const approveSalesOrderApi = (so_no) =>
+  axiosInstance.patch(
+    `/sales-orders/so/${encodeURIComponent(so_no)}/approve`
+  );
+
+// Admin rejects the complete SO
+export const rejectSalesOrderApi = (so_no, data) =>
+  axiosInstance.patch(
+    `/sales-orders/so/${encodeURIComponent(so_no)}/reject`,
+    data
+  );
+
+// Removing an individual material line from a SO does NOT need a new
+// endpoint: each material line is its own row (id) in the sales_orders
+// table (several rows can share one so_no), so the existing
+// deleteSalesOrderApi(id) — DELETE /sales-orders/:id, soft delete — already
+// covers it. See SalesOrderApprovalPage.jsx's handleRemoveRow.

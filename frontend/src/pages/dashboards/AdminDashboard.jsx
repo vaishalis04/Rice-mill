@@ -7,6 +7,8 @@ import UsersPage from "../admin/UsersPage";
 import ReportsPage from "../admin/ReportsPage";
 import CustomersPage from "../sales/CustomersPage";
 import VendorsPage from "../purchase/VendorsPage";
+import PurchaseOrderApprovalPage from "../admin/PurchaseOrderApprovalPage";
+import SalesOrderApprovalPage from "../admin/Salesorderapprovalpage";
 
 const TABS = [
   { key: "dashboard", label: "Dashboard" },
@@ -14,6 +16,8 @@ const TABS = [
   { key: "vehicles", label: "Vehicles & Drivers" },
   { key: "customers", label: "Customers" },
   { key: "vendors", label: "Vendors" },
+  { key: "purchaseApproval", label: "PO Approval" },
+  { key: "salesApproval", label: "SO Approval" },
   { key: "users", label: "Users" },
   { key: "reports", label: "Reports" },
 ];
@@ -30,6 +34,8 @@ export default function AdminDashboard() {
       {tab === "vendors" && <VendorsPage />}
       {tab === "users" && <UsersPage />}
       {tab === "reports" && <ReportsPage />}
+      {tab === "purchaseApproval" && <PurchaseOrderApprovalPage />}
+      {tab === "salesApproval" && <SalesOrderApprovalPage />}
     </DashboardLayout>
   );
 }

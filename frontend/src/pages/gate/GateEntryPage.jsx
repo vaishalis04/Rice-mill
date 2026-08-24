@@ -12,14 +12,13 @@ import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
 import CameraCapture from "../../components/CameraCapture";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
+import "./GateEntry.css";
 
 const emptyForm = {
   entry_type: "purchase",
   vehicle_id: "",
   driver_id: "",
   vendor_id: "",
-  po_id: "",
-  material_id: "",
   so_id: "",
   challan_no: "",
   expected_qty: "",
@@ -67,13 +66,16 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoUploadError, setPhotoUploadError] = useState("");
 
+  const [selectedPOs, setSelectedPOs] = useState([]);
+const [selectedMaterials, setSelectedMaterials] = useState({});
+
   const vehicles = useEntityLookup("vehicle");
   const drivers = useEntityLookup("driver");
   const purchaseOrders = useEntityLookup("purchase_order");
   const salesOrders = useEntityLookup("sales_order");
   const salesOrderGroups = useEntityLookup("sales_order_grouped");
 
-  // "Load New Truck for Remaining Qty" on the Loading tab jumps here with a
+  // "Load New Truck for Remaining Qty (Tons)" on the Loading tab jumps here with a
   // specific Sales Order LINE ITEM id already known (prefillSoId) — resolve
   // which grouped SO it belongs to (so the picker + box display correctly)
   // and pre-select that exact item.
@@ -127,44 +129,102 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
 
   const setField = (name) => (id) => setForm({ ...form, [name]: id });
 
-  // Picking a PO shows every material it covers (poGroup below) and fills
-  // in Vendor. If it covers just one material, that line item is the only
-  // possible answer — resolve po_id/material_id to it immediately. If it
-  // covers several, po_id is left UNRESOLVED until the person taps which
-  // material this truck is actually delivering in the box below
-  // (handleSelectPoItem) — a truck can only carry one material's worth of
-  // this PO at a time, so guessing which one would silently mislink it.
-  const handlePoChange = (po_id) => {
-    const po = purchaseOrders.rows.find((r) => String(r.id) === String(po_id));
-    setPoGroup(po || null);
-    const items = po && Array.isArray(po.items) ? po.items : [];
-    const singleItem = items.length === 1 ? items[0] : null;
-    setForm((prev) => ({
+const handleAddPurchaseOrder = (po_id) => {
+  if (!po_id) return;
+
+  const po = purchaseOrders.rows.find(
+    (r) => String(r.id) === String(po_id)
+  );
+
+  if (!po) return;
+
+  // Don't add same PO twice
+  if (
+    selectedPOs.some(
+      (p) => String(p.id) === String(po.id)
+    )
+  ) {
+    return;
+  }
+
+  setSelectedPOs((prev) => [...prev, po]);
+
+  // IMPORTANT:
+  // Start with NO materials selected.
+  setSelectedMaterials((prev) => ({
+    ...prev,
+    [po.id]: [],
+  }));
+
+  // Vendor comes from PO
+  setForm((prev) => ({
+    ...prev,
+    vendor_id: po.vendor_id,
+  }));
+};  
+  
+const handleRemovePurchaseOrder = (poId) => {
+  setSelectedPOs((prev) =>
+    prev.filter((po) => String(po.id) !== String(poId))
+  );
+
+  setSelectedMaterials((prev) => {
+    const updated = { ...prev };
+    delete updated[poId];
+    return updated;
+  });
+};
+const handleToggleMaterial = (poId, material) => {
+  setSelectedMaterials((prev) => {
+    const current = prev[poId] || [];
+
+    const materialId = String(material.material_id);
+
+    const exists = current.some(
+      (m) => String(m.material_id) === materialId
+    );
+
+    if (exists) {
+      return {
+        ...prev,
+        [poId]: current.filter(
+          (m) =>
+            String(m.material_id) !== materialId
+        ),
+      };
+    }
+
+    return {
       ...prev,
-      po_id: singleItem ? singleItem.id : "",
-      material_id: singleItem ? singleItem.material_id : "",
-      vendor_id: po ? po.vendor_id : prev.vendor_id,
-    }));
-  };
+      [poId]: [
+        ...current,
+        {
+          material_id: material.material_id,
+          qty: "",
+        },
+      ],
+    };
+  });
+};
+const handleMaterialQtyChange = (
+  poId,
+  materialId,
+  qty
+) => {
+  setSelectedMaterials((prev) => ({
+    ...prev,
 
-  // Tapping a material inside the "Materials on this Purchase Order" box —
-  // resolves po_id/material_id to THAT specific line item, so the gate
-  // entry (and everything downstream: Sampling, Lab, Weighbridge, the
-  // eventual Purchase record) is tied to the right material, not just
-  // whichever one happened to be first on the PO.
-  const handleSelectPoItem = (item) => {
-    setForm((prev) => ({ ...prev, po_id: item.id, material_id: item.material_id }));
-  };
+    [poId]: (prev[poId] || []).map((m) =>
+      String(m.material_id) === String(materialId)
+        ? {
+            ...m,
+            qty,
+          }
+        : m
+    ),
+  }));
+};
 
-  // Same idea as handlePoChange, for Sales Orders: picking the SO shows
-  // it below and fills in the Customer automatically. UNLIKE Purchase
-  // Orders, no material is picked here even for a multi-material SO — that
-  // choice is deferred to the Loading tab (see LoadingPage.jsx), which is
-  // when a truck's material actually gets decided in practice. Gate Entry
-  // just needs SOME line item on this so_no to satisfy the DB link, so it
-  // auto-picks the first material that's still open (not yet fully
-  // dispatched/closed/cancelled) — Loading can move it to a different
-  // material on the same SO before recording the load.
   const handleSoChange = (so_id) => {
     const so = salesOrderGroups.rows.find((r) => String(r.id) === String(so_id));
     setSoGroup(so || null);
@@ -247,13 +307,95 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
         driver_photo_url: form.driver_photo_url,
       };
 
-      if (form.entry_type === "purchase") {
-        payload.vendor_id = Number(form.vendor_id);
-        payload.po_id = form.po_id ? Number(form.po_id) : undefined;
-        if (form.material_id) payload.material_id = Number(form.material_id);
-        payload.challan_no = form.challan_no;
-        payload.expected_qty = form.expected_qty ? Number(form.expected_qty) : undefined;
-      } else if (form.entry_type === "sales") {
+   if (form.entry_type === "purchase") {
+  // ---------------------------------------------
+  // At least one PO
+  // ---------------------------------------------
+
+  if (selectedPOs.length === 0) {
+    setError(
+      "Please select at least one Purchase Order."
+    );
+    return;
+  }
+
+  // ---------------------------------------------
+  // Build PO + materials payload
+  // ---------------------------------------------
+
+  const purchase_orders = [];
+
+  for (const po of selectedPOs) {
+    const materials =
+      selectedMaterials[po.id] || [];
+
+    // PO must have material
+    if (materials.length === 0) {
+      setError(
+        `Please select at least one material for PO ${
+          po.po_no || po.id
+        }.`
+      );
+      return;
+    }
+
+    // Validate quantities
+    
+    purchase_orders.push({
+      po_id: Number(po.id),
+
+      materials: materials.map(
+        (material) => ({
+          material_id: Number(
+            material.material_id
+          ),
+          qty: Number(material.qty),
+        })
+      ),
+    });
+  }
+
+  // ---------------------------------------------
+  // Vendor
+  // ---------------------------------------------
+
+  if (!form.vendor_id) {
+    setError(
+      "Vendor is required for a purchase entry."
+    );
+    return;
+  }
+
+  payload.vendor_id = Number(
+    form.vendor_id
+  );
+
+  // ---------------------------------------------
+  // Purchase Orders
+  // ---------------------------------------------
+
+  payload.purchase_orders =
+    purchase_orders;
+
+  // ---------------------------------------------
+  // Challan
+  // ---------------------------------------------
+
+  if (form.challan_no) {
+    payload.challan_no =
+      form.challan_no;
+  }
+
+  // ---------------------------------------------
+  // Expected quantity
+  // ---------------------------------------------
+
+  if (form.expected_qty) {
+    payload.expected_qty = Number(
+      form.expected_qty
+    );
+  }
+}else if (form.entry_type === "sales") {
         payload.so_id = Number(form.so_id);
         payload.challan_no = form.challan_no || undefined;
         payload.expected_qty = form.expected_qty ? Number(form.expected_qty) : undefined;
@@ -274,9 +416,11 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
           : "Entry saved (check the list below for the token number)."
       );
       setForm(emptyForm);
-      setPoGroup(null);
-      setSoGroup(null);
-      setPhotoPreview("");
+setSelectedPOs([]);
+setSelectedMaterials({});
+setPoGroup(null);
+setSoGroup(null);
+setPhotoPreview("");
       setPhotoUploadError("");
       load();
     } catch (err) {
@@ -382,92 +526,179 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
           <p className="field-hint">Who's driving the truck today.</p>
         </div>
         {form.entry_type === "purchase" && (
-          <>
-            <div>
-              <EntitySelect
-                entity="purchase_order"
-                label="Purchase Order"
-                value={poGroup ? poGroup.id : ""}
-                onChange={handlePoChange}
-                required
-              />
-              <p className="field-hint">
-                Picking a Purchase Order shows every material it covers below and fills in the
-                Vendor automatically. If it covers just one material, that's used automatically —
-                if it covers several, tap which one this truck is actually delivering.
-              </p>
-            </div>
-            {poGroup && (
-              <div className="sf-field">
-                <label>Materials on this Purchase Order</label>
-                <div
-                  style={{
-                    padding: "8px 10px",
-                    background: "#f8fafc",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 6,
-                    fontSize: 13,
-                  }}
-                >
-                  <div style={{ marginBottom: 4 }}>
-                    <strong>Vendor:</strong> {poGroup.vendor?.name || "—"}
+  <>
+    <div className="sf-field">
+      <label>Purchase Orders</label>
+
+      <EntitySelect
+        entity="purchase_order"
+        label="Add Purchase Order"
+        value=""
+        onChange={handleAddPurchaseOrder}
+        required={selectedPOs.length === 0}
+      />
+
+      <p className="field-hint">
+        You can select multiple Purchase Orders. After selecting a PO,
+        choose one or more materials from that PO.
+      </p>
+    </div>
+
+    {selectedPOs.length > 0 && (
+      <div className="multi-po-container">
+        {selectedPOs.map((po) => {
+          const materials = Array.isArray(po.items)
+            ? po.items
+            : [];
+
+          const selected =
+            selectedMaterials[po.id] || [];
+
+          return (
+            <div
+              key={po.id}
+              className="po-selection-card"
+            >
+              <div className="po-selection-header">
+                <div>
+                  <strong>
+                    PO #{po.po_no || po.id}
+                  </strong>
+
+                  <div className="field-hint">
+                    Vendor: {po.vendor?.name || "—"}
                   </div>
-                  {poGroup.items.length > 1 && !form.po_id && (
-                    <div style={{ color: "#b45309", marginBottom: 6, fontWeight: 600 }}>
-                      Tap the material this truck is delivering ↓
-                    </div>
-                  )}
-                  {poGroup.items.map((i, idx) => {
-                    const isThisTruck = String(i.id) === String(form.po_id);
-                    const clickable = poGroup.items.length > 1;
-                    return (
-                      <div
-                        key={i.id}
-                        onClick={clickable ? () => handleSelectPoItem(i) : undefined}
-                        style={{
-                          marginTop: idx === 0 ? 0 : 6,
-                          paddingTop: idx === 0 ? 0 : 6,
-                          borderTop: idx === 0 ? "none" : "1px dashed #e2e8f0",
-                          color: isThisTruck ? "#1d4ed8" : undefined,
-                          cursor: clickable ? "pointer" : "default",
-                          background: isThisTruck ? "#eff6ff" : "transparent",
-                          borderRadius: 4,
-                          padding: isThisTruck ? "4px 6px" : "0",
-                          margin: isThisTruck ? "2px -6px" : undefined,
-                        }}
-                      >
-                        <strong>{i.material?.name || "—"}</strong>
-                        {i.variety?.variety_name ? ` (${i.variety.variety_name})` : ""} — Ordered {i.qty} @ ₹{i.rate}
-                        {isThisTruck ? " ← this truck" : clickable ? " (tap to select)" : ""}
-                      </div>
-                    );
-                  })}
                 </div>
+
+                <button
+                  type="button"
+                  className="dt-btn dt-btn-danger"
+                  onClick={() =>
+                    handleRemovePurchaseOrder(po.id)
+                  }
+                >
+                  Remove
+                </button>
               </div>
-            )}
-            <div className="sf-field">
-              <label>Challan No.</label>
-              <input
-                name="challan_no"
-                value={form.challan_no}
-                onChange={handleChange}
-                required
-              />
-              <p className="field-hint">The delivery-note number the driver brought with them.</p>
+
+              <div className="po-material-list">
+                <div className="po-material-title">
+                  Select Materials
+                </div>
+
+                {materials.map((material) => {
+                  const isSelected = selected.some(
+                    (m) =>
+                      String(m.material_id) ===
+                      String(material.material_id)
+                  );
+
+                  const selectedMaterial = selected.find(
+                    (m) =>
+                      String(m.material_id) ===
+                      String(material.material_id)
+                  );
+
+                  return (
+                    <div
+                      key={material.material_id}
+                      className={`po-material-row ${
+                        isSelected ? "selected" : ""
+                      }`}
+                    >
+                      <label className="material-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() =>
+                            handleToggleMaterial(
+                              po.id,
+                              material
+                            )
+                          }
+                        />
+
+                        <span>
+                          <strong>
+                            {material.material?.name ||
+                              "Unknown Material"}
+                          </strong>
+
+                          {material.variety?.variety_name && (
+                            <span className="material-variety">
+                              {" "}
+                              ({material.variety.variety_name})
+                            </span>
+                          )}
+
+                          <small>
+                            Ordered: {material.qty} @ ₹
+                            {material.rate}
+                          </small>
+                        </span>
+                      </label>
+
+                      {isSelected && (
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="material-qty-input"
+                          placeholder="Qty (Tons)"
+                          value={
+                            selectedMaterial?.qty || ""
+                          }
+                          onChange={(e) =>
+                            handleMaterialQtyChange(
+                              po.id,
+                              material.material_id,
+                              e.target.value
+                            )
+                          }
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div className="sf-field">
-              <label>Expected Qty</label>
-              <input
-                name="expected_qty"
-                type="number"
-                value={form.expected_qty}
-                onChange={handleChange}
-                required
-              />
-              <p className="field-hint">How much grain the vendor says is on the truck (kg).</p>
-            </div>
-          </>
-        )}
+          );
+        })}
+      </div>
+    )}
+
+    <div className="sf-field">
+      <label>Challan No.</label>
+
+      <input
+        name="challan_no"
+        value={form.challan_no}
+        onChange={handleChange}
+        required
+      />
+
+      <p className="field-hint">
+        The delivery-note number the driver brought with them.
+      </p>
+    </div>
+
+    <div className="sf-field">
+      <label>Expected Qty (Tons)</label>
+
+      <input
+        name="expected_qty"
+        type="number"
+        value={form.expected_qty}
+        onChange={handleChange}
+        required
+      />
+
+      <p className="field-hint">
+        Total quantity expected on this truck.
+      </p>
+    </div>
+  </>
+)}
         {isSales && (
           <>
             <div>
@@ -476,10 +707,6 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
                 label="Sales Order"
                 value={soGroup ? soGroup.id : ""}
                 onChange={handleSoChange}
-                filter={(row) =>
-                  Array.isArray(row.items) &&
-                  row.items.some((i) => !["dispatched", "closed", "cancelled"].includes(i.so_status))
-                }
                 required
               />
               <p className="field-hint">
@@ -500,7 +727,7 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
               <p className="field-hint">Optional — the delivery-note number for this dispatch, if any.</p>
             </div>
             <div className="sf-field">
-              <label>Planned Loading Qty (optional)</label>
+              <label>Planned Loading Qty (Tons) (optional)</label>
               <input
                 name="expected_qty"
                 type="number"

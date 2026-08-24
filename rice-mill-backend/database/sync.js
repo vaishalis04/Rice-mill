@@ -6,7 +6,7 @@ const { sequelize } = require("../models/index");
 
 (async () => {
   try {
-    await sequelize.sync({ alter: true });
+    await sequelize.sync({ force: true });
     console.log("✅ Database synced");
     process.exit(0);
   } catch (err) {

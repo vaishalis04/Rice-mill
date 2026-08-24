@@ -80,7 +80,7 @@ module.exports = {
           { key: "vendor_name", label: "Vendor" },
           { key: "material_name", label: "Material" },
           { key: "gate_status", label: "Status" },
-          { key: "expected_qty", label: "Expected Qty" },
+          { key: "expected_qty", label: "Expected Qty (Tons)" },
           { key: "entry_time", label: "Entry Time" },
           { key: "exit_time", label: "Exit Time" },
         ]);
@@ -153,8 +153,8 @@ module.exports = {
           { key: "production_date", label: "Production Date" },
           { key: "batch_status", label: "Status" },
           { key: "current_stage", label: "Current Stage" },
-          { key: "input_qty", label: "Input Qty" },
-          { key: "output_qty", label: "Output Qty" },
+          { key: "input_qty", label: "Input Qty (Tons)" },
+          { key: "output_qty", label: "Output Qty (Tons)" },
           { key: "recovery_pct", label: "Recovery %" },
         ]);
         return sendCsv(res, "production-summary.csv", csv);
@@ -284,7 +284,7 @@ module.exports = {
         const csv = toCsv(flatRows, [
           { key: "section", label: "Section" },
           { key: "material", label: "Material / Category" },
-          { key: "qty", label: "Qty" },
+          { key: "qty", label: "Qty (Tons)" },
         ]);
         return sendCsv(res, `material-flow-${range.label}.csv`, csv);
       }

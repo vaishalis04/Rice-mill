@@ -280,7 +280,7 @@ export default function LoadingPage() {
           </div>
         )}
         <div className="sf-field">
-          <label>Loaded Qty</label>
+          <label>Loaded Qty (Tons)</label>
           <input
             name="loaded_qty"
             type="number"
@@ -368,7 +368,7 @@ export default function LoadingPage() {
             label: "Sales Order",
             render: (row) => salesOrders.getLabel(row.so_id),
           },
-          { key: "loaded_qty", label: "Loaded Qty" },
+          { key: "loaded_qty", label: "Loaded Qty (Tons)" },
           {
             key: "lab_comment",
             label: "Lab Comment",
