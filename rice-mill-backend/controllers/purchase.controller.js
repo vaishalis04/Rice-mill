@@ -237,6 +237,7 @@ module.exports = {
             uploaded_by_vendor: uploaded_by_vendor ?? false,
             plant_id: resolvedPlantId,
             created_by: req.user ? req.user.id : null,
+            approval_status: "pending_approval",
           },
           { transaction: t }
         );
@@ -279,6 +280,161 @@ module.exports = {
     }
   },
 
+  getPendingApprovals: async (req, res, next) => {
+  try {
+    const purchaseOrders = await PurchaseOrder.findAll({
+      where: {
+        approval_status: "pending_approval",
+      },
+      include: poIncludes,
+      order: [["created_at", "DESC"]],
+    });
+
+    res.status(200).json({
+      success: true,
+      data: purchaseOrders,
+    });
+  } catch (err) {
+    next(err);
+  }
+  },
+
+  updateBeforeApproval: async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const {
+      vendor_id,
+      po_date,
+      validity,
+      do_no,
+      plant_id,
+      items,
+    } = req.body;
+
+    const po = await PurchaseOrder.findOne({
+      where: {
+        id,
+        approval_status: "pending_approval",
+      },
+    });
+
+    if (!po) {
+      throw createError(
+        404,
+        "Purchase order not found or already processed"
+      );
+    }
+
+    // Update common PO fields
+    if (vendor_id !== undefined) po.vendor_id = vendor_id;
+    if (po_date !== undefined) po.po_date = po_date;
+    if (validity !== undefined) po.validity = validity;
+    if (do_no !== undefined) po.do_no = do_no;
+    if (plant_id !== undefined) po.plant_id = plant_id;
+
+    po.updated_by = req.user.id;
+
+    await po.save();
+
+    res.status(200).json({
+      success: true,
+      msg: "Purchase order updated successfully",
+      data: po,
+    });
+  } catch (err) {
+    next(err);
+  }
+  },
+
+  approve: async (req, res, next) => {
+  try {
+    const { po_no } = req.params;
+
+    const purchaseOrders = await PurchaseOrder.findAll({
+      where: {
+        po_no,
+        approval_status: "pending_approval",
+      },
+    });
+
+    if (!purchaseOrders.length) {
+      throw createError(
+        404,
+        "Pending purchase order not found"
+      );
+    }
+
+    await PurchaseOrder.update(
+      {
+        approval_status: "approved",
+        approved_by: req.user.id,
+        approved_at: new Date(),
+      },
+      {
+        where: {
+          po_no,
+          approval_status: "pending_approval",
+        },
+      }
+    );
+
+    const updated = await PurchaseOrder.findAll({
+      where: { po_no },
+      include: poIncludes,
+    });
+
+    res.status(200).json({
+      success: true,
+      msg: `PO ${po_no} approved successfully`,
+      data: updated,
+    });
+  } catch (err) {
+    next(err);
+  }
+  },
+
+  reject: async (req, res, next) => {
+  try {
+    const { po_no } = req.params;
+    const { rejection_reason } = req.body;
+
+    if (!rejection_reason) {
+      throw createError(
+        400,
+        "rejection_reason is required"
+      );
+    }
+
+    const [updated] = await PurchaseOrder.update(
+      {
+        approval_status: "rejected",
+        rejection_reason,
+        updated_by: req.user.id,
+      },
+      {
+        where: {
+          po_no,
+          approval_status: "pending_approval",
+        },
+      }
+    );
+
+    if (!updated) {
+      throw createError(
+        404,
+        "Pending purchase order not found"
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      msg: `PO ${po_no} rejected successfully`,
+    });
+  } catch (err) {
+    next(err);
+  }
+  },
   // POST /api/purchase/po/:po_no/items  { material_id, variety_id?, qty, rate }
   // Adds one more material line to an EXISTING PO — this is what "Edit PO"
   // uses to let you keep adding materials to the same po_no rather than
