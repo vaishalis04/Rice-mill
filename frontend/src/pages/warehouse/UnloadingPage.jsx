@@ -5,43 +5,38 @@ import {
   completeUnloadingApi,
   routeLotApi,
   getWeightSlipsApi,
+  getGateEntryApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
-// Unloading is now a two-step physical/system workflow:
-//   1. Start Unloading — truck is opened up at the factory bay. A manual check
-//      happens on the ground (this is not a data-entry step); the system just
-//      opens a Lot shell and marks the gate entry "unloading".
-//   2. Complete Unloading — once the manual check is done, bag size + accepted/
-//      rejected bag counts are entered. Quantities are auto-calculated from
-//      those bags. Only the accepted qty opens a Stack + Inventory row and can
-//      then be routed to Warehouse or Production, same as before.
 const startForm0 = {
   gate_entry_id: "",
   warehouse_id: "",
   bin_id: "",
-  material_id: "",
-  variety_id: "",
 };
 
-const bagForm0 = { bag_size: "", accepted_bags: "", rejected_bags: "0" };
-
 export default function UnloadingPage() {
-  const [inProgressLots, setInProgressLots] = useState([]); // started, bags not counted yet
-  const [pendingRouteLots, setPendingRouteLots] = useState([]); // completed, not yet routed
+  const [inProgressLots, setInProgressLots] = useState([]);
+  const [pendingRouteLots, setPendingRouteLots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [weighbridgeGateEntryIds, setWeighbridgeGateEntryIds] = useState(new Set());
   const [startFormState, setStartFormState] = useState(startForm0);
-  const [showOptional, setShowOptional] = useState(false);
-  const [bagEntryLotId, setBagEntryLotId] = useState(null);
-  const [bagForm, setBagForm] = useState(bagForm0);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  
+  // New state for multiple materials unloading
+  const [unloadingItems, setUnloadingItems] = useState([]);
+  const [isUnloadingFormOpen, setIsUnloadingFormOpen] = useState(false);
+  const [currentGateEntryId, setCurrentGateEntryId] = useState(null);
+  const [availableMaterials, setAvailableMaterials] = useState([]);
 
   const gateEntries = useEntityLookup("gate_entry");
+  const materials = useEntityLookup("material");
+  const warehouses = useEntityLookup("warehouse");
+  const bins = useEntityLookup("bin");
 
   const load = () => {
     setLoading(true);
@@ -62,65 +57,128 @@ export default function UnloadingPage() {
 
   useEffect(load, []);
 
-  const handleStartSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setInfo("");
-    try {
-      const payload = {
-        gate_entry_id: Number(startFormState.gate_entry_id),
-        warehouse_id: Number(startFormState.warehouse_id),
-      };
-      if (startFormState.bin_id) payload.bin_id = Number(startFormState.bin_id);
-      if (startFormState.material_id !== "") payload.material_id = Number(startFormState.material_id);
-      if (startFormState.variety_id !== "") payload.variety_id = Number(startFormState.variety_id);
+ const handleStartSubmit = async (e) => {
+  e.preventDefault();
+  setError("");
+  setInfo("");
+  try {
+    const payload = {
+      gate_entry_id: Number(startFormState.gate_entry_id),
+      warehouse_id: Number(startFormState.warehouse_id),
+    };
+    if (startFormState.bin_id) payload.bin_id = Number(startFormState.bin_id);
 
-      const res = await startUnloadingApi(payload);
-      const lotNo = res.data.lot?.lot_no ?? res.data.data?.lot?.lot_no;
-      setInfo(
-        `Unloading started — Lot ${lotNo ? `${lotNo} ` : ""}opened. Do the manual check at the factory, then enter bag counts below to complete it.`
-      );
-      setStartFormState(startForm0);
-      setShowOptional(false);
-      gateEntries.refetch();
-      load();
-    } catch (err) {
-      setError(
-        err.response?.data?.message ||
-          "Could not start unloading — gate entry may not be weighed (in_process) yet."
-      );
+    console.log('Starting unloading with payload:', payload);
+
+    const res = await startUnloadingApi(payload);
+    console.log('Start unloading response:', res.data);
+    
+    // Handle response based on your API structure
+    let lots = [];
+    if (res.data.data && res.data.data.lots) {
+      lots = res.data.data.lots;
+    } else if (res.data.lots) {
+      lots = res.data.lots;
     }
+    
+    if (!lots || lots.length === 0) {
+      setError("No lots were created. Please check if the gate entry has materials.");
+      return;
+    }
+
+    // Prepare unloading items
+    const materials = res.data.data?.materials || [];
+    const unloadingItemsList = lots.map((lot, index) => {
+      const material = materials[index] || { id: lot.material_id, name: `Material ${lot.material_id}` };
+      return {
+        lot_id: lot.id,
+        lot_no: lot.lot_no,
+        material_id: material.id || lot.material_id,
+        material_name: material.name || 'Unknown Material',
+        bag_size: "",
+        accepted_bags: "",
+        rejected_bags: "0",
+        accepted_qty: 0,
+        rejected_qty: 0,
+      };
+    });
+
+    setUnloadingItems(unloadingItemsList);
+    setCurrentGateEntryId(startFormState.gate_entry_id);
+    setIsUnloadingFormOpen(true);
+    
+    setInfo(
+      `Unloading started — ${lots.length} lot(s) opened. Enter bag counts for each material below.`
+    );
+    setStartFormState(startForm0);
+    gateEntries.refetch();
+    load();
+  } catch (err) {
+    console.error('Start unloading error:', err);
+    console.error('Error response:', err.response);
+    
+    let errorMsg = "Could not start unloading — ";
+    if (err.response?.data?.msg) {
+      errorMsg += err.response.data.msg;
+    } else if (err.response?.data?.message) {
+      errorMsg += err.response.data.message;
+    } else {
+      errorMsg += "Please ensure the gate entry has been weighed and has materials assigned.";
+    }
+    setError(errorMsg);
+  }
+};
+
+  const handleUnloadingItemChange = (index, field, value) => {
+    const updatedItems = [...unloadingItems];
+    updatedItems[index][field] = value;
+    
+    // Calculate quantities
+    if (field === 'bag_size' || field === 'accepted_bags' || field === 'rejected_bags') {
+      const bagSize = Number(updatedItems[index].bag_size) || 0;
+      const acceptedBags = Number(updatedItems[index].accepted_bags) || 0;
+      const rejectedBags = Number(updatedItems[index].rejected_bags) || 0;
+      updatedItems[index].accepted_qty = Math.round(bagSize * acceptedBags * 100) / 100;
+      updatedItems[index].rejected_qty = Math.round(bagSize * rejectedBags * 100) / 100;
+    }
+    
+    setUnloadingItems(updatedItems);
   };
 
-  const openBagEntry = (lotId) => {
+  const handleCompleteUnloading = async () => {
     setError("");
     setInfo("");
-    setBagForm(bagForm0);
-    setBagEntryLotId(lotId);
-  };
+    
+    // Validate all items
+    for (const item of unloadingItems) {
+      if (!item.bag_size || Number(item.bag_size) <= 0) {
+        setError(`Please enter bag size for ${item.material_name}`);
+        return;
+      }
+      if (item.accepted_bags === "" || Number(item.accepted_bags) < 0) {
+        setError(`Please enter accepted bags for ${item.material_name}`);
+        return;
+      }
+      if (Number(item.accepted_bags) + Number(item.rejected_bags || 0) <= 0) {
+        setError(`At least one bag (accepted or rejected) required for ${item.material_name}`);
+        return;
+      }
+    }
 
-  const handleBagChange = (e) => setBagForm({ ...bagForm, [e.target.name]: e.target.value });
-
-  const bagSizeNum = Number(bagForm.bag_size) || 0;
-  const acceptedBagsNum = Number(bagForm.accepted_bags) || 0;
-  const rejectedBagsNum = Number(bagForm.rejected_bags) || 0;
-  const acceptedQtyPreview = Math.round(bagSizeNum * acceptedBagsNum * 100) / 100;
-  const rejectedQtyPreview = Math.round(bagSizeNum * rejectedBagsNum * 100) / 100;
-
-  const handleBagSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setInfo("");
     try {
       const payload = {
-        bag_size: Number(bagForm.bag_size),
-        accepted_bags: Number(bagForm.accepted_bags),
-        rejected_bags: Number(bagForm.rejected_bags || 0),
+        items: unloadingItems.map(item => ({
+          lot_id: item.lot_id,
+          bag_size: Number(item.bag_size),
+          accepted_bags: Number(item.accepted_bags),
+          rejected_bags: Number(item.rejected_bags || 0)
+        }))
       };
-      const res = await completeUnloadingApi(bagEntryLotId, payload);
-      setInfo(res.data.msg || "Unloading completed.");
-      setBagEntryLotId(null);
-      setBagForm(bagForm0);
+
+      const res = await completeUnloadingApi(payload);
+      setInfo(res.data.msg || "All materials unloaded successfully.");
+      setIsUnloadingFormOpen(false);
+      setUnloadingItems([]);
       gateEntries.refetch();
       load();
     } catch (err) {
@@ -140,6 +198,111 @@ export default function UnloadingPage() {
     }
   };
 
+  // Render multiple materials unloading form
+  const renderUnloadingForm = () => {
+    if (!isUnloadingFormOpen) return null;
+
+    return (
+      <div style={{ 
+        background: '#f8fafc', 
+        padding: '20px', 
+        borderRadius: '8px', 
+        marginTop: '20px',
+        border: '2px solid #3b82f6'
+      }}>
+        <h3 style={{ marginTop: 0 }}>Complete Unloading - Enter Bag Counts for Each Material</h3>
+        
+        {unloadingItems.map((item, index) => (
+          <div key={item.lot_id} style={{ 
+            border: '1px solid #e2e8f0', 
+            padding: '15px', 
+            borderRadius: '6px', 
+            marginBottom: '15px',
+            background: 'white'
+          }}>
+            <h4 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>
+              {item.material_name} (Lot: {item.lot_no})
+            </h4>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+              <div className="sf-field" style={{ marginBottom: 0 }}>
+                <label>Bag Size (kg)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={item.bag_size}
+                  onChange={(e) => handleUnloadingItemChange(index, 'bag_size', e.target.value)}
+                  required
+                />
+              </div>
+              
+              <div className="sf-field" style={{ marginBottom: 0 }}>
+                <label>Accepted Bags</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={item.accepted_bags}
+                  onChange={(e) => handleUnloadingItemChange(index, 'accepted_bags', e.target.value)}
+                  required
+                />
+              </div>
+              
+              <div className="sf-field" style={{ marginBottom: 0 }}>
+                <label>Rejected Bags</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={item.rejected_bags}
+                  onChange={(e) => handleUnloadingItemChange(index, 'rejected_bags', e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div style={{ 
+              marginTop: '10px', 
+              padding: '8px 12px', 
+              background: '#f1f5f9', 
+              borderRadius: '4px',
+              display: 'flex',
+              gap: '20px',
+              flexWrap: 'wrap'
+            }}>
+              <span>
+                <strong>Accepted Qty:</strong> {item.accepted_qty || 0} kg 
+                ({Math.round((item.accepted_qty || 0) / 1000 * 100) / 100} tons)
+              </span>
+              <span>
+                <strong>Rejected Qty:</strong> {item.rejected_qty || 0} kg
+                ({Math.round((item.rejected_qty || 0) / 1000 * 100) / 100} tons)
+              </span>
+              <span>
+                <strong>Total:</strong> {Math.round(((item.accepted_qty || 0) + (item.rejected_qty || 0)) * 100) / 100} kg
+              </span>
+            </div>
+          </div>
+        ))}
+
+        <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+          <button className="sf-submit" onClick={handleCompleteUnloading}>
+            Complete All Unloading
+          </button>
+          <button 
+            type="button" 
+            className="sf-cancel" 
+            onClick={() => {
+              setIsUnloadingFormOpen(false);
+              setUnloadingItems([]);
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>Unloading</h2>
@@ -150,79 +313,59 @@ export default function UnloadingPage() {
         </div>
       )}
 
-      <h3 style={{ marginTop: 0 }}>Start Unloading</h3>
-      <form className="sf-form" onSubmit={handleStartSubmit}>
-        <EntitySelect
-          entity="gate_entry"
-          label="Gate Entry"
-          value={startFormState.gate_entry_id}
-          onChange={(id) => setStartFormState({ ...startFormState, gate_entry_id: id })}
-          filter={(row) =>
-            row.gate_status === "in_process" && weighbridgeGateEntryIds.has(Number(row.id))
-          }
-          required
-        />
-        <EntitySelect
-          entity="warehouse"
-          label="Warehouse"
-          value={startFormState.warehouse_id}
-          onChange={(id) => setStartFormState({ ...startFormState, warehouse_id: id })}
-          required
-          creatable
-        />
-        <EntitySelect
-          entity="bin"
-          label="Bin"
-          value={startFormState.bin_id}
-          onChange={(id) => setStartFormState({ ...startFormState, bin_id: id })}
-          creatable
-          context={{ warehouse_id: startFormState.warehouse_id }}
-        />
-
-        <button
-          type="button"
-          className="sf-cancel"
-          style={{ marginBottom: 10 }}
-          onClick={() => setShowOptional((v) => !v)}
-        >
-          {showOptional ? "Hide" : "Show"} optional overrides
-        </button>
-
-        {showOptional && (
-          <>
+      {!isUnloadingFormOpen && (
+        <>
+          <h3 style={{ marginTop: 0 }}>Start Unloading</h3>
+          <form className="sf-form" onSubmit={handleStartSubmit}>
             <EntitySelect
-              entity="material"
-              label="Material (defaults from gate entry / PO)"
-              value={startFormState.material_id}
-              onChange={(id) => setStartFormState({ ...startFormState, material_id: id })}
+              entity="gate_entry"
+              label="Gate Entry"
+              value={startFormState.gate_entry_id}
+              onChange={(id) => setStartFormState({ ...startFormState, gate_entry_id: id })}
+              filter={(row) =>
+                row.gate_status === "in_process" && weighbridgeGateEntryIds.has(Number(row.id))
+              }
+              required
             />
             <EntitySelect
-              entity="variety"
-              label="Variety (add new if found)"
-              value={startFormState.variety_id}
-              onChange={(id) => setStartFormState({ ...startFormState, variety_id: id })}
+              entity="warehouse"
+              label="Warehouse"
+              value={startFormState.warehouse_id}
+              onChange={(id) => setStartFormState({ ...startFormState, warehouse_id: id })}
+              required
               creatable
             />
-          </>
-        )}
+            <EntitySelect
+              entity="bin"
+              label="Bin"
+              value={startFormState.bin_id}
+              onChange={(id) => setStartFormState({ ...startFormState, bin_id: id })}
+              creatable
+              context={{ warehouse_id: startFormState.warehouse_id }}
+            />
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="sf-submit" type="submit">
-            Start Unloading
-          </button>
-        </div>
-      </form>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="sf-submit" type="submit">
+                Start Unloading
+              </button>
+            </div>
+          </form>
+        </>
+      )}
+
+      {renderUnloadingForm()}
 
       <h3 style={{ marginTop: 24 }}>Awaiting Manual Check &amp; Bag Count</h3>
       <p className="field-hint" style={{ marginTop: -6 }}>
         Truck is open at the factory for a manual check. Once done, enter the bag size and
-        accepted/rejected bag counts to finish unloading — quantities are calculated automatically.
+        accepted/rejected bag counts for each material to finish unloading.
       </p>
       <DataTable
         loading={loading}
         rows={inProgressLots}
         columns={[
           { key: "lot_no", label: "Lot No." },
+          { key: "material", label: "Material", render: (row) => row.material?.name || "—" },
           {
             key: "gate_entry_id",
             label: "Gate Entry",
@@ -240,92 +383,25 @@ export default function UnloadingPage() {
                 : "—",
           },
           { key: "bin_id", label: "Bin", render: (row) => row.targetBin?.bin_code || "—" },
-          { key: "material", label: "Material", render: (row) => row.material?.name || "—" },
           {
             key: "lab_comment",
             label: "Lab Comment",
             render: (row) => row.purchase?.gateEntry?.samplings?.find((s) => s.labTest?.comment)?.labTest?.comment || "—",
           },
-          {
-            key: "bag_actions",
-            label: "Bag Count",
-            render: (row) => (
-              <button className="dt-btn" onClick={() => openBagEntry(row.id)}>
-                Enter Bag Count
-              </button>
-            ),
-          },
         ]}
       />
-
-      {bagEntryLotId && (
-        <form className="sf-form" onSubmit={handleBagSubmit} style={{ marginTop: 16 }}>
-          <h4 style={{ marginTop: 0 }}>
-            Complete Unloading — Lot {inProgressLots.find((l) => l.id === bagEntryLotId)?.lot_no}
-          </h4>
-          <div className="sf-field">
-            <label>Bag Size (kg per bag)</label>
-            <input
-              name="bag_size"
-              type="number"
-              step="0.01"
-              value={bagForm.bag_size}
-              onChange={handleBagChange}
-              required
-            />
-          </div>
-          <div className="sf-field">
-            <label>Accepted Bags</label>
-            <input
-              name="accepted_bags"
-              type="number"
-              step="1"
-              min="0"
-              value={bagForm.accepted_bags}
-              onChange={handleBagChange}
-              required
-            />
-          </div>
-          <div className="sf-field">
-            <label>Rejected Bags</label>
-            <input
-              name="rejected_bags"
-              type="number"
-              step="1"
-              min="0"
-              value={bagForm.rejected_bags}
-              onChange={handleBagChange}
-            />
-          </div>
-
-          <p className="field-hint">
-            Accepted Qty (Tons): <strong>{acceptedQtyPreview}</strong> &nbsp;|&nbsp; Rejected Qty (Tons):{" "}
-            <strong>{rejectedQtyPreview}</strong> &nbsp;|&nbsp; Total Qty (Tons):{" "}
-            <strong>{Math.round((acceptedQtyPreview + rejectedQtyPreview) * 100) / 100}</strong>
-          </p>
-
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="sf-submit" type="submit">
-              Complete Unloading
-            </button>
-            <button type="button" className="sf-cancel" onClick={() => setBagEntryLotId(null)}>
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
 
       <h3 style={{ marginTop: 24 }}>Pending Routing</h3>
       <p className="field-hint" style={{ marginTop: -6 }}>
         Unloading completed — accepted bags are counted and in stock. Route them to Warehouse
-        (stays as raw stock) or Production (goes straight into a batch). For the full list of all
-        lots, see the Lots tab.
+        (stays as raw stock) or Production (goes straight into a batch).
       </p>
       <DataTable
         loading={loading}
         rows={pendingRouteLots}
         columns={[
           { key: "lot_no", label: "Lot No." },
+          { key: "material", label: "Material", render: (row) => row.material?.name || "—" },
           {
             key: "warehouse_id",
             label: "Warehouse",
@@ -339,11 +415,6 @@ export default function UnloadingPage() {
           { key: "rejected_bags", label: "Rejected Bags" },
           { key: "qty", label: "Accepted Qty (Tons)" },
           { key: "rejected_qty", label: "Rejected Qty (Tons)" },
-          {
-            key: "lab_comment",
-            label: "Lab Comment",
-            render: (row) => row.purchase?.gateEntry?.samplings?.find((s) => s.labTest?.comment)?.labTest?.comment || "—",
-          },
           {
             key: "route_actions",
             label: "Route",
@@ -364,12 +435,13 @@ export default function UnloadingPage() {
       <ModuleGuide
         title="Unloading"
         steps={[
-          "Only gate entries at 'in_process' (already weighed) show up in Start Unloading — pick one, then choose which Warehouse and Bin the truck is unloading into.",
-          "Starting unloading opens a Lot and marks the gate entry 'unloading' — no stock exists yet. This is the point where a manual check happens at the factory.",
-          "Once the manual check is done, enter Bag Size, Accepted Bags and Rejected Bags for that lot. Accepted/Rejected/Total quantities are calculated automatically.",
-          "Completing unloading opens the Stack and Inventory row using the ACCEPTED quantity only, and moves the gate entry to 'unloaded'. Rejected quantity is recorded on the lot but never enters stock.",
-          "The accepted stock then appears in 'Pending Routing' until you route it to Warehouse (stays as raw stock) or Production (goes straight into a batch).",
-          "Once routed, a lot moves off this page and into the full Lots list for ongoing management.",
+          "Only gate entries at 'in_process' (already weighed) show up in Start Unloading.",
+          "When you start unloading, the system automatically detects all materials from the gate entry.",
+          "For each material, you'll enter the bag size and count of accepted/rejected bags.",
+          "Quantities are calculated automatically based on bag size × number of bags.",
+          "Rejected bags are recorded but never enter stock.",
+          "Once all materials are completed, the gate entry moves to 'unloaded'.",
+          "Route accepted stock to Warehouse or Production as needed."
         ]}
       />
     </div>

@@ -618,8 +618,6 @@ export const rejectSalesOrderApi = (so_no, data) =>
     data
   );
 
-// Removing an individual material line from a SO does NOT need a new
-// endpoint: each material line is its own row (id) in the sales_orders
-// table (several rows can share one so_no), so the existing
-// deleteSalesOrderApi(id) — DELETE /sales-orders/:id, soft delete — already
-// covers it. See SalesOrderApprovalPage.jsx's handleRemoveRow.
+export const getGateEntryApi = (id) => {
+  return api.get(`/gate-entries/${id}`);
+};
