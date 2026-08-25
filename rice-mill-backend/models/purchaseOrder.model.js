@@ -25,26 +25,21 @@ PurchaseOrder.init(
       },
     },
 
-    // Comma-separated values
-    // Example: "2,3,4"
     material_id: {
       type: DataTypes.STRING(255),
       allowNull: true,
     },
 
-    // Example: "5,7,9"
     variety_id: {
       type: DataTypes.STRING(255),
       allowNull: true,
     },
 
-    // Example: "100,200,300"
     qty: {
       type: DataTypes.STRING(255),
       allowNull: true,
     },
 
-    // Example: "50.00,60.00,70.00"
     rate: {
       type: DataTypes.STRING(255),
       allowNull: true,
@@ -87,11 +82,7 @@ PurchaseOrder.init(
     },
 
     approval_status: {
-      type: DataTypes.ENUM(
-        "pending_approval",
-        "approved",
-        "rejected"
-      ),
+      type: DataTypes.ENUM("pending_approval", "approved", "rejected"),
       allowNull: false,
       defaultValue: "pending_approval",
     },
@@ -144,7 +135,7 @@ PurchaseOrder.init(
     timestamps: true,
     underscored: true,
     paranoid: false,
-  }
+  },
 );
 
 module.exports = PurchaseOrder;

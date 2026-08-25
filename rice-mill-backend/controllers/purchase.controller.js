@@ -208,10 +208,6 @@ module.exports = {
     }
   },
 
-  // POST /api/purchases/bulk
-  // { vendor_id, po_date, validity?, do_no?, plant_id?, items: [{ material_id, variety_id?, qty, rate }, ...] }
-  // Creates one PO number shared across every line item — this is how a
-  // vendor can supply multiple materials/varieties under a single PO.
 bulkCreate: async (req, res, next) => {
   const t = await sequelize.transaction();
 
@@ -225,10 +221,6 @@ bulkCreate: async (req, res, next) => {
       plant_id,
       items,
     } = req.body;
-
-    // ============================================================
-    // 1. BASIC VALIDATION
-    // ============================================================
 
     if (!vendor_id) {
       throw createError(400, "vendor_id is required");
@@ -245,26 +237,9 @@ bulkCreate: async (req, res, next) => {
       );
     }
 
-    // ============================================================
-    // 2. NORMALIZE VENDOR ID
-    // ============================================================
-
-    const vendorId = Number(vendor_id);
-
-    if (!Number.isInteger(vendorId) || vendorId <= 0) {
-      throw createError(
-        400,
-        "vendor_id must be a valid number"
-      );
-    }
-
-    // ============================================================
-    // 3. VALIDATE VENDOR
-    // ============================================================
-
     const vendor = await Vendor.findOne({
       where: {
-        id: vendorId,
+        id: vendor_id,
         is_deleted: false,
       },
       transaction: t,
@@ -273,43 +248,14 @@ bulkCreate: async (req, res, next) => {
     if (!vendor) {
       throw createError(
         400,
-        `Invalid vendor_id: ${vendorId}`
+        `Invalid vendor_id: ${vendor_id}`
       );
     }
 
-    // ============================================================
-    // 4. DUPLICATE MATERIAL + VARIETY CHECK
-    //
-    // Same material with different varieties = allowed
-    //
-    // material 3 + variety 1  ✅
-    // material 3 + variety 2  ✅
-    // material 3 + variety 1  ❌
-    //
-    // Same material without variety twice = ❌
-    // ============================================================
-
     const seen = new Set();
-
-    // ============================================================
-    // 5. VALIDATE EACH ITEM
-    // ============================================================
-
-    const normalizedItems = [];
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-
-      if (!item || typeof item !== "object") {
-        throw createError(
-          400,
-          `Item ${i + 1} must be an object`
-        );
-      }
-
-      // ----------------------------------------------------------
-      // Material ID
-      // ----------------------------------------------------------
 
       const materialId = Number(item.material_id);
 
@@ -322,10 +268,6 @@ bulkCreate: async (req, res, next) => {
           `Item ${i + 1}: valid material_id is required`
         );
       }
-
-      // ----------------------------------------------------------
-      // Quantity
-      // ----------------------------------------------------------
 
       if (
         item.qty === undefined ||
@@ -347,10 +289,6 @@ bulkCreate: async (req, res, next) => {
         );
       }
 
-      // ----------------------------------------------------------
-      // Rate
-      // ----------------------------------------------------------
-
       if (
         item.rate === undefined ||
         item.rate === null ||
@@ -370,10 +308,6 @@ bulkCreate: async (req, res, next) => {
           `Item ${i + 1}: rate must be a valid number`
         );
       }
-
-      // ----------------------------------------------------------
-      // Variety ID
-      // ----------------------------------------------------------
 
       let varietyId = null;
 
@@ -395,10 +329,6 @@ bulkCreate: async (req, res, next) => {
         }
       }
 
-      // ==========================================================
-      // 6. VALIDATE MATERIAL EXISTS
-      // ==========================================================
-
       const material = await MaterialMaster.findOne({
         where: {
           id: materialId,
@@ -413,10 +343,6 @@ bulkCreate: async (req, res, next) => {
           `Item ${i + 1}: Invalid material_id: ${materialId}`
         );
       }
-
-      // ==========================================================
-      // 7. VALIDATE VARIETY EXISTS
-      // ==========================================================
 
       if (varietyId !== null) {
         const variety = await VarietyMaster.findOne({
@@ -434,10 +360,6 @@ bulkCreate: async (req, res, next) => {
           );
         }
 
-        // ========================================================
-        // Verify variety belongs to material
-        // ========================================================
-
         if (
           variety.material_id !== undefined &&
           variety.material_id !== null &&
@@ -449,10 +371,6 @@ bulkCreate: async (req, res, next) => {
           );
         }
       }
-
-      // ==========================================================
-      // 8. DUPLICATE MATERIAL + VARIETY
-      // ==========================================================
 
       const key = `${materialId}-${varietyId ?? "null"}`;
 
@@ -469,167 +387,95 @@ bulkCreate: async (req, res, next) => {
 
       seen.add(key);
 
-      // ==========================================================
-      // 9. NORMALIZE ITEM
-      // ==========================================================
-
-      normalizedItems.push({
-        material_id: materialId,
-        variety_id: varietyId,
-        qty,
-        rate,
-      });
+      item.material_id = materialId;
+      item.variety_id = varietyId;
+      item.qty = qty;
+      item.rate = rate;
     }
-
-    // ============================================================
-    // 10. GENERATE ONE PO NUMBER
-    // ============================================================
 
     const po_no = await generatePoNo();
 
-    // ============================================================
-    // 11. RESOLVE PLANT
-    // ============================================================
-
     const resolvedPlantId =
-      plant_id !== undefined &&
-      plant_id !== null &&
-      plant_id !== ""
-        ? Number(plant_id)
-        : req.user?.plant_id || null;
+      plant_id ||
+      (req.user ? req.user.plant_id : null);
 
-    // ============================================================
-    // 12. CREATE ONE DATABASE ROW PER ITEM
-    //
-    // IMPORTANT:
-    //
-    // We DO NOT do:
-    //
-    // material_id: "2,4"
-    //
-    // Instead:
-    //
-    // Row 1:
-    // material_id: 2
-    //
-    // Row 2:
-    // material_id: 4
-    //
-    // Both rows use the SAME po_no.
-    // ============================================================
+    const materialIds = items
+      .map((item) => item.material_id)
+      .join(",");
 
-    const purchaseOrderRows = normalizedItems.map((item) => ({
-      po_no,
+    const varietyIds = items
+      .map((item) => item.variety_id ?? "")
+      .join(",");
 
-      vendor_id: vendorId,
+    const quantities = items
+      .map((item) => item.qty)
+      .join(",");
 
-      material_id: item.material_id,
+    const rates = items
+      .map((item) => item.rate)
+      .join(",");
 
-      variety_id: item.variety_id,
+    const purchaseOrder = await PurchaseOrder.create(
+      {
+        po_no,
+        vendor_id,
 
-      qty: item.qty,
+        material_id: materialIds,
+        variety_id: varietyIds,
+        qty: quantities,
+        rate: rates,
 
-      rate: item.rate,
+        po_date,
+        validity,
+        do_no,
 
-      po_date,
+        uploaded_by_vendor:
+          uploaded_by_vendor ?? false,
 
-      validity: validity || null,
+        plant_id: resolvedPlantId,
 
-      do_no: do_no || null,
+        created_by:
+          req.user ? req.user.id : null,
 
-      uploaded_by_vendor:
-        uploaded_by_vendor ?? false,
+        approval_status: "pending_approval",
 
-      plant_id: resolvedPlantId,
-
-      created_by:
-        req.user?.id || null,
-
-      approval_status: "pending_approval",
-
-      // Keep the individual item as JSON if required
-      items: [
-        {
+        items: items.map((item) => ({
           material_id: item.material_id,
           variety_id: item.variety_id,
           qty: item.qty,
           rate: item.rate,
-        },
-      ],
-    }));
-
-    // ============================================================
-    // 13. INSERT ALL PO ITEMS
-    // ============================================================
-
-    const createdPurchaseOrders =
-      await PurchaseOrder.bulkCreate(
-        purchaseOrderRows,
-        {
-          transaction: t,
-          validate: true,
-        }
-      );
-
-    // ============================================================
-    // 14. COMMIT
-    // ============================================================
+        })),
+      },
+      {
+        transaction: t,
+      }
+    );
 
     await t.commit();
 
-    // ============================================================
-    // 15. FETCH ALL ROWS BELONGING TO THIS PO
-    // ============================================================
-
-    const fullRows = await PurchaseOrder.findAll({
+    const fullRow = await PurchaseOrder.findOne({
       where: {
-        po_no,
-        is_deleted: false,
+        id: purchaseOrder.id,
       },
       include: poIncludes,
-      order: [["id", "ASC"]],
     });
-
-    // ============================================================
-    // 16. SUCCESS RESPONSE
-    // ============================================================
 
     return res.status(201).json({
       success: true,
-
       msg: `PO ${po_no} created successfully`,
-
-      data: fullRows,
-
-      meta: {
-        po_no,
-        vendor_id: vendorId,
-        item_count: createdPurchaseOrders.length,
-      },
+      data: fullRow,
     });
-
   } catch (err) {
-    // ============================================================
-    // ROLLBACK
-    // ============================================================
-
     if (!t.finished) {
       await t.rollback();
     }
-
-    // ============================================================
-    // SEQUELIZE VALIDATION ERROR
-    // ============================================================
 
     if (
       err.name === "SequelizeValidationError" &&
       Array.isArray(err.errors)
     ) {
       const detail = err.errors
-        .map(
-          (e) =>
-            `${e.path}: ${e.message}`
-        )
+        .map((e) => `${e.path}: ${e.message}`)
         .join("; ");
 
       return next(
@@ -640,19 +486,12 @@ bulkCreate: async (req, res, next) => {
       );
     }
 
-    // ============================================================
-    // SEQUELIZE UNIQUE ERROR
-    // ============================================================
-
     if (
       err.name === "SequelizeUniqueConstraintError" &&
       Array.isArray(err.errors)
     ) {
       const detail = err.errors
-        .map(
-          (e) =>
-            `${e.path}: ${e.message}`
-        )
+        .map((e) => `${e.path}: ${e.message}`)
         .join("; ");
 
       return next(
@@ -662,41 +501,6 @@ bulkCreate: async (req, res, next) => {
         )
       );
     }
-
-    // ============================================================
-    // FOREIGN KEY ERROR
-    // ============================================================
-
-    if (
-      err.name === "SequelizeForeignKeyConstraintError"
-    ) {
-      return next(
-        createError(
-          400,
-          `Foreign key error: ${
-            err.parent?.sqlMessage ||
-            err.message
-          }`
-        )
-      );
-    }
-
-    // ============================================================
-    // DATABASE ERROR
-    // ============================================================
-
-    if (err.parent?.sqlMessage) {
-      return next(
-        createError(
-          400,
-          err.parent.sqlMessage
-        )
-      );
-    }
-
-    // ============================================================
-    // OTHER ERRORS
-    // ============================================================
 
     return next(err);
   }
