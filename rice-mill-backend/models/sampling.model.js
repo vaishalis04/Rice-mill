@@ -7,6 +7,8 @@ Sampling.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
     gate_entry_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "gate_entry", key: "id" } },
+    po_id: { type: DataTypes.JSON, allowNull: true },
+    material_id: { type: DataTypes.JSON, allowNull: false },
     sample_code: { type: DataTypes.STRING(30), allowNull: false, unique: true },
     collected_by: { type: DataTypes.BIGINT, allowNull: false, references: { model: "users", key: "id" } },
     collected_at: { type: DataTypes.DATE },

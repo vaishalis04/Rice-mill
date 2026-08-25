@@ -54,7 +54,6 @@ const AuditLog = require("./auditLog.model");
 const Notification = require("./notification.model");
 const ProcessTimeLog = require("./processTimeLog.model");
 
-
 // -- Associations -------------------------------------------------------------
 // Every belongsTo below has an implicit inverse (hasMany/hasOne) that callers
 // can add as needed, e.g.:
@@ -368,7 +367,16 @@ GateEntryPurchaseOrder.belongsTo(MaterialMaster, {
   foreignKey: "material_id",
   as: "material",
 });
+Sampling.belongsTo(MaterialMaster, {
+  foreignKey: "material_id",
+  as: "material",
+});
+Sampling.belongsTo(PurchaseOrder, { foreignKey: "po_id", as: "purchaseOrder" });
 
+GateEntry.hasMany(GateEntryPurchaseOrder, {
+  foreignKey: "gate_entry_id",
+  as: "purchase_orders",
+});
 
 module.exports = {
   sequelize,

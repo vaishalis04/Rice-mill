@@ -1,22 +1,28 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
-const { GateEntry, Sampling, User, PurchaseOrder, MaterialMaster } = require("../models/index");
+const { GateEntry, Sampling, User, PurchaseOrder, MaterialMaster,GateEntryPurchaseOrder } = require("../models/index");
 const { generateCode } = require("../helpers/helperFunction");
-
-// Sample collection & chain-of-custody (Module 5)
-// A sample can only be drawn once a vehicle has been checked in at the gate
-// (gate_status = 'waiting_sampling'). Creating a sample moves the gate entry
-// forward to 'sampling_done', ready for the lab.
+const sequelize = require("../config/db");
 
 const detailIncludes = [
   {
     model: GateEntry,
     as: "gateEntry",
-    attributes: ["id", "token_no", "gate_status", "vendor_id", "material_id", "po_id"],
-    include: [{ model: MaterialMaster, as: "material", attributes: ["id", "material_code", "name"] }],
+    attributes: ["id", "token_no", "gate_status", "vendor_id"],
+    // no nested material here — gateEntry.material_id is null for multi-material entries
+  },
+  {
+    model: MaterialMaster,
+    as: "material",
+    attributes: ["id", "material_code", "name"],
+  },
+  {
+    model: PurchaseOrder,
+    as: "purchaseOrder",
+    attributes: ["id", "po_no"],
   },
   { model: User, as: "collector", attributes: ["id", "username", "email"] },
-];
+]; 
 
 module.exports = {
   // GET /api/sampling?gate_entry_id=&page=&limit=
@@ -63,55 +69,143 @@ module.exports = {
   },
 
   // POST /api/sampling  { gate_entry_id, sample_code, collected_at?, sent_to_lab_at? }
-  create: async (req, res, next) => {
-    try {
-      const { gate_entry_id, material_id, collected_at, sent_to_lab_at, plant_id } = req.body;
+create: async (req, res, next) => {
+  try {
+    const { gate_entry_id, collected_at, sent_to_lab_at, plant_id } = req.body;
+    let { material_id } = req.body;
+    const { po_id } = req.body; // optional disambiguator, only used for matching below
 
-      if (!gate_entry_id) {
-        throw createError(400, "gate_entry_id is required");
-      }
-
-      const gateEntry = await GateEntry.findOne({ where: { id: gate_entry_id, is_deleted: false } });
-      if (!gateEntry) throw createError(400, "Invalid gate_entry_id");
-      if (gateEntry.gate_status !== "waiting_sampling") {
-        throw createError(400, `Cannot draw a sample for a gate entry with status '${gateEntry.gate_status}'; it must be 'waiting_sampling'`);
-      }
-
-      if (material_id) {
-        const selectedLine = await PurchaseOrder.findOne({ where: { id: material_id, is_deleted: false } });
-        const bookedLine = gateEntry.po_id
-          ? await PurchaseOrder.findOne({ where: { id: gateEntry.po_id, is_deleted: false } })
-          : null;
-        if (!selectedLine || !bookedLine || selectedLine.po_no !== bookedLine.po_no) {
-          throw createError(400, "Selected material is not on this Purchase Order");
-        }
-        await gateEntry.update({
-          po_id: selectedLine.id,
-          material_id: selectedLine.material_id,
-          updated_by: req.user ? req.user.id : null,
-        });
-      }
-
-      const sample_code = await generateCode(Sampling, "sample_code", "SAMP");
-      const sample = await Sampling.create({
-        gate_entry_id,
-        sample_code,
-        collected_by: req.user ? req.user.id : 12,
-        collected_at: collected_at || new Date(),
-        sent_to_lab_at: sent_to_lab_at || null,
-        plant_id: plant_id || gateEntry.plant_id || (req.user ? req.user.plant_id : null),
-        created_by: req.user ? req.user.id : null,
-      });
-
-      // Auto-advance the gate entry now that a sample has been collected.
-      await gateEntry.update({ gate_status: "sampling_done", updated_by: req.user ? req.user.id : null });
-
-      const created = await Sampling.findByPk(sample.id, { include: detailIncludes });
-      res.status(201).json({ success: true, msg: "Sample collected; gate entry moved to sampling_done", data: created });
-    } catch (err) {
-      next(err);
+    if (!gate_entry_id) {
+      throw createError(400, "gate_entry_id is required");
     }
-  },
+    if (material_id === undefined || material_id === null) {
+      throw createError(400, "material_id is required (single id or array of ids)");
+    }
+
+    // normalize to array
+    const requestedMaterialIds = Array.isArray(material_id)
+      ? material_id.map(Number)
+      : [Number(material_id)];
+
+    if (requestedMaterialIds.some((id) => !id || Number.isNaN(id))) {
+      throw createError(400, "material_id must be a valid id or array of valid ids");
+    }
+    // de-dupe ids within the same request
+    const uniqueRequestedIds = [...new Set(requestedMaterialIds)];
+
+    const gateEntry = await GateEntry.findOne({
+      where: { id: gate_entry_id, is_deleted: false },
+      include: [{ association: "purchase_orders" }],
+    });
+    if (!gateEntry) throw createError(400, "Invalid gate_entry_id");
+    if (gateEntry.gate_status !== "waiting_sampling") {
+      throw createError(400, `Cannot draw a sample for a gate entry with status '${gateEntry.gate_status}'; it must be 'waiting_sampling'`);
+    }
+
+    const materialLines = (gateEntry.purchase_orders || []).filter((l) => !l.is_deleted);
+
+    let resolvedMaterialIds = [];
+    let resolvedPoIds = [];
+
+    if (materialLines.length > 0) {
+      // Multi-material gate entry: validate every requested id is actually on this gate entry
+      for (const mId of uniqueRequestedIds) {
+        const matchedLine = materialLines.find(
+          (l) => l.material_id === mId && (!po_id || l.po_id === Number(po_id))
+        );
+        if (!matchedLine) {
+          throw createError(400, `Material_id ${mId} is not on this gate entry`);
+        }
+        resolvedMaterialIds.push(matchedLine.material_id);
+        resolvedPoIds.push(matchedLine.po_id);
+      }
+
+      // Check against every material already sampled (across all prior sample rows for this gate entry)
+      const existingSamples = await Sampling.findAll({
+        where: { gate_entry_id, is_deleted: false },
+        attributes: ["material_id"],
+      });
+      const alreadySampledIds = new Set(
+        existingSamples.flatMap((s) => (Array.isArray(s.material_id) ? s.material_id : [s.material_id]))
+      );
+      const duplicates = resolvedMaterialIds.filter((id) => alreadySampledIds.has(id));
+      if (duplicates.length > 0) {
+        throw createError(400, `Material_id(s) already sampled for this gate entry: ${duplicates.join(", ")}`);
+      }
+    } else {
+      // Fallback: single-material gate entry (no purchase_orders lines)
+      const fallbackId = uniqueRequestedIds[0] || gateEntry.material_id;
+      if (!fallbackId) {
+        throw createError(400, "material_id is required");
+      }
+      resolvedMaterialIds = [fallbackId];
+      resolvedPoIds = [po_id || null];
+    }
+
+    const sample_code = await generateCode(Sampling, "sample_code", "SAMP");
+    const sample = await Sampling.create({
+      gate_entry_id,
+      po_id: resolvedPoIds,
+      material_id: resolvedMaterialIds,
+      sample_code,
+      collected_by: req.user ? req.user.id : 12,
+      collected_at: collected_at || new Date(),
+      sent_to_lab_at: sent_to_lab_at || null,
+      plant_id: plant_id || gateEntry.plant_id || (req.user ? req.user.plant_id : null),
+      created_by: req.user ? req.user.id : null,
+    });
+
+    // Only auto-advance once every distinct material on the gate entry has been sampled
+    let gateStatusUpdated = false;
+    let remainingMaterialIds = [];
+
+    if (materialLines.length > 0) {
+      const requiredMaterialIds = [...new Set(materialLines.map((l) => l.material_id))];
+
+      const sampledRows = await Sampling.findAll({
+        where: { gate_entry_id, is_deleted: false },
+        attributes: ["material_id"],
+      });
+      const sampledMaterialIds = new Set(
+        sampledRows.flatMap((r) => (Array.isArray(r.material_id) ? r.material_id : [r.material_id]))
+      );
+
+      remainingMaterialIds = requiredMaterialIds.filter((id) => !sampledMaterialIds.has(id));
+
+      if (remainingMaterialIds.length === 0) {
+        await gateEntry.update({ gate_status: "sampling_done", updated_by: req.user ? req.user.id : null });
+        gateStatusUpdated = true;
+      }
+    } else {
+      await gateEntry.update({ gate_status: "sampling_done", updated_by: req.user ? req.user.id : null });
+      gateStatusUpdated = true;
+    }
+
+    // material_id/po_id are arrays now, so resolve the actual material/PO records manually
+    const created = await Sampling.findByPk(sample.id, { include: detailIncludes });
+    const createdJSON = created.toJSON();
+
+    const [materials, purchaseOrders] = await Promise.all([
+      MaterialMaster.findAll({ where: { id: resolvedMaterialIds }, attributes: ["id", "material_code", "name"] }),
+      resolvedPoIds.filter(Boolean).length
+        ? PurchaseOrder.findAll({ where: { id: resolvedPoIds.filter(Boolean) }, attributes: ["id", "po_no"] })
+        : [],
+    ]);
+    createdJSON.materials = materials;
+    createdJSON.purchaseOrders = purchaseOrders;
+
+    res.status(201).json({
+      success: true,
+      msg: gateStatusUpdated
+        ? "Sample collected; gate entry moved to sampling_done"
+        : "Sample collected; other materials still pending sampling",
+      data: createdJSON,
+      remaining_materials: remainingMaterialIds,
+    });
+  } catch (err) {
+    next(err);
+  }
+},
 
   // PUT /api/sampling/:id
   update: async (req, res, next) => {
