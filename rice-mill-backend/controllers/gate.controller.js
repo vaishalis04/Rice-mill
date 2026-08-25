@@ -299,58 +299,172 @@ const validateReferences = async ({
 
 module.exports = {
   getAll: async (req, res, next) => {
-    try {
-      const {
-        status,
-        entry_type,
-        vendor_id,
-        vehicle_id,
-        material_id,
-        plant_id,
-        from,
-        to,
-        page = 1,
-        limit = 20,
-      } = req.query;
+  try {
+    const {
+      status,
+      entry_type,
+      vendor_id,
+      vehicle_id,
+      material_id,
+      plant_id,
+      from,
+      to,
+      page = 1,
+      limit = 20,
+    } = req.query;
 
-      const where = { is_deleted: false };
-      if (status) where.gate_status = status;
-      if (entry_type) where.entry_type = entry_type;
-      if (vendor_id) where.vendor_id = vendor_id;
-      if (vehicle_id) where.vehicle_id = vehicle_id;
-      if (material_id) where.material_id = material_id;
-      if (plant_id) where.plant_id = plant_id;
-      if (from || to) {
-        where.entry_time = {};
-        if (from) where.entry_time[Op.gte] = new Date(from);
-        if (to) where.entry_time[Op.lte] = new Date(to);
+    // --------------------------------------------------
+    // WHERE CONDITIONS
+    // --------------------------------------------------
+    const where = {
+      is_deleted: false,
+    };
+
+    if (status) {
+      where.gate_status = status;
+    }
+
+    if (entry_type) {
+      where.entry_type = entry_type;
+    }
+
+    if (vendor_id) {
+      where.vendor_id = vendor_id;
+    }
+
+    if (vehicle_id) {
+      where.vehicle_id = vehicle_id;
+    }
+
+    if (material_id) {
+      where.material_id = material_id;
+    }
+
+    if (plant_id) {
+      where.plant_id = plant_id;
+    }
+
+    // --------------------------------------------------
+    // DATE FILTER
+    // --------------------------------------------------
+    if (from || to) {
+      where.entry_time = {};
+
+      if (from) {
+        const fromDate = new Date(from);
+
+        if (isNaN(fromDate.getTime())) {
+          throw createError(400, "Invalid from date");
+        }
+
+        where.entry_time[Op.gte] = fromDate;
       }
 
-      const offset = (Number(page) - 1) * Number(limit);
+      if (to) {
+        const toDate = new Date(to);
 
-      const { rows, count } = await GateEntry.findAndCountAll({
-        where,
-        include: detailIncludes,
-        order: [["entry_time", "DESC"]],
-        limit: Number(limit),
-        offset,
-        distinct: true,
-      });
+        if (isNaN(toDate.getTime())) {
+          throw createError(400, "Invalid to date");
+        }
 
-      res.status(200).json({
-        success: true,
-        data: rows,
-        pagination: {
-          total: count,
-          page: Number(page),
-          limit: Number(limit),
-          totalPages: Math.ceil(count / limit),
-        },
-      });
-    } catch (err) {
-      next(err);
+        // Include complete day when only date is provided
+        if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+          toDate.setHours(23, 59, 59, 999);
+        }
+
+        where.entry_time[Op.lte] = toDate;
+      }
     }
-  },
+
+    // --------------------------------------------------
+    // PAGINATION
+    // --------------------------------------------------
+    const pageNumber = Math.max(Number(page) || 1, 1);
+    const pageLimit = Math.max(Number(limit) || 20, 1);
+
+    const offset = (pageNumber - 1) * pageLimit;
+
+    // --------------------------------------------------
+    // GET GATE ENTRIES
+    // --------------------------------------------------
+    const { rows, count } = await GateEntry.findAndCountAll({
+      where,
+
+      include: detailIncludes,
+
+      order: [["entry_time", "DESC"]],
+
+      limit: pageLimit,
+
+      offset,
+
+      distinct: true,
+    });
+
+    // --------------------------------------------------
+    // FORMAT RESPONSE
+    // --------------------------------------------------
+    const data = rows.map((gateEntry) => {
+      const item = gateEntry.toJSON();
+
+      // -----------------------------------------------
+      // PURCHASE ORDERS
+      // -----------------------------------------------
+      let purchaseOrders = [];
+
+      if (item.entry_type === "purchase") {
+        /*
+         * If purchase_orders is already available
+         * on GateEntry as JSON:
+         */
+        if (item.purchase_orders) {
+          try {
+            purchaseOrders =
+              typeof item.purchase_orders === "string"
+                ? JSON.parse(item.purchase_orders)
+                : item.purchase_orders;
+          } catch (error) {
+            purchaseOrders = [];
+          }
+        }
+
+        /*
+         * Make sure it is always an array
+         */
+        if (!Array.isArray(purchaseOrders)) {
+          purchaseOrders = [];
+        }
+      }
+
+      // -----------------------------------------------
+      // FINAL RESPONSE OBJECT
+      // -----------------------------------------------
+      return {
+        ...item,
+
+        purchase_orders: purchaseOrders,
+      };
+    });
+
+    // --------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------
+    return res.status(200).json({
+      success: true,
+
+      data,
+
+      pagination: {
+        total: count,
+        page: pageNumber,
+        limit: pageLimit,
+        totalPages: Math.ceil(count / pageLimit),
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+},
 
   getById: async (req, res, next) => {
     try {
