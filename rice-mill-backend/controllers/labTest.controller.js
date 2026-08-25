@@ -1,12 +1,6 @@
 const createError = require("http-errors");
 const { Sampling, LabTest, GateEntry, VarietyMaster, User, Negotiation, PurchaseOrder } = require("../models/index");
 
-// Lab test parameters & verdicts (Module 6)
-// verdict = 'accepted'   -> gate entry gate_status = 'accepted'
-// verdict = 'rejected'   -> gate entry gate_status = 'rejected'
-// verdict = 'negotiation' -> gate entry stays at 'sampling_done'; a Negotiation
-//                            record is auto-opened (see openNegotiationIfNeeded)
-//                            and resolved later by Negotiation.respond
 
 const detailIncludes = [
   {
@@ -39,13 +33,6 @@ const applyVerdictToGateEntry = async (samplingId, verdict, userId) => {
   return gateEntry;
 };
 
-// When a verdict is (re)set to 'negotiation', automatically open the
-// Negotiation record so it shows up immediately on Purchase's Negotiations
-// tab — Purchase no longer has to manually search for the lab test and
-// re-type the old rate themselves. old_rate is pulled from the linked
-// Purchase Order when one exists; proposed_rate starts equal to old_rate
-// and Purchase edits it downward via the existing "Update Proposed Rate" flow.
-// Safe to call multiple times — skips silently if one already exists.
 const openNegotiationIfNeeded = async (labTest, userId) => {
   if (labTest.verdict !== "negotiation") return;
 
@@ -120,28 +107,130 @@ module.exports = {
 
   // POST /api/lab-tests
   // { sampling_id, moisture_pct, broken_pct, fm_pct, color, smell, variety_detected, grain_size, verdict, tested_at }
-  create: async (req, res, next) => {
-    try {
-      const {
-        sampling_id, moisture_pct, broken_pct, fm_pct, color, smell,
-        variety_detected, grain_size, comment, verdict, tested_at, plant_id,
-      } = req.body;
+create: async (req, res, next) => {
+  try {
+    const {
+      sampling_id,
+      material_id,
+      moisture_pct,
+      broken_pct,
+      fm_pct,
+      color,
+      smell,
+      variety_detected,
+      grain_size,
+      comment,
+      verdict,
+      tested_at,
+      plant_id,
+    } = req.body;
 
-      if (!sampling_id || !verdict) throw createError(400, "sampling_id and verdict are required");
-      if (!VERDICTS.includes(verdict)) throw createError(400, `verdict must be one of: ${VERDICTS.join(", ")}`);
+    if (!sampling_id || !verdict) {
+      throw createError(400, "sampling_id and verdict are required");
+    }
 
-      const sampling = await Sampling.findOne({ where: { id: sampling_id, is_deleted: false } });
-      if (!sampling) throw createError(400, "Invalid sampling_id");
+    if (!VERDICTS.includes(verdict)) {
+      throw createError(400, `verdict must be one of: ${VERDICTS.join(", ")}`);
+    }
 
-      const existing = await LabTest.findOne({ where: { sampling_id, is_deleted: false } });
-      if (existing) throw createError(409, "A lab test already exists for this sampling record");
+    // material_ids validation
+    if (!Array.isArray(material_id) || material_id.length === 0) {
+      throw createError(400, "material_id must be a non-empty array");
+    }
 
-      if (variety_detected) {
-        const variety = await VarietyMaster.findOne({ where: { id: variety_detected, is_deleted: false } });
-        if (!variety) throw createError(400, "Invalid variety_detected");
+    // Remove duplicate material IDs
+    const uniqueMaterialIds = [...new Set(material_id.map(Number))];
+
+    const sampling = await Sampling.findOne({
+      where: { id: sampling_id, is_deleted: false },
+    });
+
+    if (!sampling) {
+      throw createError(400, "Invalid sampling_id");
+    }
+
+    /*
+     * Assuming Sampling has material_id JSON field
+     * Example: sampling.material_id = [1, 2, 3]
+     */
+    const samplingMaterialIds = Array.isArray(sampling.material_id)
+      ? sampling.material_id.map(Number)
+      : [];
+
+    // Make sure selected materials actually belong to sampling
+    const invalidMaterials = uniqueMaterialIds.filter(
+      (id) => !samplingMaterialIds.includes(id)
+    );
+
+    if (invalidMaterials.length > 0) {
+      throw createError(
+        400,
+        `Material(s) ${invalidMaterials.join(", ")} do not belong to this sampling`
+      );
+    }
+
+    // Validate variety
+    if (variety_detected) {
+      const variety = await VarietyMaster.findOne({
+        where: { id: variety_detected, is_deleted: false },
+      });
+
+      if (!variety) {
+        throw createError(400, "Invalid variety_detected");
       }
-      const test = await LabTest.create({
+    }
+
+    // Check whether a lab test already exists for this sampling
+    const existing = await LabTest.findOne({
+      where: { sampling_id, is_deleted: false },
+    });
+
+    let test;
+    let statusCode;
+    let msg;
+
+    if (existing) {
+      // Merge into the existing lab test instead of creating a new one
+      const existingMaterialIds = Array.isArray(existing.material_id)
+        ? existing.material_id.map(Number)
+        : [];
+
+      const duplicates = uniqueMaterialIds.filter((id) =>
+        existingMaterialIds.includes(id)
+      );
+      if (duplicates.length > 0) {
+        throw createError(
+          400,
+          `Material(s) ${duplicates.join(", ")} already have a lab test recorded for this sampling`
+        );
+      }
+
+      const mergedMaterialIds = [...existingMaterialIds, ...uniqueMaterialIds];
+
+      await existing.update({
+        material_id: mergedMaterialIds,
+        // latest submitted result fields overwrite the previous ones on the shared row;
+        // fall back to what's already stored if this request omitted them
+        moisture_pct: moisture_pct ?? existing.moisture_pct,
+        broken_pct: broken_pct ?? existing.broken_pct,
+        fm_pct: fm_pct ?? existing.fm_pct,
+        color: color ?? existing.color,
+        smell: smell ?? existing.smell,
+        variety_detected: variety_detected || existing.variety_detected,
+        grain_size: grain_size ?? existing.grain_size,
+        comment: comment ?? existing.comment,
+        verdict,
+        tested_at: tested_at || existing.tested_at,
+        updated_by: req.user ? req.user.id : null,
+      });
+
+      test = existing;
+      statusCode = 200;
+      msg = "Lab test updated with additional material(s)";
+    } else {
+      test = await LabTest.create({
         sampling_id,
+        material_id: uniqueMaterialIds,
         moisture_pct,
         broken_pct,
         fm_pct,
@@ -156,15 +245,25 @@ module.exports = {
         plant_id: plant_id || sampling.plant_id || (req.user ? req.user.plant_id : null),
         created_by: req.user ? req.user.id : null,
       });
-      await applyVerdictToGateEntry(sampling_id, verdict, req.user ? req.user.id : null);
-      await openNegotiationIfNeeded(test, req.user ? req.user.id : null);
 
-      const created = await LabTest.findByPk(test.id, { include: detailIncludes });
-      res.status(201).json({ success: true, msg: "Lab test recorded", data: created });
-    } catch (err) {
-      next(err);
+      statusCode = 201;
+      msg = "Lab test recorded";
     }
-  },
+
+    await applyVerdictToGateEntry(sampling_id, verdict, req.user ? req.user.id : null);
+    await openNegotiationIfNeeded(test, req.user ? req.user.id : null);
+
+    const created = await LabTest.findByPk(test.id, { include: detailIncludes });
+
+    res.status(statusCode).json({
+      success: true,
+      msg,
+      data: created,
+    });
+  } catch (err) {
+    next(err);
+  }
+},
 
   // PUT /api/lab-tests/:id
   update: async (req, res, next) => {

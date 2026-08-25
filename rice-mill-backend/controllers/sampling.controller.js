@@ -90,7 +90,6 @@ create: async (req, res, next) => {
     if (requestedMaterialIds.some((id) => !id || Number.isNaN(id))) {
       throw createError(400, "material_id must be a valid id or array of valid ids");
     }
-    // de-dupe ids within the same request
     const uniqueRequestedIds = [...new Set(requestedMaterialIds)];
 
     const gateEntry = await GateEntry.findOne({
@@ -108,7 +107,6 @@ create: async (req, res, next) => {
     let resolvedPoIds = [];
 
     if (materialLines.length > 0) {
-      // Multi-material gate entry: validate every requested id is actually on this gate entry
       for (const mId of uniqueRequestedIds) {
         const matchedLine = materialLines.find(
           (l) => l.material_id === mId && (!po_id || l.po_id === Number(po_id))
@@ -118,19 +116,6 @@ create: async (req, res, next) => {
         }
         resolvedMaterialIds.push(matchedLine.material_id);
         resolvedPoIds.push(matchedLine.po_id);
-      }
-
-      // Check against every material already sampled (across all prior sample rows for this gate entry)
-      const existingSamples = await Sampling.findAll({
-        where: { gate_entry_id, is_deleted: false },
-        attributes: ["material_id"],
-      });
-      const alreadySampledIds = new Set(
-        existingSamples.flatMap((s) => (Array.isArray(s.material_id) ? s.material_id : [s.material_id]))
-      );
-      const duplicates = resolvedMaterialIds.filter((id) => alreadySampledIds.has(id));
-      if (duplicates.length > 0) {
-        throw createError(400, `Material_id(s) already sampled for this gate entry: ${duplicates.join(", ")}`);
       }
     } else {
       // Fallback: single-material gate entry (no purchase_orders lines)
@@ -142,62 +127,102 @@ create: async (req, res, next) => {
       resolvedPoIds = [po_id || null];
     }
 
-    const sample_code = await generateCode(Sampling, "sample_code", "SAMP");
-    const sample = await Sampling.create({
-      gate_entry_id,
-      po_id: resolvedPoIds,
-      material_id: resolvedMaterialIds,
-      sample_code,
-      collected_by: req.user ? req.user.id : 12,
-      collected_at: collected_at || new Date(),
-      sent_to_lab_at: sent_to_lab_at || null,
-      plant_id: plant_id || gateEntry.plant_id || (req.user ? req.user.plant_id : null),
-      created_by: req.user ? req.user.id : null,
+    // Look for an existing (non-deleted) sample already recorded for this gate entry
+    const existingSample = await Sampling.findOne({
+      where: { gate_entry_id, is_deleted: false },
     });
 
-    // Only auto-advance once every distinct material on the gate entry has been sampled
+    let sample;
     let gateStatusUpdated = false;
     let remainingMaterialIds = [];
 
-    if (materialLines.length > 0) {
-      const requiredMaterialIds = [...new Set(materialLines.map((l) => l.material_id))];
+    if (existingSample) {
+      // Merge into the existing row instead of creating a new one
+      const existingMaterialIds = Array.isArray(existingSample.material_id)
+        ? existingSample.material_id
+        : [existingSample.material_id];
+      const existingPoIds = Array.isArray(existingSample.po_id)
+        ? existingSample.po_id
+        : [existingSample.po_id];
 
-      const sampledRows = await Sampling.findAll({
-        where: { gate_entry_id, is_deleted: false },
-        attributes: ["material_id"],
+      const duplicates = resolvedMaterialIds.filter((id) => existingMaterialIds.includes(id));
+      if (duplicates.length > 0) {
+        throw createError(400, `Material_id(s) already sampled for this gate entry: ${duplicates.join(", ")}`);
+      }
+
+      const mergedMaterialIds = [...existingMaterialIds, ...resolvedMaterialIds];
+      const mergedPoIds = [...existingPoIds, ...resolvedPoIds];
+
+      await existingSample.update({
+        material_id: mergedMaterialIds,
+        po_id: mergedPoIds,
+        sent_to_lab_at: sent_to_lab_at || existingSample.sent_to_lab_at,
+        updated_by: req.user ? req.user.id : null,
       });
-      const sampledMaterialIds = new Set(
-        sampledRows.flatMap((r) => (Array.isArray(r.material_id) ? r.material_id : [r.material_id]))
-      );
+      sample = existingSample;
 
-      remainingMaterialIds = requiredMaterialIds.filter((id) => !sampledMaterialIds.has(id));
+      if (materialLines.length > 0) {
+        const requiredMaterialIds = [...new Set(materialLines.map((l) => l.material_id))];
+        remainingMaterialIds = requiredMaterialIds.filter((id) => !mergedMaterialIds.includes(id));
 
-      if (remainingMaterialIds.length === 0) {
+        if (remainingMaterialIds.length === 0) {
+          await gateEntry.update({ gate_status: "sampling_done", updated_by: req.user ? req.user.id : null });
+          gateStatusUpdated = true;
+        }
+      } else {
         await gateEntry.update({ gate_status: "sampling_done", updated_by: req.user ? req.user.id : null });
         gateStatusUpdated = true;
       }
     } else {
-      await gateEntry.update({ gate_status: "sampling_done", updated_by: req.user ? req.user.id : null });
-      gateStatusUpdated = true;
+      // No sample exists yet for this gate entry — create the first one
+      const sample_code = await generateCode(Sampling, "sample_code", "SAMP");
+      sample = await Sampling.create({
+        gate_entry_id,
+        po_id: resolvedPoIds,
+        material_id: resolvedMaterialIds,
+        sample_code,
+        collected_by: req.user ? req.user.id : 12,
+        collected_at: collected_at || new Date(),
+        sent_to_lab_at: sent_to_lab_at || null,
+        plant_id: plant_id || gateEntry.plant_id || (req.user ? req.user.plant_id : null),
+        created_by: req.user ? req.user.id : null,
+      });
+
+      if (materialLines.length > 0) {
+        const requiredMaterialIds = [...new Set(materialLines.map((l) => l.material_id))];
+        remainingMaterialIds = requiredMaterialIds.filter((id) => !resolvedMaterialIds.includes(id));
+
+        if (remainingMaterialIds.length === 0) {
+          await gateEntry.update({ gate_status: "sampling_done", updated_by: req.user ? req.user.id : null });
+          gateStatusUpdated = true;
+        }
+      } else {
+        await gateEntry.update({ gate_status: "sampling_done", updated_by: req.user ? req.user.id : null });
+        gateStatusUpdated = true;
+      }
     }
 
-    // material_id/po_id are arrays now, so resolve the actual material/PO records manually
     const created = await Sampling.findByPk(sample.id, { include: detailIncludes });
     const createdJSON = created.toJSON();
 
+    const allMaterialIds = Array.isArray(createdJSON.material_id) ? createdJSON.material_id : [createdJSON.material_id];
+    const allPoIds = (Array.isArray(createdJSON.po_id) ? createdJSON.po_id : [createdJSON.po_id]).filter(Boolean);
+
     const [materials, purchaseOrders] = await Promise.all([
-      MaterialMaster.findAll({ where: { id: resolvedMaterialIds }, attributes: ["id", "material_code", "name"] }),
-      resolvedPoIds.filter(Boolean).length
-        ? PurchaseOrder.findAll({ where: { id: resolvedPoIds.filter(Boolean) }, attributes: ["id", "po_no"] })
+      MaterialMaster.findAll({ where: { id: allMaterialIds }, attributes: ["id", "material_code", "name"] }),
+      allPoIds.length
+        ? PurchaseOrder.findAll({ where: { id: allPoIds }, attributes: ["id", "po_no"] })
         : [],
     ]);
     createdJSON.materials = materials;
     createdJSON.purchaseOrders = purchaseOrders;
 
-    res.status(201).json({
+    res.status(existingSample ? 200 : 201).json({
       success: true,
       msg: gateStatusUpdated
-        ? "Sample collected; gate entry moved to sampling_done"
+        ? "Sample updated; gate entry moved to sampling_done"
+        : existingSample
+        ? "Sample updated; other materials still pending sampling"
         : "Sample collected; other materials still pending sampling",
       data: createdJSON,
       remaining_materials: remainingMaterialIds,
