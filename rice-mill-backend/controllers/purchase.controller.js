@@ -212,7 +212,7 @@ module.exports = {
   // { vendor_id, po_date, validity?, do_no?, plant_id?, items: [{ material_id, variety_id?, qty, rate }, ...] }
   // Creates one PO number shared across every line item — this is how a
   // vendor can supply multiple materials/varieties under a single PO.
-  bulkCreate: async (req, res, next) => {
+bulkCreate: async (req, res, next) => {
   const t = await sequelize.transaction();
 
   try {
@@ -269,11 +269,9 @@ module.exports = {
     //
     // Same material is allowed if variety is different.
     //
-    // Example:
     // material 3 + variety 1  ✅
     // material 3 + variety 2  ✅
-    //
-    // material 3 + variety 1  ❌ duplicate
+    // material 3 + variety 1  ❌
     // ============================================================
 
     const seen = new Set();
@@ -413,8 +411,7 @@ module.exports = {
         }
 
         // --------------------------------------------------------
-        // If VarietyMaster contains material_id,
-        // verify variety belongs to selected material.
+        // Verify variety belongs to material
         // --------------------------------------------------------
 
         if (
@@ -476,10 +473,56 @@ module.exports = {
       (req.user ? req.user.plant_id : null);
 
     // ============================================================
-    // 11. CREATE PURCHASE ORDER
+    // 11. CREATE COMMA-SEPARATED VALUES
+    //
+    // Example:
+    //
+    // items:
+    // [
+    //   {
+    //     material_id: 2,
+    //     variety_id: 3,
+    //     qty: 100,
+    //     rate: 50
+    //   },
+    //   {
+    //     material_id: 4,
+    //     variety_id: 5,
+    //     qty: 200,
+    //     rate: 60
+    //   }
+    // ]
+    //
+    // SQL:
+    //
+    // material_id = "2,4"
+    // variety_id  = "3,5"
+    // qty         = "100,200"
+    // rate        = "50,60"
+    // ============================================================
+
+    const materialIds = items
+      .map((item) => item.material_id)
+      .join(",");
+
+    const varietyIds = items
+      .map((item) => item.variety_id ?? "")
+      .join(",");
+
+    const quantities = items
+      .map((item) => item.qty)
+      .join(",");
+
+    const rates = items
+      .map((item) => item.rate)
+      .join(",");
+
+    // ============================================================
+    // 12. CREATE PURCHASE ORDER
     //
     // ONE PO ROW
-    // ALL ITEMS STORED IN JSON COLUMN
+    // COMMA-SEPARATED COLUMNS
+    // FULL ITEMS STORED IN JSON
     // ============================================================
 
     const purchaseOrder = await PurchaseOrder.create(
@@ -487,6 +530,22 @@ module.exports = {
         po_no,
 
         vendor_id,
+
+        // --------------------------------------------
+        // Comma-separated SQL columns
+        // --------------------------------------------
+
+        material_id: materialIds,
+
+        variety_id: varietyIds,
+
+        qty: quantities,
+
+        rate: rates,
+
+        // --------------------------------------------
+        // PO details
+        // --------------------------------------------
 
         po_date,
 
@@ -504,6 +563,10 @@ module.exports = {
 
         approval_status: "pending_approval",
 
+        // --------------------------------------------
+        // Keep complete item details in JSON
+        // --------------------------------------------
+
         items: items.map((item) => ({
           material_id: item.material_id,
           variety_id: item.variety_id,
@@ -517,13 +580,13 @@ module.exports = {
     );
 
     // ============================================================
-    // 12. COMMIT TRANSACTION
+    // 13. COMMIT TRANSACTION
     // ============================================================
 
     await t.commit();
 
     // ============================================================
-    // 13. FETCH CREATED PO
+    // 14. FETCH CREATED PO
     // ============================================================
 
     const fullRow = await PurchaseOrder.findOne({
@@ -534,7 +597,7 @@ module.exports = {
     });
 
     // ============================================================
-    // 14. SUCCESS RESPONSE
+    // 15. SUCCESS RESPONSE
     // ============================================================
 
     return res.status(201).json({
@@ -544,6 +607,7 @@ module.exports = {
 
       data: fullRow,
     });
+
   } catch (err) {
     // ============================================================
     // ROLLBACK
