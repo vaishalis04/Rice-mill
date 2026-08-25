@@ -298,7 +298,7 @@ const validateReferences = async ({
 };
 
 module.exports = {
-  getAll: async (req, res, next) => {
+ getAll: async (req, res, next) => {
   try {
     const {
       status,
@@ -314,7 +314,7 @@ module.exports = {
     } = req.query;
 
     // --------------------------------------------------
-    // WHERE CONDITIONS
+    // WHERE CONDITIONS FOR GATE ENTRY
     // --------------------------------------------------
     const where = {
       is_deleted: false,
@@ -385,12 +385,23 @@ module.exports = {
     const offset = (pageNumber - 1) * pageLimit;
 
     // --------------------------------------------------
-    // GET GATE ENTRIES
+    // GET GATE ENTRIES + PURCHASE ORDERS
     // --------------------------------------------------
     const { rows, count } = await GateEntry.findAndCountAll({
       where,
 
-      include: detailIncludes,
+      include: [
+        ...(detailIncludes || []),
+
+        {
+          model: GateEntryPurchaseOrder,
+          as: "purchaseOrders",
+          required: false,
+          where: {
+            is_deleted: false,
+          },
+        },
+      ],
 
       order: [["entry_time", "DESC"]],
 
@@ -407,42 +418,13 @@ module.exports = {
     const data = rows.map((gateEntry) => {
       const item = gateEntry.toJSON();
 
-      // -----------------------------------------------
-      // PURCHASE ORDERS
-      // -----------------------------------------------
-      let purchaseOrders = [];
-
-      if (item.entry_type === "purchase") {
-        /*
-         * If purchase_orders is already available
-         * on GateEntry as JSON:
-         */
-        if (item.purchase_orders) {
-          try {
-            purchaseOrders =
-              typeof item.purchase_orders === "string"
-                ? JSON.parse(item.purchase_orders)
-                : item.purchase_orders;
-          } catch (error) {
-            purchaseOrders = [];
-          }
-        }
-
-        /*
-         * Make sure it is always an array
-         */
-        if (!Array.isArray(purchaseOrders)) {
-          purchaseOrders = [];
-        }
-      }
-
-      // -----------------------------------------------
-      // FINAL RESPONSE OBJECT
-      // -----------------------------------------------
       return {
         ...item,
 
-        purchase_orders: purchaseOrders,
+        purchase_orders: item.purchaseOrders || [],
+
+        // Optional: remove Sequelize association name
+        purchaseOrders: undefined,
       };
     });
 

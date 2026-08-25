@@ -368,6 +368,15 @@ GateEntryPurchaseOrder.belongsTo(MaterialMaster, {
   foreignKey: "material_id",
   as: "material",
 });
+GateEntry.hasMany(GateEntryPurchaseOrder, {
+  foreignKey: "gate_entry_id",
+  as: "purchaseOrders",
+});
+
+GateEntryPurchaseOrder.belongsTo(GateEntry, {
+  foreignKey: "gate_entry_id",
+  as: "gateEntry",
+});
 
 module.exports = {
   sequelize,
