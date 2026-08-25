@@ -9,7 +9,7 @@ const { uploadImage } = require("../helpers/multer.helper");
 // entries at status 'waiting_sampling' to populate its picker.
 // "purchase" is included because Purchase Orders' gate-entry picker reads
 // from here too.
-router.use(verifyAccessToken, attachUser, authorize("gate","warehouse","production","lab","purchase"));
+router.use(verifyAccessToken, attachUser, authorize("gate","warehouse","production","lab","purchase","admin"));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);
