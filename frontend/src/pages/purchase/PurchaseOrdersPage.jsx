@@ -22,7 +22,7 @@ const emptyHeader = { vendor_id: "", po_date: "", validity: "", do_no: "" };
 const emptyItem = { material_id: "", variety_id: "", qty: "", rate: "" };
 
 export default function PurchaseOrdersPage() {
-  const [orders, setOrders] = useState([]); // grouped: [{ po_no, vendor_id, vendor, po_date, validity, do_no, items:[...] }]
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const vendors = useEntityLookup("vendor");
   const materials = useEntityLookup("material");
@@ -33,12 +33,10 @@ export default function PurchaseOrdersPage() {
   const [currentItem, setCurrentItem] = useState(emptyItem);
   const [cartItems, setCartItems] = useState([]);
 
-  // Editing an EXISTING PO (by po_no) — header fields + its items, plus a
-  // mini "add material" form that hits the server directly (each add is
-  // its own request, since this PO already exists).
+  // Editing an EXISTING PO
   const [editingPoNo, setEditingPoNo] = useState(null);
   const [editHeader, setEditHeader] = useState(emptyHeader);
-  const [editItems, setEditItems] = useState([]); // [{ id, material_id, variety_id, qty, rate }]
+  const [editItems, setEditItems] = useState([]);
   const [newItem, setNewItem] = useState(emptyItem);
 
   const [error, setError] = useState("");
@@ -72,7 +70,7 @@ export default function PurchaseOrdersPage() {
       setError("That material/variety combo is already in this PO — remove it first if you want to change the qty/rate.");
       return;
     }
-    setCartItems([...cartItems, currentItem]);
+    setCartItems([...cartItems, { ...currentItem }]);
     setCurrentItem(emptyItem);
   };
 
@@ -81,190 +79,126 @@ export default function PurchaseOrdersPage() {
   };
 
   const handleSubmitCart = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  setError("");
-  setInfo("");
+    setError("");
+    setInfo("");
 
-  // -----------------------------------------
-  // 1. Validate PO header
-  // -----------------------------------------
-  if (!header.vendor_id) {
-    setError("Vendor is required.");
-    return;
-  }
+    // 1. Validate PO header
+    if (!header.vendor_id) {
+      setError("Vendor is required.");
+      return;
+    }
 
-  if (!header.po_date) {
-    setError("PO Date is required.");
-    return;
-  }
+    if (!header.po_date) {
+      setError("PO Date is required.");
+      return;
+    }
 
-  // -----------------------------------------
-  // 2. Validate cart
-  // -----------------------------------------
-  if (!Array.isArray(cartItems) || cartItems.length === 0) {
-    setError("Add at least one material to the PO before submitting.");
-    return;
-  }
+    // 2. Validate cart
+    if (!Array.isArray(cartItems) || cartItems.length === 0) {
+      setError("Add at least one material to the PO before submitting.");
+      return;
+    }
 
-  // -----------------------------------------
-  // 3. Validate duplicate material + variety
-  // -----------------------------------------
-  const seen = new Set();
+    // 3. Validate each item
+    const seen = new Set();
 
-  for (let i = 0; i < cartItems.length; i++) {
-    const item = cartItems[i];
+    for (let i = 0; i < cartItems.length; i++) {
+      const item = cartItems[i];
 
-    const materialId = Number(item.material_id);
+      const materialId = Number(item.material_id);
+      const varietyId = item.variety_id && item.variety_id !== "" ? Number(item.variety_id) : null;
 
-    const varietyId =
-      item.variety_id !== undefined &&
-      item.variety_id !== null &&
-      item.variety_id !== ""
-        ? Number(item.variety_id)
-        : null;
+      const key = `${materialId}-${varietyId ?? "null"}`;
 
-    const key = `${materialId}-${varietyId ?? "null"}`;
+      if (seen.has(key)) {
+        setError(
+          `Duplicate material/variety combination at item ${i + 1}. Please remove the duplicate item.`
+        );
+        return;
+      }
 
-    if (seen.has(key)) {
-      setError(
-        `Duplicate material/variety combination at item ${
-          i + 1
-        }. Please remove the duplicate item.`
+      seen.add(key);
+
+      if (!Number.isInteger(materialId) || materialId <= 0) {
+        setError(`Item ${i + 1}: valid material is required.`);
+        return;
+      }
+
+      if (varietyId !== null && (!Number.isInteger(varietyId) || varietyId <= 0)) {
+        setError(`Item ${i + 1}: invalid variety.`);
+        return;
+      }
+
+      if (item.qty === undefined || item.qty === null || item.qty === "") {
+        setError(`Item ${i + 1}: quantity is required.`);
+        return;
+      }
+
+      const qty = Number(item.qty);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        setError(`Item ${i + 1}: quantity must be greater than 0.`);
+        return;
+      }
+
+      if (item.rate === undefined || item.rate === null || item.rate === "") {
+        setError(`Item ${i + 1}: rate is required.`);
+        return;
+      }
+
+      const rate = Number(item.rate);
+      if (!Number.isFinite(rate) || rate < 0) {
+        setError(`Item ${i + 1}: rate must be a valid number.`);
+        return;
+      }
+    }
+
+    // 4. Build EXACT backend payload
+    const payload = {
+      vendor_id: Number(header.vendor_id),
+      po_date: header.po_date,
+      validity: header.validity || null,
+      do_no: header.do_no?.trim() || null,
+      uploaded_by_vendor: false,
+      // plant_id will be taken from req.user.plant_id in backend
+      items: cartItems.map((item) => ({
+        material_id: Number(item.material_id),
+        variety_id: item.variety_id && item.variety_id !== "" ? Number(item.variety_id) : null,
+        qty: Number(item.qty),
+        rate: Number(item.rate),
+      })),
+    };
+
+    // 5. API request
+    try {
+      console.log("CREATE PO PAYLOAD:", payload);
+
+      const res = await createPurchaseOrderBulkApi(payload);
+
+      setInfo(
+        res.data?.msg || "Purchase order created successfully."
       );
-      return;
+
+      // 6. Reset form
+      setHeader(emptyHeader);
+      setCurrentItem(emptyItem);
+      setCartItems([]);
+
+      // 7. Reload PO list
+      load();
+    } catch (err) {
+      console.error("CREATE PO ERROR:", err);
+
+      setError(
+        err.response?.data?.msg ||
+          err.response?.data?.message ||
+          "Failed to create purchase order."
+      );
     }
-
-    seen.add(key);
-
-    // -----------------------------------------
-    // Material validation
-    // -----------------------------------------
-    if (!Number.isInteger(materialId) || materialId <= 0) {
-      setError(`Item ${i + 1}: valid material is required.`);
-      return;
-    }
-
-    // -----------------------------------------
-    // Variety validation
-    // -----------------------------------------
-    if (
-      varietyId !== null &&
-      (!Number.isInteger(varietyId) || varietyId <= 0)
-    ) {
-      setError(`Item ${i + 1}: invalid variety.`);
-      return;
-    }
-
-    // -----------------------------------------
-    // Qty validation
-    // -----------------------------------------
-    if (
-      item.qty === undefined ||
-      item.qty === null ||
-      item.qty === ""
-    ) {
-      setError(`Item ${i + 1}: quantity is required.`);
-      return;
-    }
-
-    const qty = Number(item.qty);
-
-    if (!Number.isFinite(qty) || qty <= 0) {
-      setError(`Item ${i + 1}: quantity must be greater than 0.`);
-      return;
-    }
-
-    // -----------------------------------------
-    // Rate validation
-    // -----------------------------------------
-    if (
-      item.rate === undefined ||
-      item.rate === null ||
-      item.rate === ""
-    ) {
-      setError(`Item ${i + 1}: rate is required.`);
-      return;
-    }
-
-    const rate = Number(item.rate);
-
-    if (!Number.isFinite(rate) || rate < 0) {
-      setError(`Item ${i + 1}: rate must be a valid number.`);
-      return;
-    }
-  }
-
-  // -----------------------------------------
-  // 4. Build EXACT backend payload
-  // -----------------------------------------
-  const payload = {
-    vendor_id: Number(header.vendor_id),
-
-    po_date: header.po_date,
-
-    // Send null when optional values are empty
-    validity: header.validity || null,
-
-    do_no: header.do_no?.trim() || null,
-
-    uploaded_by_vendor: false,
-
-    // If you have plant_id in your page, put it here.
-    // Otherwise backend will use req.user.plant_id.
-    // plant_id: Number(plantId),
-
-    items: cartItems.map((item) => ({
-      material_id: Number(item.material_id),
-
-      variety_id:
-        item.variety_id !== undefined &&
-        item.variety_id !== null &&
-        item.variety_id !== ""
-          ? Number(item.variety_id)
-          : null,
-
-      qty: Number(item.qty),
-
-      rate: Number(item.rate),
-    })),
   };
 
-  // -----------------------------------------
-  // 5. API request
-  // -----------------------------------------
-  try {
-    console.log("CREATE PO PAYLOAD:", payload);
-
-    const res = await createPurchaseOrderBulkApi(payload);
-
-    setInfo(
-      res.data?.msg || "Purchase order created successfully."
-    );
-
-    // -----------------------------------------
-    // 6. Reset form
-    // -----------------------------------------
-    setHeader(emptyHeader);
-    setCurrentItem(emptyItem);
-    setCartItems([]);
-
-    // -----------------------------------------
-    // 7. Reload PO list
-    // -----------------------------------------
-    load();
-  } catch (err) {
-    console.error("CREATE PO ERROR:", err);
-
-    setError(
-      err.response?.data?.msg ||
-        err.response?.data?.message ||
-        "Failed to create purchase order."
-    );
-  }
-};
   // ---- editing an existing PO (header + items) ----
-
   const handleEditPo = (po) => {
     setError("");
     setInfo("");
@@ -301,6 +235,7 @@ export default function PurchaseOrdersPage() {
     setError("");
     setInfo("");
     try {
+      // Matching backend: /api/purchase/po/:po_no/header
       await updatePurchaseOrderHeaderApi(editingPoNo, {
         vendor_id: editHeader.vendor_id ? Number(editHeader.vendor_id) : undefined,
         po_date: editHeader.po_date || undefined,
@@ -322,6 +257,7 @@ export default function PurchaseOrdersPage() {
     setError("");
     setInfo("");
     try {
+      // Matching backend: PUT /api/purchase/:id
       await updatePurchaseOrderApi(item.id, {
         material_id: Number(item.material_id),
         variety_id: item.variety_id ? Number(item.variety_id) : null,
@@ -340,6 +276,7 @@ export default function PurchaseOrdersPage() {
     setError("");
     setInfo("");
     try {
+      // Matching backend: DELETE /api/purchase/:id
       await deletePurchaseOrderApi(itemId);
       setEditItems((prev) => prev.filter((it) => it.id !== itemId));
       setInfo("Material removed from the PO.");
@@ -360,6 +297,7 @@ export default function PurchaseOrdersPage() {
       return;
     }
     try {
+      // Matching backend: POST /api/purchase/po/:po_no/items
       const res = await addPurchaseOrderItemApi(editingPoNo, {
         material_id: Number(newItem.material_id),
         variety_id: newItem.variety_id ? Number(newItem.variety_id) : null,
@@ -390,6 +328,7 @@ export default function PurchaseOrdersPage() {
     setError("");
     setInfo("");
     try {
+      // Delete each item individually
       await Promise.all(po.items.map((i) => deletePurchaseOrderApi(i.id)));
       setInfo(`PO ${po.po_no} deleted.`);
       load();
@@ -398,9 +337,6 @@ export default function PurchaseOrdersPage() {
     }
   };
 
-  // DataTable's built-in onDelete only passes the row's `id` (the grouped
-  // row's synthetic id, i.e. its first line item) — look the full grouped
-  // row back up so handleDeleteWholePo can remove every line under this po_no.
   const handleDeleteWholePoById = (id) => {
     const po = orders.find((o) => String(o.id) === String(id));
     if (po) handleDeleteWholePo(po);
@@ -425,14 +361,14 @@ export default function PurchaseOrdersPage() {
 
           <form className="sf-form" onSubmit={(e) => e.preventDefault()}>
             <EntitySelect
-  entity="vendor"
-  label="Vendor"
-  value={editHeader.vendor_id}
-  onChange={setEditHeaderField("vendor_id")}
-  required
-  creatable
-  onCreated={vendors.refetch}
-/>
+              entity="vendor"
+              label="Vendor"
+              value={editHeader.vendor_id}
+              onChange={setEditHeaderField("vendor_id")}
+              required
+              creatable
+              onCreated={vendors.refetch}
+            />
             <div className="sf-field">
               <label>PO Date</label>
               <input name="po_date" type="date" value={editHeader.po_date} onChange={handleEditHeaderChange} required />
@@ -544,15 +480,15 @@ export default function PurchaseOrdersPage() {
       ) : (
         <>
           <form className="sf-form" onSubmit={(e) => e.preventDefault()}>
-           <EntitySelect
-  entity="vendor"
-  label="Vendor"
-  value={header.vendor_id}
-  onChange={setHeaderField("vendor_id")}
-  required
-  creatable
-  onCreated={vendors.refetch}
-/>
+            <EntitySelect
+              entity="vendor"
+              label="Vendor"
+              value={header.vendor_id}
+              onChange={setHeaderField("vendor_id")}
+              required
+              creatable
+              onCreated={vendors.refetch}
+            />
             <div className="sf-field">
               <label>PO Date</label>
               <input name="po_date" type="date" value={header.po_date} onChange={handleHeaderChange} required />
@@ -602,28 +538,28 @@ export default function PurchaseOrdersPage() {
             {cartItems.length > 0 && (
               <div className="dt-wrapper" style={{ marginTop: 12 }}>
                 <table className="dt-table">
-                <thead>
-                  <tr>
-                    <th>Material</th>
-                    <th>Variety</th>
-                    <th>Qty (Tons)</th>
-                    <th>Rate</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cartItems.map((item, i) => (
-                    <tr key={i}>
-                      <td>{materialLabel(item.material_id)}</td>
-                      <td>{varietyLabel(item.variety_id)}</td>
-                      <td>{item.qty}</td>
-                      <td>{item.rate}</td>
-                      <td>
-                        <button className="dt-btn" onClick={() => handleRemoveItem(i)}>Remove</button>
-                      </td>
+                  <thead>
+                    <tr>
+                      <th>Material</th>
+                      <th>Variety</th>
+                      <th>Qty (Tons)</th>
+                      <th>Rate</th>
+                      <th></th>
                     </tr>
-                  ))}
-                </tbody>
+                  </thead>
+                  <tbody>
+                    {cartItems.map((item, i) => (
+                      <tr key={i}>
+                        <td>{materialLabel(item.material_id)}</td>
+                        <td>{varietyLabel(item.variety_id)}</td>
+                        <td>{item.qty}</td>
+                        <td>{item.rate}</td>
+                        <td>
+                          <button className="dt-btn" onClick={() => handleRemoveItem(i)}>Remove</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
                 </table>
               </div>
             )}
@@ -672,6 +608,24 @@ export default function PurchaseOrdersPage() {
             render: (row) => row.total_qty ?? row.items.reduce((s, i) => s + Number(i.qty), 0),
           },
           { key: "po_date", label: "PO Date" },
+          {
+            key: "approval_status",
+            label: "Status",
+            render: (row) => (
+              <span style={{
+                padding: "4px 8px",
+                borderRadius: "4px",
+                fontSize: "12px",
+                fontWeight: "bold",
+                backgroundColor: row.approval_status === "approved" ? "#d4edda" :
+                              row.approval_status === "rejected" ? "#f8d7da" : "#fff3cd",
+                color: row.approval_status === "approved" ? "#155724" :
+                       row.approval_status === "rejected" ? "#721c24" : "#856404"
+              }}>
+                {row.approval_status?.replace("_", " ").toUpperCase() || "PENDING"}
+              </span>
+            )
+          },
         ]}
       />
 
@@ -683,7 +637,7 @@ export default function PurchaseOrdersPage() {
           "The list below shows ONE row per PO, with all its materials listed together — not one confusing duplicate row per material.",
           "Edit opens that PO's full details: change vendor/date/DO No. once for the whole order, edit or remove any existing material line, and add more materials to it at any time — a PO stays editable until it's fully processed.",
           "Each line item still moves through Gate → Weighbridge independently, since each is its own material with its own quantity.",
-          "There's no manual \"Convert\" step — once a truck against a line item is gated in, sampled, lab-accepted, and weighed, the Purchase record is created automatically.",
+          "There's no manual 'Convert' step — once a truck against a line item is gated in, sampled, lab-accepted, and weighed, the Purchase record is created automatically.",
         ]}
       />
     </div>

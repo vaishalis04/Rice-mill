@@ -10,34 +10,14 @@ GateEntry.init(
     vehicle_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "vehicles", key: "id" } },
     driver_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "drivers", key: "id" } },
     driver_photo_url: { type: DataTypes.STRING(255) },
-    // entry_type: "purchase" (default) is the normal vendor-delivery flow
-    // (Gate -> Sampling -> Lab -> Negotiation -> Weighbridge -> Unloading).
-    // "other" is for empty trucks or trucks carrying miscellaneous/non-purchase
-    // items — these skip Sampling/Lab/Negotiation entirely and go straight
-    // from the gate to Weighbridge (optional) and then Warehouse.
-    // "sales" is an OUTBOUND truck arriving empty to be loaded against a
-    // Sales Order (Gate -> Check-in -> Loading -> Check-out/Exit).
     entry_type: { type: DataTypes.ENUM("purchase", "other", "sales"), allowNull: false, defaultValue: "purchase" },
-    // Only required for entry_type = "purchase"; empty/misc trucks usually
-    // have no vendor or material master record to link.
     vendor_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "vendors", key: "id" } },
     po_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "purchase_order", key: "id" } },
-    // Only used for entry_type = "sales" — which Sales Order this truck is
-    // collecting against. Picking a Sales Order auto-fills material_id below
-    // (and the customer, shown via the salesOrder association) — everything
-    // except the actual loaded quantity, which is only known once the truck
-    // is physically loaded (see loading.controller.js).
     so_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "sales_order", key: "id" } },
     challan_no: { type: DataTypes.STRING(30) },
     material_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "material_master", key: "id" } },
     expected_qty: { type: DataTypes.DECIMAL(12, 2) },
-    // Free-text note for entry_type = "other", e.g. "Empty truck — returning
-    // from delivery" or "Dropping off packaging material, not for sale".
     remarks: { type: DataTypes.STRING(255), allowNull: true },
-    // Set when an entry_type = "other" truck is sent straight to warehouse
-    // (see gate.controller.js#sendToWarehouse) — which warehouse received it,
-    // for the "Empty / Misc Trucks" listing. Not used by the purchase flow
-    // (that stock is tracked via Lot/Stack instead).
     received_warehouse_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "warehouse_master", key: "id" } },
     entry_time: { type: DataTypes.DATE },
     exit_time: { type: DataTypes.DATE, allowNull: true },
@@ -48,17 +28,10 @@ gate_status: {
     "sampling_done",
     "accepted",
     "rejected",
-    // Checked-in state for entry_type = "other" only — the equivalent of
-    // "waiting_sampling" for entries that skip QC entirely and go straight
-    // toward the weighbridge (or directly to warehouse if nothing to weigh).
     "waiting_weighment",
     "in_process",
-    // Truck opened for unloading, manual check happening at the factory,
-    // bags not yet counted (set by POST /api/lots/start-unloading).
     "unloading",
     "unloaded",
-    // Outbound (entry_type = "sales") equivalents of waiting_weighment/unloaded:
-    // checked in and waiting to be loaded against its Sales Order, then loaded.
     "waiting_loading",
     "loaded",
     "parked",
@@ -77,7 +50,7 @@ gate_status: {
     tableName: "gate_entry",
     timestamps: true,
     underscored: true,
-    paranoid: false, // using explicit is_deleted flag instead of Sequelize's own soft-delete timestamp
+    paranoid: false,
     indexes: [
       { fields: ["gate_status"] },
     ],

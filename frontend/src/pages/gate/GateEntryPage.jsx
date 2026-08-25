@@ -65,9 +65,10 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
   const [photoPreview, setPhotoPreview] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoUploadError, setPhotoUploadError] = useState("");
+  const [fetchingPODetails, setFetchingPODetails] = useState(false);
 
   const [selectedPOs, setSelectedPOs] = useState([]);
-const [selectedMaterials, setSelectedMaterials] = useState({});
+  const [selectedMaterials, setSelectedMaterials] = useState({});
 
   const vehicles = useEntityLookup("vehicle");
   const drivers = useEntityLookup("driver");
@@ -75,6 +76,214 @@ const [selectedMaterials, setSelectedMaterials] = useState({});
   const salesOrders = useEntityLookup("sales_order");
   const salesOrderGroups = useEntityLookup("sales_order_grouped");
 
+  // ============================================================
+  // FETCH PO DETAILS - NEW FUNCTION
+  // ============================================================
+  const fetchPODetails = async (poId) => {
+    try {
+      setFetchingPODetails(true);
+      const response = await fetch(`/api/purchase-order/${poId}`);
+      const data = await response.json();
+      
+      if (data.success && data.data) {
+        // Parse items if they're stored as JSON string
+        let items = data.data.items || [];
+        if (typeof items === 'string') {
+          try {
+            items = JSON.parse(items);
+          } catch (e) {
+            items = [];
+          }
+        }
+        
+        // Ensure each item has material and variety objects
+        const enrichedItems = items.map(item => ({
+          ...item,
+          material: item.material || { 
+            id: item.material_id, 
+            name: `Material ${item.material_id}` 
+          },
+          variety: item.variety || { 
+            id: item.variety_id, 
+            variety_name: item.variety_id ? `Variety ${item.variety_id}` : null 
+          }
+        }));
+        
+        return {
+          ...data.data,
+          items: enrichedItems
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Failed to fetch PO details:', error);
+      return null;
+    } finally {
+      setFetchingPODetails(false);
+    }
+  };
+
+  // ============================================================
+  // HANDLE ADD PURCHASE ORDER - UPDATED
+  // ============================================================
+  const handleAddPurchaseOrder = async (po_id) => {
+    if (!po_id) return;
+
+    // First get the basic PO from lookup
+    const po = purchaseOrders.rows.find(
+      (r) => String(r.id) === String(po_id)
+    );
+
+    if (!po) {
+      setError("Purchase order not found");
+      return;
+    }
+
+    // Check if already selected
+    if (selectedPOs.some((p) => String(p.id) === String(po.id))) {
+      setError(`PO #${po.po_no || po.id} is already selected`);
+      return;
+    }
+
+    // If items are not populated or empty, fetch full details
+    let poWithDetails = po;
+    let items = po.items || [];
+    
+    // Check if items are empty or not properly populated
+    const hasValidItems = Array.isArray(items) && items.length > 0 && 
+                          items.some(item => item.material_id);
+    
+    if (!hasValidItems) {
+      // Fetch detailed PO data
+      const detailedPO = await fetchPODetails(po_id);
+      if (detailedPO) {
+        poWithDetails = detailedPO;
+        items = detailedPO.items || [];
+      } else {
+        // If fetch fails but we have some items, try to use them
+        if (typeof items === 'string') {
+          try {
+            items = JSON.parse(items);
+          } catch (e) {
+            items = [];
+          }
+        }
+        poWithDetails = {
+          ...po,
+          items: items.map(item => ({
+            ...item,
+            material: { 
+              id: item.material_id, 
+              name: `Material ${item.material_id}` 
+            },
+            variety: item.variety_id ? { 
+              id: item.variety_id, 
+              variety_name: `Variety ${item.variety_id}` 
+            } : null
+          }))
+        };
+      }
+    }
+
+    // Final check: ensure we have items with material_id
+    const finalItems = Array.isArray(poWithDetails.items) ? poWithDetails.items : [];
+    if (finalItems.length === 0) {
+      setError(`PO #${po.po_no || po.id} has no materials assigned`);
+      return;
+    }
+
+    setSelectedPOs((prev) => [...prev, poWithDetails]);
+
+    // Initialize materials for this PO
+    setSelectedMaterials((prev) => ({
+      ...prev,
+      [poWithDetails.id]: finalItems.map((m) => ({
+        material_id: m.material_id,
+        qty: m.qty || "",
+      })),
+    }));
+
+    // Auto-set vendor_id if not set
+    if (poWithDetails.vendor_id) {
+      setForm((prev) => ({
+        ...prev,
+        vendor_id: poWithDetails.vendor_id,
+      }));
+    }
+
+    // Clear any previous error
+    setError("");
+  };
+
+  // ============================================================
+  // HANDLE REMOVE PURCHASE ORDER
+  // ============================================================
+  const handleRemovePurchaseOrder = (poId) => {
+    setSelectedPOs((prev) =>
+      prev.filter((po) => String(po.id) !== String(poId))
+    );
+
+    setSelectedMaterials((prev) => {
+      const updated = { ...prev };
+      delete updated[poId];
+      return updated;
+    });
+
+    // Clear vendor_id if no POs left
+    if (selectedPOs.length <= 1) {
+      setForm((prev) => ({
+        ...prev,
+        vendor_id: "",
+      }));
+    }
+  };
+
+  // ============================================================
+  // HANDLE TOGGLE MATERIAL
+  // ============================================================
+  const handleToggleMaterial = (poId, material) => {
+    setSelectedMaterials((prev) => {
+      const current = prev[poId] || [];
+
+      const exists = current.some(
+        (m) => String(m.material_id) === String(material.material_id)
+      );
+
+      return {
+        ...prev,
+        [poId]: exists
+          ? current.filter(
+              (m) =>
+                String(m.material_id) !== String(material.material_id)
+            )
+          : [
+              ...current,
+              {
+                material_id: material.material_id,
+                qty: material.qty || "",
+              },
+            ],
+      };
+    });
+  };
+
+  // ============================================================
+  // HANDLE MATERIAL QTY CHANGE
+  // ============================================================
+  const handleMaterialQtyChange = (poId, materialId, qty) => {
+    setSelectedMaterials((prev) => ({
+      ...prev,
+      [poId]: (prev[poId] || []).map((m) =>
+        String(m.material_id) === String(materialId)
+          ? { ...m, qty }
+          : m
+      ),
+    }));
+  };
+
+  // ============================================================
+  // REST OF THE COMPONENT (unchanged)
+  // ============================================================
   useEffect(() => {
     if (!prefillSoId) return;
     setForm((prev) => ({ ...emptyForm, entry_type: "sales", so_id: prefillSoId }));
@@ -92,7 +301,7 @@ const [selectedMaterials, setSelectedMaterials] = useState({});
       (g) => Array.isArray(g.items) && g.items.some((i) => String(i.id) === String(form.so_id))
     );
     if (group) setSoGroup(group);
-  }, [salesOrderGroups.rows]); 
+  }, [salesOrderGroups.rows]);
 
   const isOther = form.entry_type === "other";
   const isSales = form.entry_type === "sales";
@@ -122,84 +331,6 @@ const [selectedMaterials, setSelectedMaterials] = useState({});
 
   const setField = (name) => (id) => setForm({ ...form, [name]: id });
 
-const handleAddPurchaseOrder = (po_id) => {
-  if (!po_id) return;
-
-  const po = purchaseOrders.rows.find(
-    (r) => String(r.id) === String(po_id)
-  );
-
-  if (!po) return;
-
-  if (selectedPOs.some((p) => String(p.id) === String(po.id))) {
-    return;
-  }
-
-  setSelectedPOs((prev) => [...prev, po]);
-
-  const materials = Array.isArray(po.items) ? po.items : [];
-
-  setSelectedMaterials((prev) => ({
-    ...prev,
-    [po.id]: materials.map((m) => ({
-      material_id: m.material_id,
-      qty: m.qty || "",
-    })),
-  }));
-
-  setForm((prev) => ({
-    ...prev,
-    vendor_id: po.vendor_id,
-  }));
-};
-  
-const handleRemovePurchaseOrder = (poId) => {
-  setSelectedPOs((prev) =>
-    prev.filter((po) => String(po.id) !== String(poId))
-  );
-
-  setSelectedMaterials((prev) => {
-    const updated = { ...prev };
-    delete updated[poId];
-    return updated;
-  });
-};
-const handleToggleMaterial = (poId, material) => {
-  setSelectedMaterials((prev) => {
-    const current = prev[poId] || [];
-
-    const exists = current.some(
-      (m) => String(m.material_id) === String(material.material_id)
-    );
-
-    return {
-      ...prev,
-      [poId]: exists
-        ? current.filter(
-            (m) =>
-              String(m.material_id) !== String(material.material_id)
-          )
-        : [
-            ...current,
-            {
-              material_id: material.material_id,
-              qty: material.qty || "",
-            },
-          ],
-    };
-  });
-};
-const handleMaterialQtyChange = (poId, materialId, qty) => {
-  setSelectedMaterials((prev) => ({
-    ...prev,
-    [poId]: (prev[poId] || []).map((m) =>
-      String(m.material_id) === String(materialId)
-        ? { ...m, qty }
-        : m
-    ),
-  }));
-};
-
   const handleSoChange = (so_id) => {
     const so = salesOrderGroups.rows.find((r) => String(r.id) === String(so_id));
     setSoGroup(so || null);
@@ -224,6 +355,8 @@ const handleMaterialQtyChange = (poId, materialId, qty) => {
     }));
     setPoGroup(null);
     setSoGroup(null);
+    setSelectedPOs([]);
+    setSelectedMaterials({});
   };
 
   const handlePhotoCaptured = async (dataUrl) => {
@@ -262,18 +395,22 @@ const handleMaterialQtyChange = (poId, materialId, qty) => {
     setInfo("");
     setLastToken("");
     setLastVendor("");
+    
     if (uploadingPhoto) {
       setError("The driver photo is still uploading — wait a moment and try again.");
       return;
     }
+
     if (form.entry_type === "purchase" && poGroup && poGroup.items.length > 1 && !form.po_id) {
       setError("Tap which material on this PO the truck is delivering before generating the token.");
       return;
     }
+
     if (form.entry_type === "sales" && soGroup && soGroup.items.length > 1 && !form.so_id) {
       setError("Tap which material on this Sales Order the truck is collecting before generating the token.");
       return;
     }
+
     try {
       const payload = {
         entry_type: form.entry_type,
@@ -283,47 +420,49 @@ const handleMaterialQtyChange = (poId, materialId, qty) => {
       };
 
       if (form.entry_type === "purchase") {
-  if (selectedPOs.length === 0) {
-    setError("Please select at least one Purchase Order.");
-    return;
-  }
+        if (selectedPOs.length === 0) {
+          setError("Please select at least one Purchase Order.");
+          return;
+        }
 
-  const purchase_orders = selectedPOs.map((po) => {
-    const materials = selectedMaterials[po.id] || [];
+        // Check if all POs have at least one material selected
+        const allMaterialsSelected = selectedPOs.every((po) => {
+          const materials = selectedMaterials[po.id] || [];
+          return materials.length > 0;
+        });
 
-    return {
-      po_id: Number(po.id),
+        if (!allMaterialsSelected) {
+          setError("Please select at least one material for each Purchase Order.");
+          return;
+        }
 
-      materials: materials.map((material) => ({
-        material_id: Number(material.material_id),
-        qty: material.qty
-          ? Number(material.qty)
-          : null,
-      })),
-    };
-  });
+        const purchase_orders = selectedPOs.map((po) => {
+          const materials = selectedMaterials[po.id] || [];
+          return {
+            po_id: Number(po.id),
+            materials: materials.map((material) => ({
+              material_id: Number(material.material_id),
+              qty: material.qty ? Number(material.qty) : null,
+            })),
+          };
+        });
 
-  const invalidPO = purchase_orders.find(
-    (po) => po.materials.length === 0
-  );
+        const invalidPO = purchase_orders.find(
+          (po) => po.materials.length === 0 || po.materials.some(m => !m.material_id)
+        );
 
-  if (invalidPO) {
-    setError(
-      `Please select at least one material for PO ${invalidPO.po_id}.`
-    );
-    return;
-  }
+        if (invalidPO) {
+          setError(
+            `Please ensure all materials have valid IDs for PO ${invalidPO.po_id}.`
+          );
+          return;
+        }
 
-  payload.vendor_id = Number(form.vendor_id);
-
-  payload.purchase_orders = purchase_orders;
-
-  payload.challan_no = form.challan_no;
-
-  payload.expected_qty = form.expected_qty
-    ? Number(form.expected_qty)
-    : undefined;
-}else if (form.entry_type === "sales") {
+        payload.vendor_id = Number(form.vendor_id);
+        payload.purchase_orders = purchase_orders;
+        payload.challan_no = form.challan_no;
+        payload.expected_qty = form.expected_qty ? Number(form.expected_qty) : undefined;
+      } else if (form.entry_type === "sales") {
         payload.so_id = Number(form.so_id);
         payload.challan_no = form.challan_no || undefined;
         payload.expected_qty = form.expected_qty ? Number(form.expected_qty) : undefined;
@@ -335,7 +474,8 @@ const handleMaterialQtyChange = (poId, materialId, qty) => {
       const res = await generateGateTokenApi(payload);
       const generatedEntry = res.data.data;
       const tokenNo = res.data.token_no ?? generatedEntry?.token_no;
-      const vendorName = generatedEntry?.vendor?.name || poGroup?.vendor?.name || "";
+      const vendorName = generatedEntry?.vendor?.name || selectedPOs[0]?.vendor?.name || "";
+      
       setLastToken(tokenNo || "");
       setLastVendor(vendorName);
       setInfo(
@@ -343,12 +483,14 @@ const handleMaterialQtyChange = (poId, materialId, qty) => {
           ? "Token generated — give this number to the driver."
           : "Entry saved (check the list below for the token number)."
       );
+      
+      // Reset form
       setForm(emptyForm);
-setSelectedPOs([]);
-setSelectedMaterials({});
-setPoGroup(null);
-setSoGroup(null);
-setPhotoPreview("");
+      setSelectedPOs([]);
+      setSelectedMaterials({});
+      setPoGroup(null);
+      setSoGroup(null);
+      setPhotoPreview("");
       setPhotoUploadError("");
       load();
     } catch (err) {
@@ -415,6 +557,7 @@ setPhotoPreview("");
         Weighbridge (if needed) and Warehouse instead. Choose "Sales (Outbound Loading)" for
         an empty truck that's here to be loaded and dispatched against a Sales Order.
       </p>
+      
       <form className="sf-form" onSubmit={handleGenerateToken}>
         <div className="sf-field">
           <label>Entry Type</label>
@@ -431,6 +574,7 @@ setPhotoPreview("");
               : "A vendor is delivering grain against a Purchase Order."}
           </p>
         </div>
+
         <div>
           <EntitySelect
             entity="vehicle"
@@ -442,6 +586,7 @@ setPhotoPreview("");
           />
           <p className="field-hint">The truck's number plate.</p>
         </div>
+
         <div>
           <EntitySelect
             entity="driver"
@@ -453,180 +598,186 @@ setPhotoPreview("");
           />
           <p className="field-hint">Who's driving the truck today.</p>
         </div>
+
         {form.entry_type === "purchase" && (
-  <>
-    <div className="sf-field">
-      <label>Purchase Orders</label>
+          <>
+            <div className="sf-field">
+              <label>Purchase Orders</label>
+              <EntitySelect
+                entity="purchase_order"
+                label="Add Purchase Order"
+                value=""
+                onChange={handleAddPurchaseOrder}
+                required={selectedPOs.length === 0}
+                disabled={fetchingPODetails}
+              />
+              {fetchingPODetails && (
+                <p className="field-hint" style={{ color: "#2563eb" }}>
+                  Loading PO details...
+                </p>
+              )}
+              <p className="field-hint">
+                You can select multiple Purchase Orders. After selecting a PO,
+                choose one or more materials from that PO.
+              </p>
+            </div>
 
-      <EntitySelect
-        entity="purchase_order"
-        label="Add Purchase Order"
-        value=""
-        onChange={handleAddPurchaseOrder}
-        required={selectedPOs.length === 0}
-      />
-
-      <p className="field-hint">
-        You can select multiple Purchase Orders. After selecting a PO,
-        choose one or more materials from that PO.
-      </p>
-    </div>
-
-    {selectedPOs.length > 0 && (
-      <div className="multi-po-container">
-        {selectedPOs.map((po) => {
-          const materials = Array.isArray(po.items)
-            ? po.items
-            : [];
-
-          const selected =
-            selectedMaterials[po.id] || [];
-
-          return (
-            <div
-              key={po.id}
-              className="po-selection-card"
-            >
-              <div className="po-selection-header">
-                <div>
-                  <strong>
-                    PO #{po.po_no || po.id}
-                  </strong>
-
-                  <div className="field-hint">
-                    Vendor: {po.vendor?.name || "—"}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  className="dt-btn dt-btn-danger"
-                  onClick={() =>
-                    handleRemovePurchaseOrder(po.id)
+            {selectedPOs.length > 0 && (
+              <div className="multi-po-container">
+                {selectedPOs.map((po) => {
+                  const materials = Array.isArray(po.items) ? po.items : [];
+                  
+                  // If materials is empty, show a message
+                  if (materials.length === 0) {
+                    return (
+                      <div key={po.id} className="po-selection-card">
+                        <div className="po-selection-header">
+                          <div>
+                            <strong>PO #{po.po_no || po.id}</strong>
+                            <div className="field-hint">
+                              Vendor: {po.vendor?.name || "—"}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="dt-btn dt-btn-danger"
+                            onClick={() => handleRemovePurchaseOrder(po.id)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <div className="po-material-list">
+                          <div className="field-hint" style={{ padding: "8px", color: "#dc2626" }}>
+                            No materials found for this PO. Please check the PO details.
+                          </div>
+                        </div>
+                      </div>
+                    );
                   }
-                >
-                  Remove
-                </button>
-              </div>
 
-              <div className="po-material-list">
-                <div className="po-material-title">
-                  Select Materials
-                </div>
-
-                {materials.map((material) => {
-                  const isSelected = selected.some(
-                    (m) =>
-                      String(m.material_id) ===
-                      String(material.material_id)
-                  );
-
-                  const selectedMaterial = selected.find(
-                    (m) =>
-                      String(m.material_id) ===
-                      String(material.material_id)
-                  );
+                  const selected = selectedMaterials[po.id] || [];
 
                   return (
-                    <div
-                      key={material.material_id}
-                      className={`po-material-row ${
-                        isSelected ? "selected" : ""
-                      }`}
-                    >
-                      <label className="material-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() =>
-                            handleToggleMaterial(
-                              po.id,
-                              material
-                            )
-                          }
-                        />
+                    <div key={po.id} className="po-selection-card">
+                      <div className="po-selection-header">
+                        <div>
+                          <strong>PO #{po.po_no || po.id}</strong>
+                          <div className="field-hint">
+                            Vendor: {po.vendor?.name || "—"}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="dt-btn dt-btn-danger"
+                          onClick={() => handleRemovePurchaseOrder(po.id)}
+                        >
+                          Remove
+                        </button>
+                      </div>
 
-                        <span>
-                          <strong>
-                            {material.material?.name ||
-                              "Unknown Material"}
-                          </strong>
+                      <div className="po-material-list">
+                        <div className="po-material-title">Select Materials</div>
 
-                          {material.variety?.variety_name && (
-                            <span className="material-variety">
-                              {" "}
-                              ({material.variety.variety_name})
-                            </span>
-                          )}
+                        {materials.map((material) => {
+                          const isSelected = selected.some(
+                            (m) =>
+                              String(m.material_id) === String(material.material_id)
+                          );
 
-                          <small>
-                            Ordered: {material.qty} @ ₹
-                            {material.rate}
-                          </small>
-                        </span>
-                      </label>
+                          const selectedMaterial = selected.find(
+                            (m) =>
+                              String(m.material_id) === String(material.material_id)
+                          );
 
-                      {isSelected && (
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          className="material-qty-input"
-                          placeholder="Qty (Tons)"
-                          value={
-                            selectedMaterial?.qty || ""
-                          }
-                          onChange={(e) =>
-                            handleMaterialQtyChange(
-                              po.id,
-                              material.material_id,
-                              e.target.value
-                            )
-                          }
-                        />
-                      )}
+                          return (
+                            <div
+                              key={material.material_id}
+                              className={`po-material-row ${
+                                isSelected ? "selected" : ""
+                              }`}
+                            >
+                              <label className="material-checkbox">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() =>
+                                    handleToggleMaterial(po.id, material)
+                                  }
+                                />
+                                <span>
+                                  <strong>
+                                    {material.material?.name ||
+                                      material.material_name ||
+                                      `Material ${material.material_id}`}
+                                  </strong>
+                                  {material.variety?.variety_name && (
+                                    <span className="material-variety">
+                                      {" "}
+                                      ({material.variety.variety_name})
+                                    </span>
+                                  )}
+                                  <small>
+                                    Ordered: {material.qty} @ ₹{material.rate}
+                                  </small>
+                                </span>
+                              </label>
+
+                              {isSelected && (
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  className="material-qty-input"
+                                  placeholder="Qty (Tons)"
+                                  value={selectedMaterial?.qty || ""}
+                                  onChange={(e) =>
+                                    handleMaterialQtyChange(
+                                      po.id,
+                                      material.material_id,
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })}
               </div>
+            )}
+
+            <div className="sf-field">
+              <label>Challan No.</label>
+              <input
+                name="challan_no"
+                value={form.challan_no}
+                onChange={handleChange}
+                required
+              />
+              <p className="field-hint">
+                The delivery-note number the driver brought with them.
+              </p>
             </div>
-          );
-        })}
-      </div>
-    )}
 
-    <div className="sf-field">
-      <label>Challan No.</label>
+            <div className="sf-field">
+              <label>Expected Qty (Tons)</label>
+              <input
+                name="expected_qty"
+                type="number"
+                value={form.expected_qty}
+                onChange={handleChange}
+                required
+              />
+              <p className="field-hint">
+                Total quantity expected on this truck.
+              </p>
+            </div>
+          </>
+        )}
 
-      <input
-        name="challan_no"
-        value={form.challan_no}
-        onChange={handleChange}
-        required
-      />
-
-      <p className="field-hint">
-        The delivery-note number the driver brought with them.
-      </p>
-    </div>
-
-    <div className="sf-field">
-      <label>Expected Qty (Tons)</label>
-
-      <input
-        name="expected_qty"
-        type="number"
-        value={form.expected_qty}
-        onChange={handleChange}
-        required
-      />
-
-      <p className="field-hint">
-        Total quantity expected on this truck.
-      </p>
-    </div>
-  </>
-)}
         {isSales && (
           <>
             <div>
@@ -669,6 +820,7 @@ setPhotoPreview("");
             </div>
           </>
         )}
+
         {isOther && (
           <>
             <div className="sf-field">
@@ -694,6 +846,7 @@ setPhotoPreview("");
             </div>
           </>
         )}
+
         <div className="sf-field">
           <label>Driver Photo</label>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -734,8 +887,9 @@ setPhotoPreview("");
           )}
           <p className="field-hint">Optional — a quick photo of the driver for the record.</p>
         </div>
-        <button className="sf-submit" type="submit" disabled={uploadingPhoto}>
-          {uploadingPhoto ? "Uploading photo…" : "Generate Token"}
+
+        <button className="sf-submit" type="submit" disabled={uploadingPhoto || fetchingPODetails}>
+          {uploadingPhoto ? "Uploading photo…" : fetchingPODetails ? "Loading PO details…" : "Generate Token"}
         </button>
       </form>
 
@@ -856,6 +1010,7 @@ setPhotoPreview("");
           },
         ]}
       />
+      
       <ModuleGuide
         title="Gate Entry"
         steps={[

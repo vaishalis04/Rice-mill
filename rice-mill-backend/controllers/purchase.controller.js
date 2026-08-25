@@ -416,40 +416,39 @@ bulkCreate: async (req, res, next) => {
       .join(",");
 
     const purchaseOrder = await PurchaseOrder.create(
-      {
-        po_no,
-        vendor_id,
+  {
+    po_no,
+    vendor_id,
 
-        material_id: materialIds,
-        variety_id: varietyIds,
-        qty: quantities,
-        rate: rates,
+    // Keep these NULL because bulk PO items are stored in JSON
+    material_id: null,
+    variety_id: null,
+    qty: null,
+    rate: null,
 
-        po_date,
-        validity,
-        do_no,
+    po_date,
+    validity,
+    do_no,
 
-        uploaded_by_vendor:
-          uploaded_by_vendor ?? false,
+    uploaded_by_vendor: uploaded_by_vendor ?? false,
 
-        plant_id: resolvedPlantId,
+    plant_id: resolvedPlantId,
 
-        created_by:
-          req.user ? req.user.id : null,
+    created_by: req.user ? req.user.id : null,
 
-        approval_status: "pending_approval",
+    approval_status: "pending_approval",
 
-        items: items.map((item) => ({
-          material_id: item.material_id,
-          variety_id: item.variety_id,
-          qty: item.qty,
-          rate: item.rate,
-        })),
-      },
-      {
-        transaction: t,
-      }
-    );
+    items: items.map((item) => ({
+      material_id: item.material_id,
+      variety_id: item.variety_id,
+      qty: item.qty,
+      rate: item.rate,
+    })),
+  },
+  {
+    transaction: t,
+  }
+);
 
     await t.commit();
 
