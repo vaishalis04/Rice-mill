@@ -75,10 +75,6 @@ const [selectedMaterials, setSelectedMaterials] = useState({});
   const salesOrders = useEntityLookup("sales_order");
   const salesOrderGroups = useEntityLookup("sales_order_grouped");
 
-  // "Load New Truck for Remaining Qty (Tons)" on the Loading tab jumps here with a
-  // specific Sales Order LINE ITEM id already known (prefillSoId) — resolve
-  // which grouped SO it belongs to (so the picker + box display correctly)
-  // and pre-select that exact item.
   useEffect(() => {
     if (!prefillSoId) return;
     setForm((prev) => ({ ...emptyForm, entry_type: "sales", so_id: prefillSoId }));
@@ -88,18 +84,15 @@ const [selectedMaterials, setSelectedMaterials] = useState({});
     );
     setSoGroup(group || null);
     if (onPrefillConsumed) onPrefillConsumed();
-  }, [prefillSoId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [prefillSoId]);
 
-  // Guards against a race where salesOrderGroups hasn't finished its fetch
-  // yet at the moment the prefill effect above runs — once the grouped
-  // list does arrive, try again to resolve soGroup for display.
   useEffect(() => {
     if (!form.so_id || soGroup || form.entry_type !== "sales") return;
     const group = salesOrderGroups.rows.find(
       (g) => Array.isArray(g.items) && g.items.some((i) => String(i.id) === String(form.so_id))
     );
     if (group) setSoGroup(group);
-  }, [salesOrderGroups.rows]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [salesOrderGroups.rows]); 
 
   const isOther = form.entry_type === "other";
   const isSales = form.entry_type === "sales";
@@ -112,7 +105,7 @@ const [selectedMaterials, setSelectedMaterials] = useState({});
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => load(), []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => load(), []);
 
   const handleStatusFilterChange = (status) => {
     setStatusFilter(status);
@@ -144,7 +137,6 @@ const handleAddPurchaseOrder = (po_id) => {
 
   setSelectedPOs((prev) => [...prev, po]);
 
-  // Automatically select all materials initially
   const materials = Array.isArray(po.items) ? po.items : [];
 
   setSelectedMaterials((prev) => ({
@@ -155,7 +147,6 @@ const handleAddPurchaseOrder = (po_id) => {
     })),
   }));
 
-  // Vendor comes from PO
   setForm((prev) => ({
     ...prev,
     vendor_id: po.vendor_id,

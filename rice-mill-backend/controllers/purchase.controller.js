@@ -246,12 +246,25 @@ bulkCreate: async (req, res, next) => {
     }
 
     // ============================================================
-    // 2. VALIDATE VENDOR
+    // 2. NORMALIZE VENDOR ID
+    // ============================================================
+
+    const vendorId = Number(vendor_id);
+
+    if (!Number.isInteger(vendorId) || vendorId <= 0) {
+      throw createError(
+        400,
+        "vendor_id must be a valid number"
+      );
+    }
+
+    // ============================================================
+    // 3. VALIDATE VENDOR
     // ============================================================
 
     const vendor = await Vendor.findOne({
       where: {
-        id: vendor_id,
+        id: vendorId,
         is_deleted: false,
       },
       transaction: t,
@@ -260,28 +273,39 @@ bulkCreate: async (req, res, next) => {
     if (!vendor) {
       throw createError(
         400,
-        `Invalid vendor_id: ${vendor_id}`
+        `Invalid vendor_id: ${vendorId}`
       );
     }
 
     // ============================================================
-    // 3. DUPLICATE MATERIAL + VARIETY CHECK
+    // 4. DUPLICATE MATERIAL + VARIETY CHECK
     //
-    // Same material is allowed if variety is different.
+    // Same material with different varieties = allowed
     //
     // material 3 + variety 1  ✅
     // material 3 + variety 2  ✅
     // material 3 + variety 1  ❌
+    //
+    // Same material without variety twice = ❌
     // ============================================================
 
     const seen = new Set();
 
     // ============================================================
-    // 4. VALIDATE EACH ITEM
+    // 5. VALIDATE EACH ITEM
     // ============================================================
+
+    const normalizedItems = [];
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
+
+      if (!item || typeof item !== "object") {
+        throw createError(
+          400,
+          `Item ${i + 1} must be an object`
+        );
+      }
 
       // ----------------------------------------------------------
       // Material ID
@@ -303,8 +327,6 @@ bulkCreate: async (req, res, next) => {
       // Quantity
       // ----------------------------------------------------------
 
-      const qty = Number(item.qty);
-
       if (
         item.qty === undefined ||
         item.qty === null ||
@@ -315,6 +337,8 @@ bulkCreate: async (req, res, next) => {
           `Item ${i + 1}: qty is required`
         );
       }
+
+      const qty = Number(item.qty);
 
       if (!Number.isFinite(qty) || qty <= 0) {
         throw createError(
@@ -327,8 +351,6 @@ bulkCreate: async (req, res, next) => {
       // Rate
       // ----------------------------------------------------------
 
-      const rate = Number(item.rate);
-
       if (
         item.rate === undefined ||
         item.rate === null ||
@@ -339,6 +361,8 @@ bulkCreate: async (req, res, next) => {
           `Item ${i + 1}: rate is required`
         );
       }
+
+      const rate = Number(item.rate);
 
       if (!Number.isFinite(rate) || rate < 0) {
         throw createError(
@@ -372,7 +396,7 @@ bulkCreate: async (req, res, next) => {
       }
 
       // ==========================================================
-      // 5. VALIDATE MATERIAL
+      // 6. VALIDATE MATERIAL EXISTS
       // ==========================================================
 
       const material = await MaterialMaster.findOne({
@@ -391,7 +415,7 @@ bulkCreate: async (req, res, next) => {
       }
 
       // ==========================================================
-      // 6. VALIDATE VARIETY
+      // 7. VALIDATE VARIETY EXISTS
       // ==========================================================
 
       if (varietyId !== null) {
@@ -410,27 +434,24 @@ bulkCreate: async (req, res, next) => {
           );
         }
 
-        // --------------------------------------------------------
+        // ========================================================
         // Verify variety belongs to material
-        // --------------------------------------------------------
+        // ========================================================
 
         if (
           variety.material_id !== undefined &&
-          variety.material_id !== null
+          variety.material_id !== null &&
+          Number(variety.material_id) !== materialId
         ) {
-          if (
-            Number(variety.material_id) !== materialId
-          ) {
-            throw createError(
-              400,
-              `Item ${i + 1}: Variety ${varietyId} does not belong to material ${materialId}`
-            );
-          }
+          throw createError(
+            400,
+            `Item ${i + 1}: Variety ${varietyId} does not belong to material ${materialId}`
+          );
         }
       }
 
       // ==========================================================
-      // 7. CHECK DUPLICATE MATERIAL + VARIETY
+      // 8. DUPLICATE MATERIAL + VARIETY
       // ==========================================================
 
       const key = `${materialId}-${varietyId ?? "null"}`;
@@ -449,155 +470,128 @@ bulkCreate: async (req, res, next) => {
       seen.add(key);
 
       // ==========================================================
-      // 8. NORMALIZE VALUES
+      // 9. NORMALIZE ITEM
       // ==========================================================
 
-      item.material_id = materialId;
-      item.variety_id = varietyId;
-      item.qty = qty;
-      item.rate = rate;
+      normalizedItems.push({
+        material_id: materialId,
+        variety_id: varietyId,
+        qty,
+        rate,
+      });
     }
 
     // ============================================================
-    // 9. GENERATE PO NUMBER
+    // 10. GENERATE ONE PO NUMBER
     // ============================================================
 
     const po_no = await generatePoNo();
 
     // ============================================================
-    // 10. RESOLVE PLANT
+    // 11. RESOLVE PLANT
     // ============================================================
 
     const resolvedPlantId =
-      plant_id ||
-      (req.user ? req.user.plant_id : null);
+      plant_id !== undefined &&
+      plant_id !== null &&
+      plant_id !== ""
+        ? Number(plant_id)
+        : req.user?.plant_id || null;
 
     // ============================================================
-    // 11. CREATE COMMA-SEPARATED VALUES
+    // 12. CREATE ONE DATABASE ROW PER ITEM
     //
-    // Example:
+    // IMPORTANT:
     //
-    // items:
-    // [
-    //   {
-    //     material_id: 2,
-    //     variety_id: 3,
-    //     qty: 100,
-    //     rate: 50
-    //   },
-    //   {
-    //     material_id: 4,
-    //     variety_id: 5,
-    //     qty: 200,
-    //     rate: 60
-    //   }
-    // ]
+    // We DO NOT do:
     //
-    // SQL:
+    // material_id: "2,4"
     //
-    // material_id = "2,4"
-    // variety_id  = "3,5"
-    // qty         = "100,200"
-    // rate        = "50,60"
+    // Instead:
+    //
+    // Row 1:
+    // material_id: 2
+    //
+    // Row 2:
+    // material_id: 4
+    //
+    // Both rows use the SAME po_no.
     // ============================================================
 
-    const materialIds = items
-      .map((item) => item.material_id)
-      .join(",");
+    const purchaseOrderRows = normalizedItems.map((item) => ({
+      po_no,
 
-    const varietyIds = items
-      .map((item) => item.variety_id ?? "")
-      .join(",");
+      vendor_id: vendorId,
 
-    const quantities = items
-      .map((item) => item.qty)
-      .join(",");
+      material_id: item.material_id,
 
-    const rates = items
-      .map((item) => item.rate)
-      .join(",");
+      variety_id: item.variety_id,
 
-    // ============================================================
-    // 12. CREATE PURCHASE ORDER
-    //
-    // ONE PO ROW
-    // COMMA-SEPARATED COLUMNS
-    // FULL ITEMS STORED IN JSON
-    // ============================================================
+      qty: item.qty,
 
-    const purchaseOrder = await PurchaseOrder.create(
-      {
-        po_no,
+      rate: item.rate,
 
-        vendor_id,
+      po_date,
 
-        // --------------------------------------------
-        // Comma-separated SQL columns
-        // --------------------------------------------
+      validity: validity || null,
 
-        material_id: materialIds,
+      do_no: do_no || null,
 
-        variety_id: varietyIds,
+      uploaded_by_vendor:
+        uploaded_by_vendor ?? false,
 
-        qty: quantities,
+      plant_id: resolvedPlantId,
 
-        rate: rates,
+      created_by:
+        req.user?.id || null,
 
-        // --------------------------------------------
-        // PO details
-        // --------------------------------------------
+      approval_status: "pending_approval",
 
-        po_date,
-
-        validity,
-
-        do_no,
-
-        uploaded_by_vendor:
-          uploaded_by_vendor ?? false,
-
-        plant_id: resolvedPlantId,
-
-        created_by:
-          req.user ? req.user.id : null,
-
-        approval_status: "pending_approval",
-
-        // --------------------------------------------
-        // Keep complete item details in JSON
-        // --------------------------------------------
-
-        items: items.map((item) => ({
+      // Keep the individual item as JSON if required
+      items: [
+        {
           material_id: item.material_id,
           variety_id: item.variety_id,
           qty: item.qty,
           rate: item.rate,
-        })),
-      },
-      {
-        transaction: t,
-      }
-    );
+        },
+      ],
+    }));
 
     // ============================================================
-    // 13. COMMIT TRANSACTION
+    // 13. INSERT ALL PO ITEMS
+    // ============================================================
+
+    const createdPurchaseOrders =
+      await PurchaseOrder.bulkCreate(
+        purchaseOrderRows,
+        {
+          transaction: t,
+          validate: true,
+        }
+      );
+
+    // ============================================================
+    // 14. COMMIT
     // ============================================================
 
     await t.commit();
 
     // ============================================================
-    // 14. FETCH CREATED PO
+    // 15. FETCH ALL ROWS BELONGING TO THIS PO
     // ============================================================
 
-    const fullRow = await PurchaseOrder.findOne({
+    const fullRows = await PurchaseOrder.findAll({
       where: {
-        id: purchaseOrder.id,
+        po_no,
+        is_deleted: false,
       },
       include: poIncludes,
+      order: [["id", "ASC"]],
     });
 
     // ============================================================
-    // 15. SUCCESS RESPONSE
+    // 16. SUCCESS RESPONSE
     // ============================================================
 
     return res.status(201).json({
@@ -605,7 +599,13 @@ bulkCreate: async (req, res, next) => {
 
       msg: `PO ${po_no} created successfully`,
 
-      data: fullRow,
+      data: fullRows,
+
+      meta: {
+        po_no,
+        vendor_id: vendorId,
+        item_count: createdPurchaseOrders.length,
+      },
     });
 
   } catch (err) {
@@ -659,6 +659,37 @@ bulkCreate: async (req, res, next) => {
         createError(
           400,
           `Duplicate entry — ${detail}`
+        )
+      );
+    }
+
+    // ============================================================
+    // FOREIGN KEY ERROR
+    // ============================================================
+
+    if (
+      err.name === "SequelizeForeignKeyConstraintError"
+    ) {
+      return next(
+        createError(
+          400,
+          `Foreign key error: ${
+            err.parent?.sqlMessage ||
+            err.message
+          }`
+        )
+      );
+    }
+
+    // ============================================================
+    // DATABASE ERROR
+    // ============================================================
+
+    if (err.parent?.sqlMessage) {
+      return next(
+        createError(
+          400,
+          err.parent.sqlMessage
         )
       );
     }

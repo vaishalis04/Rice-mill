@@ -81,39 +81,188 @@ export default function PurchaseOrdersPage() {
   };
 
   const handleSubmitCart = async (e) => {
-    e.preventDefault();
-    setError("");
-    setInfo("");
-    if (!header.vendor_id || !header.po_date) {
-      setError("Vendor and PO Date are required.");
+  e.preventDefault();
+
+  setError("");
+  setInfo("");
+
+  // -----------------------------------------
+  // 1. Validate PO header
+  // -----------------------------------------
+  if (!header.vendor_id) {
+    setError("Vendor is required.");
+    return;
+  }
+
+  if (!header.po_date) {
+    setError("PO Date is required.");
+    return;
+  }
+
+  // -----------------------------------------
+  // 2. Validate cart
+  // -----------------------------------------
+  if (!Array.isArray(cartItems) || cartItems.length === 0) {
+    setError("Add at least one material to the PO before submitting.");
+    return;
+  }
+
+  // -----------------------------------------
+  // 3. Validate duplicate material + variety
+  // -----------------------------------------
+  const seen = new Set();
+
+  for (let i = 0; i < cartItems.length; i++) {
+    const item = cartItems[i];
+
+    const materialId = Number(item.material_id);
+
+    const varietyId =
+      item.variety_id !== undefined &&
+      item.variety_id !== null &&
+      item.variety_id !== ""
+        ? Number(item.variety_id)
+        : null;
+
+    const key = `${materialId}-${varietyId ?? "null"}`;
+
+    if (seen.has(key)) {
+      setError(
+        `Duplicate material/variety combination at item ${
+          i + 1
+        }. Please remove the duplicate item.`
+      );
       return;
     }
-    if (cartItems.length === 0) {
-      setError("Add at least one material to the PO before submitting.");
+
+    seen.add(key);
+
+    // -----------------------------------------
+    // Material validation
+    // -----------------------------------------
+    if (!Number.isInteger(materialId) || materialId <= 0) {
+      setError(`Item ${i + 1}: valid material is required.`);
       return;
     }
-    try {
-      const res = await createPurchaseOrderBulkApi({
-        vendor_id: Number(header.vendor_id),
-        po_date: header.po_date,
-        validity: header.validity || undefined,
-        do_no: header.do_no || undefined,
-        items: cartItems.map((i) => ({
-          material_id: Number(i.material_id),
-          variety_id: i.variety_id ? Number(i.variety_id) : null,
-          qty: Number(i.qty),
-          rate: Number(i.rate),
-        })),
-      });
-      setInfo(res.data.msg || "Purchase order created.");
-      setHeader(emptyHeader);
-      setCartItems([]);
-      load();
-    } catch (err) {
-      setError(err.response?.data?.msg || err.response?.data?.message || "Save failed");
+
+    // -----------------------------------------
+    // Variety validation
+    // -----------------------------------------
+    if (
+      varietyId !== null &&
+      (!Number.isInteger(varietyId) || varietyId <= 0)
+    ) {
+      setError(`Item ${i + 1}: invalid variety.`);
+      return;
     }
+
+    // -----------------------------------------
+    // Qty validation
+    // -----------------------------------------
+    if (
+      item.qty === undefined ||
+      item.qty === null ||
+      item.qty === ""
+    ) {
+      setError(`Item ${i + 1}: quantity is required.`);
+      return;
+    }
+
+    const qty = Number(item.qty);
+
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setError(`Item ${i + 1}: quantity must be greater than 0.`);
+      return;
+    }
+
+    // -----------------------------------------
+    // Rate validation
+    // -----------------------------------------
+    if (
+      item.rate === undefined ||
+      item.rate === null ||
+      item.rate === ""
+    ) {
+      setError(`Item ${i + 1}: rate is required.`);
+      return;
+    }
+
+    const rate = Number(item.rate);
+
+    if (!Number.isFinite(rate) || rate < 0) {
+      setError(`Item ${i + 1}: rate must be a valid number.`);
+      return;
+    }
+  }
+
+  // -----------------------------------------
+  // 4. Build EXACT backend payload
+  // -----------------------------------------
+  const payload = {
+    vendor_id: Number(header.vendor_id),
+
+    po_date: header.po_date,
+
+    // Send null when optional values are empty
+    validity: header.validity || null,
+
+    do_no: header.do_no?.trim() || null,
+
+    uploaded_by_vendor: false,
+
+    // If you have plant_id in your page, put it here.
+    // Otherwise backend will use req.user.plant_id.
+    // plant_id: Number(plantId),
+
+    items: cartItems.map((item) => ({
+      material_id: Number(item.material_id),
+
+      variety_id:
+        item.variety_id !== undefined &&
+        item.variety_id !== null &&
+        item.variety_id !== ""
+          ? Number(item.variety_id)
+          : null,
+
+      qty: Number(item.qty),
+
+      rate: Number(item.rate),
+    })),
   };
 
+  // -----------------------------------------
+  // 5. API request
+  // -----------------------------------------
+  try {
+    console.log("CREATE PO PAYLOAD:", payload);
+
+    const res = await createPurchaseOrderBulkApi(payload);
+
+    setInfo(
+      res.data?.msg || "Purchase order created successfully."
+    );
+
+    // -----------------------------------------
+    // 6. Reset form
+    // -----------------------------------------
+    setHeader(emptyHeader);
+    setCurrentItem(emptyItem);
+    setCartItems([]);
+
+    // -----------------------------------------
+    // 7. Reload PO list
+    // -----------------------------------------
+    load();
+  } catch (err) {
+    console.error("CREATE PO ERROR:", err);
+
+    setError(
+      err.response?.data?.msg ||
+        err.response?.data?.message ||
+        "Failed to create purchase order."
+    );
+  }
+};
   // ---- editing an existing PO (header + items) ----
 
   const handleEditPo = (po) => {

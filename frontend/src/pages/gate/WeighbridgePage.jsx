@@ -16,10 +16,9 @@ const emptyForm = {
   gross_weight: "",
   tare_weight: "",
   weighed_at: "",
-  final_rate: "", // only needed if the gate entry has no linked PO
+  final_rate: "",
 };
 
-// datetime-local inputs need "YYYY-MM-DDTHH:mm"; API wants full ISO.
 const toIso = (local) => (local ? new Date(local).toISOString() : "");
 const toLocal = (iso) => (iso ? iso.slice(0, 16) : "");
 
@@ -36,14 +35,9 @@ export default function WeighbridgePage() {
   const vehicles = useEntityLookup("vehicle");
   const drivers = useEntityLookup("driver");
 
-  // Weight slips only store gate_entry_id — resolve vehicle/driver by
-  // looking that gate entry up first, then its vehicle_id/driver_id.
   const getGateEntryRow = (gate_entry_id) =>
     gateEntries.rows.find((r) => String(r.id) === String(gate_entry_id));
 
-  // Empty/miscellaneous trucks (entry_type "other") skip Sampling/Lab
-  // entirely and are weighable as soon as they're checked in
-  // ('waiting_weighment'), instead of needing to reach 'accepted'.
   const selectedGateEntry = getGateEntryRow(form.gate_entry_id);
   const isOtherEntry = selectedGateEntry?.entry_type === "other";
 
@@ -57,8 +51,6 @@ export default function WeighbridgePage() {
 
   useEffect(load, []);
 
-  // Live net weight — recalculated automatically the moment both weights are
-  // entered, so the operator sees it instantly instead of only after saving.
   const liveNetWeight = useMemo(() => {
     if (form.gross_weight === "" || form.tare_weight === "") return null;
     const g = Number(form.gross_weight);
@@ -67,10 +59,6 @@ export default function WeighbridgePage() {
     return g - t;
   }, [form.gross_weight, form.tare_weight]);
 
-  // Auto-calculate tare weight when a vehicle is selected: the same truck's
-  // empty weight rarely changes, so look up its most recent weight slip and
-  // pre-fill tare_weight automatically (still editable — this is a starting
-  // point, not a lock).
   useEffect(() => {
     if (editingId || !form.gate_entry_id) return;
     const ge = getGateEntryRow(form.gate_entry_id);
@@ -93,10 +81,8 @@ export default function WeighbridgePage() {
           : prev
       );
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.gate_entry_id, slips.length]);
 
-  // Filtered view for the DataTable: Pending = missing tare_weight, Slip Generated = has tare
   const visibleSlips = useMemo(() => {
     if (tab === "pending") return slips.filter((s) => s.tare_weight == null || s.tare_weight === "");
     if (tab === "generated") return slips.filter((s) => s.tare_weight != null && s.tare_weight !== "");
@@ -112,7 +98,6 @@ export default function WeighbridgePage() {
     setInfo("");
     try {
       if (editingId) {
-        // Only the weights are meant to be corrected after creation.
         await updateWeightSlipApi(editingId, {
           gross_weight: Number(form.gross_weight),
           tare_weight: Number(form.tare_weight),
@@ -126,9 +111,6 @@ export default function WeighbridgePage() {
         };
         if (form.tare_weight !== "" && form.tare_weight != null) payload.tare_weight = Number(form.tare_weight);
         if (form.weighed_at) payload.weighed_at = toIso(form.weighed_at);
-        // final_rate is only relevant for a purchase entry with no PO — leave
-        // it out entirely rather than send an empty string (and it's not
-        // used at all for empty/misc entries).
         if (!isOtherEntry && form.final_rate !== "") payload.final_rate = Number(form.final_rate);
 
         await createWeightSlipApi(payload);

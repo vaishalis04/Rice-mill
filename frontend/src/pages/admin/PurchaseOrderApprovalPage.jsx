@@ -15,24 +15,16 @@ import {
 import "../../components/DataTable.css";
 import "./PurchaseOrderApprovalPage.css";
 
-// Human-readable labels for the approval_status enum coming from the API.
 const STATUS_LABELS = {
   pending_approval: "Pending Approval",
   approved: "Approved",
   rejected: "Rejected",
 };
 
-// Pulls the array out of either { data: { data: [...] } } or { data: [...] }.
 const extractList = (response) => {
   const data = response?.data?.data ?? response?.data;
   return Array.isArray(data) ? data : data?.rows || [];
 };
-
-// ---------------------------------------------------------------------
-// Reusable pickers: pick an existing material/variety by name, or add a
-// brand new one inline. Used both for editing the PO's existing line and
-// for adding an extra line item to the same PO.
-// ---------------------------------------------------------------------
 
 function MaterialPicker({ materials, value, onChange, onAdd, onDelete, busy }) {
   const [showAdd, setShowAdd] = useState(false);
@@ -217,14 +209,11 @@ export default function PurchaseOrderApprovalPage() {
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState(null);
 
-  // ---- Master data for the pickers (vendor / material / variety) ----
   const [vendors, setVendors] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [varieties, setVarieties] = useState([]);
   const [masterActionLoading, setMasterActionLoading] = useState(false);
 
-  // ---- "Add another material" panel — attaches an extra line item to
-  // the same PO, separate from the line already selected/edited above ----
   const [addItemMaterialId, setAddItemMaterialId] = useState("");
   const [addItemVarietyId, setAddItemVarietyId] = useState("");
   const [addItemQty, setAddItemQty] = useState("");
@@ -261,7 +250,6 @@ export default function PurchaseOrderApprovalPage() {
       setMaterials(extractList(materialsRes));
       setVarieties(extractList(varietiesRes));
     } catch (err) {
-      // Non-fatal — the pickers just come up empty and the page still works.
       console.error("Failed to load vendor/material/variety lists", err);
     }
   };
@@ -378,8 +366,6 @@ export default function PurchaseOrderApprovalPage() {
     }
   };
 
-  // ---- Field readers, matched to the real API shape ----
-
   const getVendorName = (po) => po?.vendor?.name || "—";
   const getVendorCode = (po) => po?.vendor?.vendor_code || "—";
 
@@ -483,7 +469,6 @@ export default function PurchaseOrderApprovalPage() {
     setSuccess("");
 
     try {
-      // updatePurchaseOrderBeforeApprovalApi is keyed by po_no, not id.
       await updatePurchaseOrderBeforeApprovalApi(poNo, {
         vendor_id: editForm.vendor_id || undefined,
         material_id: editForm.material_id || undefined,
@@ -513,8 +498,6 @@ export default function PurchaseOrderApprovalPage() {
       setActionLoading(false);
     }
   };
-
-  // ---- Add an extra material/variety line to this same PO ----
 
   const handleAddItemToPO = async () => {
     if (!selectedPO) return;
@@ -562,9 +545,6 @@ export default function PurchaseOrderApprovalPage() {
       setAddItemLoading(false);
     }
   };
-
-  // ---- Material master-data management (add / delete), shared by both
-  // the edit-line picker and the add-item picker ----
 
   const createMaterial = async (name, code) => {
     setMasterActionLoading(true);
@@ -631,8 +611,6 @@ export default function PurchaseOrderApprovalPage() {
       setMasterActionLoading(false);
     }
   };
-
-  // ---- Variety master-data management (add / delete) ----
 
   const createVariety = async (name) => {
     setMasterActionLoading(true);

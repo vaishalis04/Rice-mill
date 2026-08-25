@@ -10,7 +10,6 @@ import EntitySelect from "../../components/EntitySelect";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 import { GRAIN_TYPES } from "../../constants/grainTypes";
 
-// Each sub-type's own fields (besides `type`, which is added automatically)
 const TYPE_CONFIG = {
   uom: {
     label: "UOM",
@@ -39,9 +38,6 @@ const TYPE_CONFIG = {
     label: "Plant",
     fields: [
       { name: "name", label: "Name" },
-      // Backend column is "address", not "location" — this was silently
-      // never saving/showing before since the request body key didn't
-      // match what the backend actually reads.
       { name: "address", label: "Location" },
     ],
   },
@@ -49,9 +45,6 @@ const TYPE_CONFIG = {
     label: "Rate",
     fields: [
       { name: "material_id", label: "Material", type: "entity", entity: "material" },
-      // Backend requires "base_rate", not "rate" — this was the exact
-      // cause of "material_id, base_rate and effective_date are required"
-      // even when Material/Rate/Date all looked filled in.
       { name: "base_rate", label: "Rate", type: "number" },
       { name: "effective_date", label: "Effective Date", type: "date" },
     ],
@@ -59,11 +52,6 @@ const TYPE_CONFIG = {
   quality_parameter: {
     label: "Quality Parameter",
     fields: [
-      // Backend requires "parameter_name", not "name" — that mismatch was
-      // the exact cause of "parameter_name is required". Also: there is no
-      // param_code column on this model at all (the old "Param Code" field
-      // was silently ignored on every save), and acceptable_min/max exist
-      // on the backend but were never exposed here before.
       { name: "parameter_name", label: "Name" },
       { name: "unit", label: "Unit" },
       { name: "acceptable_min", label: "Acceptable Min", type: "number" },
@@ -73,9 +61,6 @@ const TYPE_CONFIG = {
   reason_code: {
     label: "Reason Code",
     fields: [
-      // category was completely missing from this form before, even
-      // though the backend requires it — that's why submitting always
-      // failed with "category and code are required" no matter what.
       {
         name: "category",
         label: "Category",
@@ -91,11 +76,6 @@ const TYPE_CONFIG = {
     ],
   },
 };
-
-// NOTE: `plant`, `rate`, `quality_parameter`, `reason_code` field lists above
-// are guesses (the API docs only gave full examples for uom/variety/material
-// and said "same pattern applies" for the rest) — adjust field names/types
-// here if the backend expects different ones; everything else just works.
 
 const TYPES = Object.keys(TYPE_CONFIG);
 
@@ -113,10 +93,6 @@ export default function MasterSettingsPage() {
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
 
-  // FK-backed entity fields across the tabs above (uom_id/variety_id on
-  // Material, material_id on Rate). material_category is excluded — its
-  // "id" is the category string itself, so it already displays correctly
-  // with no lookup needed.
   const uoms = useEntityLookup("uom");
   const varieties = useEntityLookup("variety");
   const materials = useEntityLookup("material");
