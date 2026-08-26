@@ -3,14 +3,6 @@ const sequelize = require("../config/db");
 
 class Loading extends Model {}
 
-// Outbound loading capture at the gate (Gate Sales-Loading flow).
-// One Loading row per gate entry (entry_type = "sales"). This is a
-// simplified, quantity-only capture of "this truck was loaded with X kg
-// against this Sales Order" — it does NOT pick discrete FinishedGoods/
-// packing-unit rows the way the full Dispatch module does. For granular
-// per-bag/per-pallet allocation and challan-PDF generation, use the
-// separate Dispatch module instead; this is meant for the gate operator
-// to record the load quickly and let the truck move on to check-out.
 Loading.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },

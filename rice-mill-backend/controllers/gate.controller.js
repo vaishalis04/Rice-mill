@@ -299,7 +299,7 @@ const validateReferences = async ({
 };
 
 module.exports = {
- getAll: async (req, res, next) => {
+getAll: async (req, res, next) => {
   try {
     const {
       status,
@@ -317,6 +317,7 @@ module.exports = {
     // --------------------------------------------------
     // WHERE CONDITIONS FOR GATE ENTRY
     // --------------------------------------------------
+
     const where = {
       is_deleted: false,
     };
@@ -348,6 +349,7 @@ module.exports = {
     // --------------------------------------------------
     // DATE FILTER
     // --------------------------------------------------
+
     if (from || to) {
       where.entry_time = {};
 
@@ -380,19 +382,26 @@ module.exports = {
     // --------------------------------------------------
     // PAGINATION
     // --------------------------------------------------
+
     const pageNumber = Math.max(Number(page) || 1, 1);
     const pageLimit = Math.max(Number(limit) || 20, 1);
 
     const offset = (pageNumber - 1) * pageLimit;
 
     // --------------------------------------------------
-    // GET GATE ENTRIES + PURCHASE ORDERS
+    // GET GATE ENTRIES
     // --------------------------------------------------
+
     const { rows, count } = await GateEntry.findAndCountAll({
       where,
 
       include: [
+        // Existing Gate Entry details
         ...(detailIncludes || []),
+
+        // ------------------------------------------------
+        // PURCHASE ORDERS
+        // ------------------------------------------------
 
         {
           model: GateEntryPurchaseOrder,
@@ -401,6 +410,16 @@ module.exports = {
           where: {
             is_deleted: false,
           },
+        },
+
+        // ------------------------------------------------
+        // SALES ORDER
+        // ------------------------------------------------
+
+        {
+          model: SalesOrder,
+          as: "salesOrder",
+          required: false,
         },
       ],
 
@@ -416,22 +435,29 @@ module.exports = {
     // --------------------------------------------------
     // FORMAT RESPONSE
     // --------------------------------------------------
+
     const data = rows.map((gateEntry) => {
       const item = gateEntry.toJSON();
 
       return {
         ...item,
 
+        // Purchase orders
         purchase_orders: item.purchaseOrders || [],
 
-        // Optional: remove Sequelize association name
+        // Sales order
+        sales_orders: item.salesOrders || [],
+
+        // Remove Sequelize association names
         purchaseOrders: undefined,
+        salesOrder: undefined,
       };
     });
 
     // --------------------------------------------------
     // RESPONSE
     // --------------------------------------------------
+
     return res.status(200).json({
       success: true,
 
@@ -1586,7 +1612,7 @@ generateToken: async (req, res, next) => {
                     SalesOrder,
 
                   as:
-                    "sales_order",
+                    "sales_orders",
 
                   required:
                     false,
