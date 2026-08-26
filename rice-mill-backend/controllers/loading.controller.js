@@ -2,20 +2,6 @@ const createError = require("http-errors");
 const { Loading, GateEntry, SalesOrder, Customer, MaterialMaster, Vehicle, Driver, User, Sampling, LabTest } = require("../models/index");
 const { generateLoadingNo } = require("../helpers/helperFunction");
 
-// Outbound loading capture at the gate (entry_type = "sales" flow).
-// A gate entry for a sales truck moves: waiting_token -> (check-in) ->
-// waiting_loading -> (this module) -> loaded -> (check-out) -> exited.
-// Creating a Loading record is only valid once the gate entry is at
-// 'waiting_loading'; it finalizes the loaded qty, moves the gate entry to
-// 'loaded', and marks the Sales Order 'dispatched'.
-//
-// Gate Entry only ever books the truck against a Sales Order NUMBER as a
-// whole (see gate.controller.js) — it does NOT ask which material on a
-// multi-material SO this truck is for. That choice happens here, right
-// before the load is recorded (see the `so_id` handling in create() below),
-// which is also why this module now lives on the Warehouse dashboard
-// alongside the rest of physical goods movement, not the Gate dashboard.
-
 const detailIncludes = [
   {
     model: GateEntry,
@@ -89,13 +75,6 @@ module.exports = {
     }
   },
 
-  // POST /api/loading  { gate_entry_id, loaded_qty, loaded_at?, remarks? }
-  // Supports partial fulfillment: a Sales Order can be loaded across
-  // multiple trucks (multiple gate entries) until fully loaded. Each
-  // Loading record adds to the Sales Order's running dispatched_qty; once
-  // dispatched_qty reaches qty, the order auto-closes as 'dispatched'.
-  // Until then it stays 'allocated' so further sales gate entries can still
-  // be opened against it for the remaining quantity.
   create: async (req, res, next) => {
     try {
       const { gate_entry_id, loaded_qty, loaded_at, remarks, plant_id, so_id } = req.body;

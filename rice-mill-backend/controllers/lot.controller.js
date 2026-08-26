@@ -5,23 +5,6 @@ const {
 } = require("../models/index");
 const { generateLotNo } = require("../helpers/helperFunction");
 
-// Unloading & Lot creation, traceability backbone (Module 9 / part 2)
-//
-// Unloading is now a two-step workflow instead of one "record and done" action:
-//   1. Start Unloading (startUnloading) — gate entry must be 'in_process' (weighed).
-//      Opens a Lot shell (qty = 0, unloading_status = 'in_progress') and moves the
-//      gate entry to 'unloading'. This is the point where the truck is opened up and
-//      a manual check happens at the factory — no stock exists yet.
-//   2. Complete Unloading (completeUnloading) — once the manual check is done, the
-//      operator enters bag_size + accepted_bags + rejected_bags. Accepted/rejected
-//      quantities are auto-calculated (bag_size * bags). Only the ACCEPTED qty opens
-//      the Stack placement and the opening Inventory balance; rejected qty is recorded
-//      on the lot for traceability but never enters stock. The gate entry then moves
-//      to 'unloaded'.
-// Routing the lot (warehouse vs production) remains a separate step after that —
-// it decides whether the now-known accepted stock stays as raw warehouse stock or
-// goes straight into a production batch.
-
 const lotIncludes = [
   {
     model: Purchase,
@@ -110,10 +93,6 @@ module.exports = {
   },
 
   // POST /api/lots/start-unloading
-  // { gate_entry_id, warehouse_id, bin_id, material_id?, variety_id?, parent_lot_id?, plant_id? }
-  // Step 1 of unloading: truck is opened up at the factory for a manual check.
-  // Opens a Lot shell (qty = 0, unloading_status = 'in_progress') — no Stack or
-  // Inventory yet, since the accepted quantity isn't known until bags are counted.
  startUnloading: async (req, res, next) => {
   try {
     const {
@@ -316,19 +295,29 @@ module.exports = {
   }
 },
 
-  // PATCH /api/lots/:id/complete-unloading
-  // { bag_size, accepted_bags, rejected_bags? }
-  // Step 2 of unloading: bags have been counted after the manual check.
-  // accepted_qty = bag_size * accepted_bags, rejected_qty = bag_size * rejected_bags.
-  // Only the accepted qty opens the Stack placement + opening Inventory balance.
 completeUnloading: async (req, res, next) => {
   try {
     // ============================================================
     // 1. GET REQUEST BODY SAFELY
     // ============================================================
+
     console.log("COMPLETE UNLOADING BODY:", req.body);
 
-    const { items } = req.body || {};
+    const body = req.body || {};
+
+    let items = body.items;
+
+    // Allow single lot request also
+    // Example:
+    // {
+    //   "lot_id": 1,
+    //   "bag_size": 25,
+    //   "accepted_bags": 100,
+    //   "rejected_bags": 5
+    // }
+    if (!items && body.lot_id) {
+      items = [body];
+    }
 
     if (!Array.isArray(items) || items.length === 0) {
       throw createError(
@@ -402,7 +391,7 @@ completeUnloading: async (req, res, next) => {
       const rejectedBagsNum = Number(rejected_bags);
 
       // ----------------------------------------------------------
-      // BAG SIZE
+      // BAG SIZE VALIDATION
       // ----------------------------------------------------------
 
       if (!Number.isFinite(bagSizeNum) || bagSizeNum <= 0) {
@@ -413,7 +402,7 @@ completeUnloading: async (req, res, next) => {
       }
 
       // ----------------------------------------------------------
-      // ACCEPTED BAGS
+      // ACCEPTED BAGS VALIDATION
       // ----------------------------------------------------------
 
       if (
@@ -427,7 +416,7 @@ completeUnloading: async (req, res, next) => {
       }
 
       // ----------------------------------------------------------
-      // REJECTED BAGS
+      // REJECTED BAGS VALIDATION
       // ----------------------------------------------------------
 
       if (
@@ -441,7 +430,7 @@ completeUnloading: async (req, res, next) => {
       }
 
       // ----------------------------------------------------------
-      // AT LEAST ONE BAG
+      // AT LEAST ONE BAG REQUIRED
       // ----------------------------------------------------------
 
       if (acceptedBagsNum + rejectedBagsNum <= 0) {
@@ -565,20 +554,29 @@ completeUnloading: async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
+
       msg: `Unloading completed for ${completedLots.length} material(s)`,
 
       data: {
         lots: completedLots,
+
         stacks,
+
         inventories,
 
         summary: completedLots.map((lot) => ({
+          lot_id: lot.id,
           lot_no: lot.lot_no,
-          material:
-            lot.material?.name ||
-            lot.material_id,
+
+          // MATERIAL ID ADDED HERE
+          material_id: lot.material_id,
+
+          // If material association exists
+          material: lot.material?.name || null,
+
           accepted_bags: lot.accepted_bags,
           accepted_qty: lot.qty,
+
           rejected_bags: lot.rejected_bags,
           rejected_qty: lot.rejected_qty,
         })),
@@ -589,6 +587,7 @@ completeUnloading: async (req, res, next) => {
     next(err);
   }
 },
+
   // PUT /api/lots/:id
   update: async (req, res, next) => {
     try {
@@ -624,11 +623,6 @@ completeUnloading: async (req, res, next) => {
     }
   },
 
-  // PATCH /api/lots/:id/route  { destination: "warehouse" | "production" }
-  // Decides where the ACCEPTED stock goes next — stays as raw warehouse stock, or
-  // heads straight into a production batch. The gate entry itself already moved to
-  // 'unloaded' when unloading was completed (bags counted); routing is purely about
-  // the stock's next stage, so it only needs unloading to have finished.
   route: async (req, res, next) => {
     try {
       const { destination } = req.body;
