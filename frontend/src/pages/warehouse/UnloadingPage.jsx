@@ -27,11 +27,9 @@ export default function UnloadingPage() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   
-  // New state for multiple materials unloading
   const [unloadingItems, setUnloadingItems] = useState([]);
   const [isUnloadingFormOpen, setIsUnloadingFormOpen] = useState(false);
   const [currentGateEntryId, setCurrentGateEntryId] = useState(null);
-  const [availableMaterials, setAvailableMaterials] = useState([]);
 
   const gateEntries = useEntityLookup("gate_entry");
   const materials = useEntityLookup("material");
@@ -57,83 +55,96 @@ export default function UnloadingPage() {
 
   useEffect(load, []);
 
- const handleStartSubmit = async (e) => {
-  e.preventDefault();
-  setError("");
-  setInfo("");
-  try {
-    const payload = {
-      gate_entry_id: Number(startFormState.gate_entry_id),
-      warehouse_id: Number(startFormState.warehouse_id),
-    };
-    if (startFormState.bin_id) payload.bin_id = Number(startFormState.bin_id);
-
-    console.log('Starting unloading with payload:', payload);
-
-    const res = await startUnloadingApi(payload);
-    console.log('Start unloading response:', res.data);
-    
-    // Handle response based on your API structure
-    let lots = [];
-    if (res.data.data && res.data.data.lots) {
-      lots = res.data.data.lots;
-    } else if (res.data.lots) {
-      lots = res.data.lots;
-    }
-    
-    if (!lots || lots.length === 0) {
-      setError("No lots were created. Please check if the gate entry has materials.");
-      return;
-    }
-
-    // Prepare unloading items
-    const materials = res.data.data?.materials || [];
-    const unloadingItemsList = lots.map((lot, index) => {
-      const material = materials[index] || { id: lot.material_id, name: `Material ${lot.material_id}` };
-      return {
-        lot_id: lot.id,
-        lot_no: lot.lot_no,
-        material_id: material.id || lot.material_id,
-        material_name: material.name || 'Unknown Material',
-        bag_size: "",
-        accepted_bags: "",
-        rejected_bags: "0",
-        accepted_qty: 0,
-        rejected_qty: 0,
+  const handleStartSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setInfo("");
+    try {
+      const payload = {
+        gate_entry_id: Number(startFormState.gate_entry_id),
+        warehouse_id: Number(startFormState.warehouse_id),
       };
-    });
+      if (startFormState.bin_id) payload.bin_id = Number(startFormState.bin_id);
 
-    setUnloadingItems(unloadingItemsList);
-    setCurrentGateEntryId(startFormState.gate_entry_id);
-    setIsUnloadingFormOpen(true);
-    
-    setInfo(
-      `Unloading started — ${lots.length} lot(s) opened. Enter bag counts for each material below.`
-    );
-    setStartFormState(startForm0);
-    gateEntries.refetch();
-    load();
-  } catch (err) {
-    console.error('Start unloading error:', err);
-    console.error('Error response:', err.response);
-    
-    let errorMsg = "Could not start unloading — ";
-    if (err.response?.data?.msg) {
-      errorMsg += err.response.data.msg;
-    } else if (err.response?.data?.message) {
-      errorMsg += err.response.data.message;
-    } else {
-      errorMsg += "Please ensure the gate entry has been weighed and has materials assigned.";
+      console.log('Starting unloading with payload:', payload);
+
+      const res = await startUnloadingApi(payload);
+      console.log('Start unloading response:', res.data);
+      
+      let lots = [];
+      if (res.data.data && res.data.data.lots) {
+        lots = res.data.data.lots;
+      } else if (res.data.lots) {
+        lots = res.data.lots;
+      }
+      
+      if (!lots || lots.length === 0) {
+        setError("No lots were created. Please check if the gate entry has materials.");
+        return;
+      }
+
+      const materialsList = res.data.data?.materials || [];
+      const unloadingItemsList = lots.map((lot, index) => {
+        const material = materialsList[index] || { id: lot.material_id, name: `Material ${lot.material_id}` };
+        return {
+          lot_id: lot.id,
+          lot_no: lot.lot_no,
+          material_id: material.id || lot.material_id,
+          material_name: material.name || 'Unknown Material',
+          bag_size: "",
+          accepted_bags: "",
+          rejected_bags: "0",
+          accepted_qty: 0,
+          rejected_qty: 0,
+        };
+      });
+
+      setUnloadingItems(unloadingItemsList);
+      setCurrentGateEntryId(startFormState.gate_entry_id);
+      setIsUnloadingFormOpen(true);
+      
+      setInfo(
+        `Unloading started — ${lots.length} lot(s) opened. Enter bag counts for each material below.`
+      );
+      setStartFormState(startForm0);
+      gateEntries.refetch();
+      load();
+    } catch (err) {
+      console.error('Start unloading error:', err);
+      console.error('Error response:', err.response);
+      
+      let errorMsg = "Could not start unloading — ";
+      if (err.response?.data?.msg) {
+        errorMsg += err.response.data.msg;
+      } else if (err.response?.data?.message) {
+        errorMsg += err.response.data.message;
+      } else {
+        errorMsg += "Please ensure the gate entry has been weighed and has materials assigned.";
+      }
+      setError(errorMsg);
     }
-    setError(errorMsg);
-  }
-};
+  };
+
+  // Function to open bag count form for a single lot
+  const openBagCountForm = (lot) => {
+    setUnloadingItems([{
+      lot_id: lot.id,
+      lot_no: lot.lot_no,
+      material_id: lot.material_id,
+      material_name: lot.material?.name || 'Unknown Material',
+      bag_size: lot.bag_size || "",
+      accepted_bags: lot.accepted_bags || "",
+      rejected_bags: lot.rejected_bags || "0",
+      accepted_qty: lot.qty || 0,
+      rejected_qty: lot.rejected_qty || 0,
+    }]);
+    setIsUnloadingFormOpen(true);
+  };
 
   const handleUnloadingItemChange = (index, field, value) => {
     const updatedItems = [...unloadingItems];
     updatedItems[index][field] = value;
     
-    // Calculate quantities
     if (field === 'bag_size' || field === 'accepted_bags' || field === 'rejected_bags') {
       const bagSize = Number(updatedItems[index].bag_size) || 0;
       const acceptedBags = Number(updatedItems[index].accepted_bags) || 0;
@@ -149,7 +160,6 @@ export default function UnloadingPage() {
     setError("");
     setInfo("");
     
-    // Validate all items
     for (const item of unloadingItems) {
       if (!item.bag_size || Number(item.bag_size) <= 0) {
         setError(`Please enter bag size for ${item.material_name}`);
@@ -175,14 +185,20 @@ export default function UnloadingPage() {
         }))
       };
 
+      console.log('Sending payload:', payload);
+
       const res = await completeUnloadingApi(payload);
+      
+      console.log('Complete unloading response:', res.data);
       setInfo(res.data.msg || "All materials unloaded successfully.");
       setIsUnloadingFormOpen(false);
       setUnloadingItems([]);
       gateEntries.refetch();
       load();
     } catch (err) {
-      setError(err.response?.data?.message || "Completing unloading failed");
+      console.error('Complete unloading error:', err);
+      console.error('Error response:', err.response);
+      setError(err.response?.data?.msg || err.response?.data?.message || "Completing unloading failed");
     }
   };
 
@@ -198,7 +214,6 @@ export default function UnloadingPage() {
     }
   };
 
-  // Render multiple materials unloading form
   const renderUnloadingForm = () => {
     if (!isUnloadingFormOpen) return null;
 
@@ -387,6 +402,20 @@ export default function UnloadingPage() {
             key: "lab_comment",
             label: "Lab Comment",
             render: (row) => row.purchase?.gateEntry?.samplings?.find((s) => s.labTest?.comment)?.labTest?.comment || "—",
+          },
+          // ADDED: Enter Bag Count button column
+          {
+            key: "bag_actions",
+            label: "Bag Count",
+            render: (row) => (
+              <button 
+                className="dt-btn" 
+                onClick={() => openBagCountForm(row)}
+                style={{ background: '#3b82f6', color: 'white' }}
+              >
+                Enter Bag Count
+              </button>
+            ),
           },
         ]}
       />

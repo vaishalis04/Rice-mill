@@ -321,44 +321,153 @@ module.exports = {
   // Step 2 of unloading: bags have been counted after the manual check.
   // accepted_qty = bag_size * accepted_bags, rejected_qty = bag_size * rejected_bags.
   // Only the accepted qty opens the Stack placement + opening Inventory balance.
- completeUnloading: async (req, res, next) => {
+completeUnloading: async (req, res, next) => {
   try {
-    const { items } = req.body; // Array of { lot_id, bag_size, accepted_bags, rejected_bags }
-    
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      throw createError(400, "Please provide at least one material/lot to complete unloading");
+    // ============================================================
+    // 1. GET REQUEST BODY SAFELY
+    // ============================================================
+    console.log("COMPLETE UNLOADING BODY:", req.body);
+
+    const { items } = req.body || {};
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw createError(
+        400,
+        "Please provide at least one material/lot to complete unloading"
+      );
     }
 
     const completedLots = [];
     const stacks = [];
     const inventories = [];
 
-    for (const item of items) {
-      const { lot_id, bag_size, accepted_bags, rejected_bags = 0 } = item;
+    // ============================================================
+    // 2. PROCESS EACH LOT
+    // ============================================================
 
-      const lot = await Lot.findOne({ where: { id: lot_id, is_deleted: false } });
-      if (!lot) throw createError(404, `Lot ${lot_id} not found`);
-      if (lot.unloading_status === "completed") {
-        throw createError(409, `Lot ${lot.lot_no} has already been completed`);
+    for (const item of items) {
+      const {
+        lot_id,
+        bag_size,
+        accepted_bags,
+        rejected_bags = 0,
+      } = item || {};
+
+      // ----------------------------------------------------------
+      // LOT ID VALIDATION
+      // ----------------------------------------------------------
+
+      if (!lot_id) {
+        throw createError(
+          400,
+          "lot_id is required for every item"
+        );
       }
+
+      // ----------------------------------------------------------
+      // FIND LOT
+      // ----------------------------------------------------------
+
+      const lot = await Lot.findOne({
+        where: {
+          id: lot_id,
+          is_deleted: false,
+        },
+      });
+
+      if (!lot) {
+        throw createError(
+          404,
+          `Lot ${lot_id} not found`
+        );
+      }
+
+      // ----------------------------------------------------------
+      // CHECK ALREADY COMPLETED
+      // ----------------------------------------------------------
+
+      if (lot.unloading_status === "completed") {
+        throw createError(
+          409,
+          `Lot ${lot.lot_no} has already been completed`
+        );
+      }
+
+      // ==========================================================
+      // 3. CONVERT VALUES TO NUMBERS
+      // ==========================================================
 
       const bagSizeNum = Number(bag_size);
       const acceptedBagsNum = Number(accepted_bags);
       const rejectedBagsNum = Number(rejected_bags);
 
-      if (!(bagSizeNum > 0)) throw createError(400, "bag_size must be greater than 0");
-      if (!Number.isInteger(acceptedBagsNum) || acceptedBagsNum < 0) {
-        throw createError(400, "accepted_bags must be a whole number, 0 or more");
-      }
-      if (!Number.isInteger(rejectedBagsNum) || rejectedBagsNum < 0) {
-        throw createError(400, "rejected_bags must be a whole number, 0 or more");
-      }
-      if (acceptedBagsNum + rejectedBagsNum <= 0) {
-        throw createError(400, "At least one bag (accepted or rejected) is required");
+      // ----------------------------------------------------------
+      // BAG SIZE
+      // ----------------------------------------------------------
+
+      if (!Number.isFinite(bagSizeNum) || bagSizeNum <= 0) {
+        throw createError(
+          400,
+          `Lot ${lot.lot_no}: bag_size must be greater than 0`
+        );
       }
 
-      const acceptedQty = Math.round(bagSizeNum * acceptedBagsNum * 100) / 100;
-      const rejectedQty = Math.round(bagSizeNum * rejectedBagsNum * 100) / 100;
+      // ----------------------------------------------------------
+      // ACCEPTED BAGS
+      // ----------------------------------------------------------
+
+      if (
+        !Number.isInteger(acceptedBagsNum) ||
+        acceptedBagsNum < 0
+      ) {
+        throw createError(
+          400,
+          `Lot ${lot.lot_no}: accepted_bags must be a whole number, 0 or more`
+        );
+      }
+
+      // ----------------------------------------------------------
+      // REJECTED BAGS
+      // ----------------------------------------------------------
+
+      if (
+        !Number.isInteger(rejectedBagsNum) ||
+        rejectedBagsNum < 0
+      ) {
+        throw createError(
+          400,
+          `Lot ${lot.lot_no}: rejected_bags must be a whole number, 0 or more`
+        );
+      }
+
+      // ----------------------------------------------------------
+      // AT LEAST ONE BAG
+      // ----------------------------------------------------------
+
+      if (acceptedBagsNum + rejectedBagsNum <= 0) {
+        throw createError(
+          400,
+          `Lot ${lot.lot_no}: at least one bag (accepted or rejected) is required`
+        );
+      }
+
+      // ==========================================================
+      // 4. CALCULATE QUANTITIES
+      // ==========================================================
+
+      const acceptedQty =
+        Math.round(
+          bagSizeNum * acceptedBagsNum * 100
+        ) / 100;
+
+      const rejectedQty =
+        Math.round(
+          bagSizeNum * rejectedBagsNum * 100
+        ) / 100;
+
+      // ==========================================================
+      // 5. UPDATE LOT
+      // ==========================================================
 
       await lot.update({
         qty: acceptedQty,
@@ -367,12 +476,17 @@ module.exports = {
         rejected_bags: rejectedBagsNum,
         rejected_qty: rejectedQty,
         unloading_status: "completed",
-        updated_by: req.user ? req.user.id : null,
+        updated_by: req.user
+          ? req.user.id
+          : null,
       });
 
       completedLots.push(lot);
 
-      // Create stack and inventory for accepted quantity
+      // ==========================================================
+      // 6. CREATE STACK FOR ACCEPTED MATERIAL
+      // ==========================================================
+
       if (acceptedQty > 0) {
         const stack = await Stack.create({
           stack_code: `${lot.lot_no}-S1`,
@@ -382,9 +496,16 @@ module.exports = {
           qty: acceptedQty,
           stacked_at: new Date(),
           plant_id: lot.plant_id,
-          created_by: req.user ? req.user.id : null,
+          created_by: req.user
+            ? req.user.id
+            : null,
         });
+
         stacks.push(stack);
+
+        // ========================================================
+        // 7. CREATE INVENTORY
+        // ========================================================
 
         const inventory = await Inventory.create({
           lot_id: lot.id,
@@ -396,46 +517,78 @@ module.exports = {
           balance_qty: acceptedQty,
           as_of: new Date(),
           plant_id: lot.plant_id,
-          created_by: req.user ? req.user.id : null,
+          created_by: req.user
+            ? req.user.id
+            : null,
         });
+
         inventories.push(inventory);
       }
     }
 
-    // Update gate entry status to unloaded
+    // ============================================================
+    // 8. UPDATE GATE ENTRY STATUS
+    // ============================================================
+
     const firstLot = completedLots[0];
+
     if (firstLot && firstLot.purchase_id) {
-      const purchase = await Purchase.findOne({ where: { id: firstLot.purchase_id, is_deleted: false } });
+      const purchase = await Purchase.findOne({
+        where: {
+          id: firstLot.purchase_id,
+          is_deleted: false,
+        },
+      });
+
       if (purchase) {
-        const gateEntry = await GateEntry.findOne({ where: { id: purchase.gate_entry_id, is_deleted: false } });
+        const gateEntry = await GateEntry.findOne({
+          where: {
+            id: purchase.gate_entry_id,
+            is_deleted: false,
+          },
+        });
+
         if (gateEntry) {
-          await gateEntry.update({ gate_status: "unloaded", updated_by: req.user ? req.user.id : null });
+          await gateEntry.update({
+            gate_status: "unloaded",
+            updated_by: req.user
+              ? req.user.id
+              : null,
+          });
         }
       }
     }
 
-    res.status(200).json({
+    // ============================================================
+    // 9. RESPONSE
+    // ============================================================
+
+    return res.status(200).json({
       success: true,
       msg: `Unloading completed for ${completedLots.length} material(s)`,
-      data: { 
-        lots: completedLots, 
-        stacks, 
+
+      data: {
+        lots: completedLots,
+        stacks,
         inventories,
-        summary: completedLots.map(lot => ({
+
+        summary: completedLots.map((lot) => ({
           lot_no: lot.lot_no,
-          material: lot.material?.name || lot.material_id,
+          material:
+            lot.material?.name ||
+            lot.material_id,
           accepted_bags: lot.accepted_bags,
           accepted_qty: lot.qty,
           rejected_bags: lot.rejected_bags,
-          rejected_qty: lot.rejected_qty
-        }))
+          rejected_qty: lot.rejected_qty,
+        })),
       },
     });
+
   } catch (err) {
     next(err);
   }
 },
-
   // PUT /api/lots/:id
   update: async (req, res, next) => {
     try {

@@ -1,26 +1,18 @@
-// ============================================================
-// api.js — ALL API calls for the app live here in one place.
-// Add new endpoints as new sections below as the app grows
-// (e.g. PADDY, INVENTORY, SALES sections).
-// ============================================================
 import axiosInstance from "./axiosInstance";
 
 // ---------------- AUTH ----------------
 export const loginApi = (email, password) =>
   axiosInstance.post("/auth/login", { email, password });
 
-export const registerApi = (data) =>
-  axiosInstance.post("/auth/register", data);
+export const registerApi = (data) => axiosInstance.post("/auth/register", data);
 
 export const getCurrentUserApi = () => axiosInstance.get("/auth/me");
 
 export const logoutApi = () => axiosInstance.post("/auth/logout");
 
 // ---------------- MASTER SETTINGS (role: admin) ----------------
-// One set of routes for 7 sub-tables, selected via `type`:
-// plant | material | variety | uom | rate | quality_parameter | reason_code
 export const createMasterSettingApi = (data) =>
-  axiosInstance.post("/master-settings", data); // data must include `type`
+  axiosInstance.post("/master-settings", data);
 
 export const getMasterSettingsApi = (type) =>
   axiosInstance.get("/master-settings", { params: { type } });
@@ -29,10 +21,10 @@ export const getMasterSettingByIdApi = (id, type) =>
   axiosInstance.get(`/master-settings/${id}`, { params: { type } });
 
 export const updateMasterSettingApi = (id, data) =>
-  axiosInstance.put(`/master-settings/${id}`, data); // data must include `type`
+  axiosInstance.put(`/master-settings/${id}`, data);
 
 export const deleteMasterSettingApi = (id, type) =>
-  axiosInstance.delete(`/master-settings/${id}`, { params: { type } }); // soft delete
+  axiosInstance.delete(`/master-settings/${id}`, { params: { type } });
 
 // ---------------- VENDOR (role: purchase) ----------------
 export const createVendorApi = (data) => axiosInstance.post("/vendors", data);
@@ -40,12 +32,11 @@ export const getVendorsApi = () => axiosInstance.get("/vendors");
 export const getVendorByIdApi = (id) => axiosInstance.get(`/vendors/${id}`);
 export const updateVendorApi = (id, data) =>
   axiosInstance.put(`/vendors/${id}`, data);
-export const deleteVendorApi = (id) => axiosInstance.delete(`/vendors/${id}`); // soft delete
+export const deleteVendorApi = (id) => axiosInstance.delete(`/vendors/${id}`);
 
 // ---------------- VEHICLE / DRIVER (role: admin) ----------------
-// One module fronting two tables, selected via `type`: vehicle | driver
 export const createVehicleDriverApi = (data) =>
-  axiosInstance.post("/vehicles-drivers", data); // data must include `type`
+  axiosInstance.post("/vehicles-drivers", data);
 
 export const getVehiclesDriversApi = (type) =>
   axiosInstance.get("/vehicles-drivers", { params: { type } });
@@ -54,10 +45,10 @@ export const getVehicleDriverByIdApi = (id, type) =>
   axiosInstance.get(`/vehicles-drivers/${id}`, { params: { type } });
 
 export const updateVehicleDriverApi = (id, data) =>
-  axiosInstance.put(`/vehicles-drivers/${id}`, data); // data must include `type`
+  axiosInstance.put(`/vehicles-drivers/${id}`, data);
 
 export const deleteVehicleDriverApi = (id, type) =>
-  axiosInstance.delete(`/vehicles-drivers/${id}`, { params: { type } }); // soft delete
+  axiosInstance.delete(`/vehicles-drivers/${id}`, { params: { type } });
 
 // ---------------- PURCHASE ORDER (role: purchase) ----------------
 export const createPurchaseOrderApi = (data) =>
@@ -65,9 +56,7 @@ export const createPurchaseOrderApi = (data) =>
 export const createPurchaseOrderBulkApi = (data) =>
   axiosInstance.post("/purchases/bulk", data);
 export const getPurchaseOrdersApi = () => axiosInstance.get("/purchases");
-// One row per po_no (a real "purchase order"), all its materials nested
-// under `items` — this is what the PO list page and the Gate Entry PO
-// picker use instead of the flat one-row-per-material list above.
+
 export const getPurchaseOrdersGroupedApi = () =>
   axiosInstance.get("/purchases/grouped");
 export const getPurchaseOrderByIdApi = (id) =>
@@ -75,24 +64,19 @@ export const getPurchaseOrderByIdApi = (id) =>
 export const updatePurchaseOrderApi = (id, data) =>
   axiosInstance.put(`/purchases/${id}`, data);
 export const deletePurchaseOrderApi = (id) =>
-  axiosInstance.delete(`/purchases/${id}`); // soft delete
+  axiosInstance.delete(`/purchases/${id}`);
 
 export const getPurchaseOrderByPoNoApi = (po_no) =>
   axiosInstance.get(`/purchases/po/${po_no}`);
 export const getPurchaseOrderPdfApi = (po_no) =>
   axiosInstance.get(`/purchases/po/${po_no}/pdf`, { responseType: "blob" });
 
-// Adds one more material line item to an existing PO (by po_no).
 export const addPurchaseOrderItemApi = (po_no, data) =>
   axiosInstance.post(`/purchases/po/${encodeURIComponent(po_no)}/items`, data);
-// Edits the shared header fields (vendor/po_date/validity/do_no) across
-// every line item of a PO at once.
+
 export const updatePurchaseOrderHeaderApi = (po_no, data) =>
   axiosInstance.put(`/purchases/po/${encodeURIComponent(po_no)}/header`, data);
 
-// Converts a weighed gate entry into a final purchase.
-// NOTE: will fail with "Invalid weight_slip_id" until the weighbridge
-// module exists on the backend (per the API docs) — surface that error as-is.
 export const convertPurchaseApi = (data) =>
   axiosInstance.post("/purchases/convert", data);
 
@@ -106,18 +90,10 @@ export const gateCheckinApi = (id) =>
 export const gateCheckoutApi = (id) =>
   axiosInstance.post("/gate/checkout", { id });
 
-// Empty trucks / trucks with miscellaneous items only (entry_type "other").
-// Skips Sampling/Lab/Negotiation; sends the truck straight to warehouse —
-// valid once it's checked in ('waiting_weighment') or already weighed
-// ('in_process').
 export const gateSendToWarehouseApi = (id, extra = {}) =>
   axiosInstance.post("/gate/send-to-warehouse", { id, ...extra });
 
 // ---------------- LOADING (role: gate) ----------------
-// Outbound loading capture for entry_type = "sales" gate entries. Valid
-// once the gate entry is at gate_status "waiting_loading" (checked in).
-// Creating a loading record moves the gate entry to "loaded" (ready for
-// check-out) and the linked Sales Order to "dispatched".
 export const getLoadingsApi = (params = {}) =>
   axiosInstance.get("/loading", { params });
 
@@ -128,21 +104,12 @@ export const createLoadingApi = (data) => axiosInstance.post("/loading", data);
 export const updateLoadingApi = (id, data) =>
   axiosInstance.put(`/loading/${id}`, data);
 
-export const deleteLoadingApi = (id) => axiosInstance.delete(`/loading/${id}`); // soft delete
+export const deleteLoadingApi = (id) => axiosInstance.delete(`/loading/${id}`);
 
-// photoBlob is a Blob/File — sent as multipart form-data, field name "photo"
-// (must match uploadImage.single("photo") on the backend route). Returns
-// { data: { url } } — a short path, not the image itself; that's what goes
-// into driver_photo_url (the column is a VARCHAR(255), too small for a raw
-// base64 image).
 export const uploadGatePhotoApi = (photoBlob) => {
   const formData = new FormData();
   formData.append("photo", photoBlob, "driver-photo.jpg");
-  // Don't set Content-Type explicitly — axiosInstance defaults it to
-  // application/json, but a multipart upload needs the browser to set its
-  // own Content-Type (with the boundary parameter) for FormData bodies.
-  // Overriding to undefined here lets that happen instead of sending a
-  // boundary-less multipart header the backend can't parse.
+
   return axiosInstance.post("/gate/upload-photo", formData, {
     headers: { "Content-Type": undefined },
   });
@@ -157,17 +124,14 @@ export const getGateEntriesApi = (status, entry_type) => {
 
 export const getGateEntryByIdApi = (id) => axiosInstance.get(`/gate/${id}`);
 
-export const createGateEntryApi = (data) => axiosInstance.post("/gate", data); // manual/admin create
+export const createGateEntryApi = (data) => axiosInstance.post("/gate", data); 
 
 export const updateGateEntryApi = (id, data) =>
   axiosInstance.put(`/gate/${id}`, data);
 
-export const deleteGateEntryApi = (id) =>
-  axiosInstance.delete(`/gate/${id}`); // soft delete
+export const deleteGateEntryApi = (id) => axiosInstance.delete(`/gate/${id}`);
 
 // ---------------- SAMPLING (role: lab) ----------------
-// Precondition: gate entry must be at gate_status "waiting_sampling".
-// On success the linked gate entry auto-moves to "sampling_done".
 export const createSamplingApi = (data) =>
   axiosInstance.post("/sampling", data);
 
@@ -176,28 +140,22 @@ export const getSamplingsApi = (gate_entry_id) =>
     params: gate_entry_id ? { gate_entry_id } : {},
   });
 
-export const getSamplingByIdApi = (id) =>
-  axiosInstance.get(`/sampling/${id}`);
+export const getSamplingByIdApi = (id) => axiosInstance.get(`/sampling/${id}`);
 
 export const updateSamplingApi = (id, data) =>
   axiosInstance.put(`/sampling/${id}`, data);
 
 export const deleteSamplingApi = (id) =>
-  axiosInstance.delete(`/sampling/${id}`); // soft delete
+  axiosInstance.delete(`/sampling/${id}`);
 
 // ---------------- LAB TEST (role: lab) ----------------
-// verdict must be one of: accepted | rejected | negotiation.
-// Submitting (or later revising via /verdict) re-applies the gate-status rule:
-// accepted -> lab_accepted, rejected -> rejected, negotiation -> unchanged (sampling_done)
 export const createLabTestApi = (data) =>
   axiosInstance.post("/lab-tests", data);
 
-// params can include { sampling_id } and/or { verdict }
 export const getLabTestsApi = (params = {}) =>
   axiosInstance.get("/lab-tests", { params });
 
-export const getLabTestByIdApi = (id) =>
-  axiosInstance.get(`/lab-tests/${id}`);
+export const getLabTestByIdApi = (id) => axiosInstance.get(`/lab-tests/${id}`);
 
 export const updateLabTestApi = (id, data) =>
   axiosInstance.put(`/lab-tests/${id}`, data);
@@ -206,12 +164,10 @@ export const updateLabTestVerdictApi = (id, verdict) =>
   axiosInstance.patch(`/lab-tests/${id}/verdict`, { verdict });
 
 export const deleteLabTestApi = (id) =>
-  axiosInstance.delete(`/lab-tests/${id}`); // soft delete
+  axiosInstance.delete(`/lab-tests/${id}`);
 
 // ---------------- NEGOTIATION (role: purchase) ----------------
-// Only usable when the linked lab test's verdict is "negotiation".
-// respond(accept) -> updates linked PurchaseOrder.rate to proposed_rate, gate entry -> lab_accepted
-// respond(reject) -> gate entry -> rejected. Can only be responded to once.
+
 export const createNegotiationApi = (data) =>
   axiosInstance.post("/negotiations", data);
 
@@ -230,9 +186,7 @@ export const respondNegotiationApi = (id, vendor_response) =>
   axiosInstance.patch(`/negotiations/${id}/respond`, { vendor_response });
 
 export const deleteNegotiationApi = (id) =>
-  axiosInstance.delete(`/negotiations/${id}`); // soft delete
-
-// ---------------- Add more sections below as your backend grows ----------
+  axiosInstance.delete(`/negotiations/${id}`);
 
 // ---------------- CUSTOMERS (role: sales) ----------------
 export const createCustomerApi = (data) =>
@@ -250,25 +204,18 @@ export const updateCustomerApi = (id, data) =>
   axiosInstance.put(`/customers/${id}`, data);
 
 export const deleteCustomerApi = (id) =>
-  axiosInstance.delete(`/customers/${id}`); // soft delete
+  axiosInstance.delete(`/customers/${id}`);
 
 // ---------------- SALES ORDERS (role: sales) ----------------
-// Books immediately as so_status: "confirmed" and generates a so_no.
 export const createSalesOrderApi = (data) =>
   axiosInstance.post("/sales-orders", data);
 
-// Creates one so_no shared across every material line item passed in
-// `items` — this is how a customer can order multiple materials under a
-// single Sales Order (mirrors createPurchaseOrderBulkApi).
 export const createSalesOrderBulkApi = (data) =>
   axiosInstance.post("/sales-orders/bulk", data);
 
 export const getSalesOrdersApi = (params = {}) =>
   axiosInstance.get("/sales-orders", { params });
 
-// One row per so_no (a real "sales order"), all its materials nested
-// under `items` — this is what the SO list page and the Gate Entry SO
-// picker use instead of the flat one-row-per-material list above.
 export const getSalesOrdersGroupedApi = (params = {}) =>
   axiosInstance.get("/sales-orders/grouped", { params });
 
@@ -279,37 +226,36 @@ export const updateSalesOrderApi = (id, data) =>
   axiosInstance.put(`/sales-orders/${id}`, data);
 
 export const deleteSalesOrderApi = (id) =>
-  axiosInstance.delete(`/sales-orders/${id}`); // soft delete
+  axiosInstance.delete(`/sales-orders/${id}`);
 
-// Adds one more material line item to an existing SO (by so_no).
 export const addSalesOrderItemApi = (so_no, data) =>
-  axiosInstance.post(`/sales-orders/so/${encodeURIComponent(so_no)}/items`, data);
+  axiosInstance.post(
+    `/sales-orders/so/${encodeURIComponent(so_no)}/items`,
+    data,
+  );
 
-// Edits the shared header fields (customer/order_type/order_date) across
-// every line item of a SO at once.
 export const updateSalesOrderHeaderApi = (so_no, data) =>
-  axiosInstance.put(`/sales-orders/so/${encodeURIComponent(so_no)}/header`, data);
+  axiosInstance.put(
+    `/sales-orders/so/${encodeURIComponent(so_no)}/header`,
+    data,
+  );
 
 // ---------------- DISPATCH (role: dispatch) ----------------
-// Every id in finished_goods_ids must be fg_status: "ready" — a 400 lists
-// any that aren't. On success those FG rows flip to "dispatched", the SO
-// flips to "dispatched", and a challan_no is generated.
 export const createDispatchApi = (data) =>
   axiosInstance.post("/dispatch", data);
 
 export const getDispatchesApi = (params = {}) =>
   axiosInstance.get("/dispatch", { params });
 
-export const getDispatchByIdApi = (id) => axiosInstance.get(`/dispatches/${id}`);
+export const getDispatchByIdApi = (id) =>
+  axiosInstance.get(`/dispatches/${id}`);
 
 export const updateDispatchApi = (id, data) =>
-  axiosInstance.put(`/dispatch/${id}`, data); // e.g. { dispatch_status: "delivered" }
+  axiosInstance.put(`/dispatch/${id}`, data);
 
 export const deleteDispatchApi = (id) =>
-  axiosInstance.delete(`/dispatch/${id}`); // soft delete
+  axiosInstance.delete(`/dispatch/${id}`);
 
-// Binary PDF — responseType "blob" so axios doesn't try to JSON-parse it.
-// Pair with a small helper in the page to trigger a browser download.
 export const getDispatchChallanPdfApi = (id) =>
   axiosInstance.get(`/dispatch/${id}/challan`, { responseType: "blob" });
 
@@ -322,8 +268,6 @@ export const getDailyIntakeTrendApi = (days) =>
   });
 
 // ---------------- REPORTS (role: admin) ----------------
-// Pass { format: "csv" } to any of these three to get a file download
-// instead of JSON — see downloadReportCsv() helper used by ReportsPage.
 export const getGateRegisterReportApi = (params = {}) =>
   axiosInstance.get("/reports/gate-register", {
     params,
@@ -336,9 +280,6 @@ export const getProductionSummaryReportApi = (params = {}) =>
     responseType: params.format === "csv" ? "blob" : "json",
   });
 
-// Inward / processed / warehouse-stock snapshot. `period`: today | week |
-// month (rolling), or pass explicit from/to instead (overrides period).
-// Warehouse-stock rows are always a live snapshot regardless of period.
 export const getMaterialFlowReportApi = (params = {}) =>
   axiosInstance.get("/reports/material-flow", {
     params,
@@ -346,13 +287,10 @@ export const getMaterialFlowReportApi = (params = {}) =>
   });
 
 // ---------------- PACKING (role: production) ----------------
-// Precondition: batch_id must belong to a Production Batch that's finished
-// length_grading (batch_status: "completed"), else a 400 comes back.
 export const getGradedOutputsApi = (batch_id) =>
   axiosInstance.get(`/packing/graded-outputs/${batch_id}`);
 
-export const createPackingApi = (data) =>
-  axiosInstance.post("/packing", data); // response includes both packing + finishedGoods
+export const createPackingApi = (data) => axiosInstance.post("/packing", data);
 
 export const getPackingsApi = (params = {}) =>
   axiosInstance.get("/packing", { params });
@@ -362,55 +300,45 @@ export const getPackingByIdApi = (id) => axiosInstance.get(`/packing/${id}`);
 export const updatePackingApi = (id, data) =>
   axiosInstance.put(`/packing/${id}`, data);
 
-export const deletePackingApi = (id) =>
-  axiosInstance.delete(`/packing/${id}`); // soft delete
+export const deletePackingApi = (id) => axiosInstance.delete(`/packing/${id}`);
 
 // ---------------- FINISHED GOODS (role: warehouse) ----------------
-// Rows are normally created automatically by POST /packing — manual
-// create/delete exist but are rare.
 export const getFinishedGoodsApi = (params = {}) =>
   axiosInstance.get("/finished-goods", { params });
 
 export const getFinishedGoodByIdApi = (id) =>
   axiosInstance.get(`/finished-goods/${id}`);
 
-// e.g. { fg_status: "dispatched" | "hold" | "ready" }. Setting "ready" on a
-// row that wasn't already ready resets ready_since (restarts aging clock).
 export const updateFinishedGoodApi = (id, data) =>
   axiosInstance.put(`/finished-goods/${id}`, data);
 
 export const createFinishedGoodApi = (data) =>
-  axiosInstance.post("/finished-goods", data); // rare — manual override
+  axiosInstance.post("/finished-goods", data);
 
 export const deleteFinishedGoodApi = (id) =>
-  axiosInstance.delete(`/finished-goods/${id}`); // soft delete
+  axiosInstance.delete(`/finished-goods/${id}`);
 
-// Runs the same sweep as the nightly 00:30 cron: flips any "ready" row
-// older than 30 days to "aging". Lets you test aging on demand.
 export const flagAgingApi = () =>
   axiosInstance.post("/finished-goods/flag-aging");
 
 // ---------------- MACHINES (role: production) ----------------
-// Fronts three tables via `type`: master (default) | log (read-only) | maintenance
 export const getMachinesApi = (params = {}) =>
   axiosInstance.get("/machines", { params });
 
 export const getMachineByIdApi = (id, type = "master") =>
   axiosInstance.get(`/machines/${id}`, { params: { type } });
 
-export const createMachineApi = (data) =>
-  axiosInstance.post("/machines", data); // data must include `type`
+export const createMachineApi = (data) => axiosInstance.post("/machines", data);
 
 export const updateMachineApi = (id, data) =>
-  axiosInstance.put(`/machines/${id}`, data); // data must include `type`
+  axiosInstance.put(`/machines/${id}`, data);
 
 export const deleteMachineApi = (id, type) =>
-  axiosInstance.delete(`/machines/${id}`, { params: { type } }); // soft delete
+  axiosInstance.delete(`/machines/${id}`, { params: { type } });
 
 // ---------------- PRODUCTION BATCHES (role: production) ----------------
-// Precondition: needs an existing Lot (from the Weight & Warehouse module).
 export const createProductionBatchApi = (data) =>
-  axiosInstance.post("/production/batches", data); // { lot_id, process_type }
+  axiosInstance.post("/production/batches", data);
 
 export const getProductionBatchesApi = (params = {}) =>
   axiosInstance.get("/production/batches", { params });
@@ -422,14 +350,11 @@ export const updateProductionBatchApi = (id, data) =>
   axiosInstance.put(`/production/batches/${id}`, data);
 
 export const deleteProductionBatchApi = (id) =>
-  axiosInstance.delete(`/production/batches/${id}`); // soft delete
+  axiosInstance.delete(`/production/batches/${id}`);
 
 export const finalizeProductionBatchApi = (id, data) =>
   axiosInstance.patch(`/production/batches/${id}/finalize`, data);
 
-// Stage-gated PATCH endpoints. Each checks the batch's current_stage
-// server-side and 400s if called out of order — dryer only applies to
-// "wet" batches ("dry" batches start straight at milling).
 export const patchDryerStageApi = (id, data) =>
   axiosInstance.patch(`/production/batches/${id}/dryer`, data);
 
@@ -439,23 +364,15 @@ export const patchMillingStageApi = (id, data) =>
 export const patchSeparatorStageApi = (id, data) =>
   axiosInstance.patch(`/production/batches/${id}/separator`, data);
 
-// Up to 5 passes — pass stage_no (1-5); add is_final: true (or use
-// stage_no: 5) on the last pass to advance to color_sorter.
 export const patchShinerStageApi = (id, data) =>
   axiosInstance.patch(`/production/batches/${id}/shiner`, data);
 
 export const patchColorSorterStageApi = (id, data) =>
   axiosInstance.patch(`/production/batches/${id}/color-sorter`, data);
 
-// Terminal stage — advances current_stage/batch_status to "completed".
 export const patchLengthGradingStageApi = (id, data) =>
   axiosInstance.patch(`/production/batches/${id}/length-grading`, data);
 
-// ---------------- WEIGHBRIDGE / WEIGHT SLIPS (role: gate) ----------------
-// Only works when the gate entry is at "accepted". Net weight is computed
-// automatically, a Purchase record gets finalized, and the gate entry
-// advances to "in_process". Pass final_rate in the body if the gate entry
-// has no linked PO.
 export const createWeightSlipApi = (data) =>
   axiosInstance.post("/weight-slips", data);
 
@@ -471,17 +388,10 @@ export const updateWeightSlipApi = (id, data) =>
   axiosInstance.put(`/weight-slips/${id}`, data);
 
 export const deleteWeightSlipApi = (id) =>
-  axiosInstance.delete(`/weight-slips/${id}`); // soft delete
+  axiosInstance.delete(`/weight-slips/${id}`);
 
-// ---------------- LOTS / UNLOADING (role: warehouse) ----------------
-// Two-step unloading workflow. Only works once the gate entry is "in_process"
-// (weighed) with a finalized Purchase.
-//   1. startUnloading — opens a Lot shell (qty 0), gate entry -> "unloading".
-//      This is the point where the truck is opened for a manual check at the factory.
-//   2. completeUnloading — bag_size + accepted_bags + rejected_bags; backend
-//      auto-calculates accepted/rejected qty, opens Stack + Inventory for the
-//      accepted qty only, gate entry -> "unloaded".
-export const startUnloadingApi = (data) => axiosInstance.post("/lots/start-unloading", data);
+export const startUnloadingApi = (data) =>
+  axiosInstance.post("/lots/start-unloading", data);
 
 export const completeUnloadingApi = (id, data) =>
   axiosInstance.patch(`/lots/${id}/complete-unloading`, data);
@@ -494,17 +404,14 @@ export const getLotByIdApi = (id) => axiosInstance.get(`/lots/${id}`);
 export const updateLotApi = (id, data) =>
   axiosInstance.put(`/lots/${id}`, data);
 
-// destination: "warehouse" | "production" — only allowed once unloading is
-// completed (bag counts recorded).
 export const routeLotApi = (id, destination) =>
   axiosInstance.patch(`/lots/${id}/route`, { destination });
 
-export const deleteLotApi = (id) => axiosInstance.delete(`/lots/${id}`); // soft delete
+export const deleteLotApi = (id) => axiosInstance.delete(`/lots/${id}`);
 
 // ---------------- WAREHOUSE / BIN / STACK (role: warehouse) ----------------
-// One module fronting three tables, selected via `type`: warehouse | bin | stack
 export const createWarehouseSettingApi = (data) =>
-  axiosInstance.post("/warehouse", data); // data must include `type`
+  axiosInstance.post("/warehouse", data);
 
 export const getWarehouseSettingsApi = (type) =>
   axiosInstance.get("/warehouse", { params: { type } });
@@ -513,19 +420,15 @@ export const getWarehouseSettingByIdApi = (id, type) =>
   axiosInstance.get(`/warehouse/${id}`, { params: { type } });
 
 export const updateWarehouseSettingApi = (id, data) =>
-  axiosInstance.put(`/warehouse/${id}`, data); // data must include `type`
+  axiosInstance.put(`/warehouse/${id}`, data);
 
 export const deleteWarehouseSettingApi = (id, type) =>
-  axiosInstance.delete(`/warehouse/${id}`, { params: { type } }); // soft delete
+  axiosInstance.delete(`/warehouse/${id}`, { params: { type } });
 
-// Live Inventory balances joined with lot/material/warehouse — feeds the
-// Warehouse page's stock table.
 export const getWarehouseStockApi = (params = {}) =>
   axiosInstance.get("/warehouse/stock", { params });
 
 // ---------------- INVENTORY (read-only, role: warehouse) ----------------
-// create/update/delete/ledger are backend stubs for a later module — only
-// list/get are wired up here.
 export const getInventoryApi = (params = {}) =>
   axiosInstance.get("/inventory", { params });
 
@@ -543,8 +446,7 @@ export const createUserApi = (data) => axiosInstance.post("/users", data);
 export const updateUserApi = (id, data) =>
   axiosInstance.put(`/users/${id}`, data);
 
-export const deleteUserApi = (id) =>
-  axiosInstance.delete(`/users/${id}`); // soft delete
+export const deleteUserApi = (id) => axiosInstance.delete(`/users/${id}`);
 
 export const getRolesApi = () => axiosInstance.get("/users/roles");
 
@@ -566,56 +468,41 @@ export const getGateActivityApi = (params = {}) =>
 
 // ---------------- PURCHASE ORDER APPROVAL (role: admin) ----------------
 
-// Get purchase orders waiting for admin approval
 export const getPendingPurchaseOrdersApi = () =>
   axiosInstance.get("/purchases/pending-approval");
 
-// Admin edits a PO before approving it
 export const updatePurchaseOrderBeforeApprovalApi = (po_no, data) =>
   axiosInstance.put(
     `/purchases/po/${encodeURIComponent(po_no)}/approval-edit`,
-    data
+    data,
   );
 
-// Admin approves the complete PO
 export const approvePurchaseOrderApi = (po_no) =>
-  axiosInstance.patch(
-    `/purchases/po/${encodeURIComponent(po_no)}/approve`
-  );
+  axiosInstance.patch(`/purchases/po/${encodeURIComponent(po_no)}/approve`);
 
-// Admin rejects the complete PO
 export const rejectPurchaseOrderApi = (po_no, data) =>
   axiosInstance.patch(
     `/purchases/po/${encodeURIComponent(po_no)}/reject`,
-    data
+    data,
   );
 
 // ---------------- SALES ORDER APPROVAL (role: admin) ----------------
-// Mirrors the Purchase Order Approval block above, against the
-// salesOrder.controller / sales-orders router.
-
-// Get sales orders waiting for admin approval
 export const getPendingSalesOrdersApi = () =>
   axiosInstance.get("/sales-orders/pending-approval");
 
-// Admin edits a SO's header fields before approving it
 export const updateSalesOrderBeforeApprovalApi = (so_no, data) =>
   axiosInstance.put(
     `/sales-orders/so/${encodeURIComponent(so_no)}/approval-edit`,
-    data
+    data,
   );
 
-// Admin approves the complete SO
 export const approveSalesOrderApi = (so_no) =>
-  axiosInstance.patch(
-    `/sales-orders/so/${encodeURIComponent(so_no)}/approve`
-  );
+  axiosInstance.patch(`/sales-orders/so/${encodeURIComponent(so_no)}/approve`);
 
-// Admin rejects the complete SO
 export const rejectSalesOrderApi = (so_no, data) =>
   axiosInstance.patch(
     `/sales-orders/so/${encodeURIComponent(so_no)}/reject`,
-    data
+    data,
   );
 
 export const getGateEntryApi = (id) => {
