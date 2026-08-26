@@ -125,39 +125,52 @@ create: async (req, res, next) => {
       plant_id,
     } = req.body;
 
+    // Required validation
     if (!sampling_id || !verdict) {
       throw createError(400, "sampling_id and verdict are required");
     }
 
+    // Verdict validation
     if (!VERDICTS.includes(verdict)) {
-      throw createError(400, `verdict must be one of: ${VERDICTS.join(", ")}`);
+      throw createError(
+        400,
+        `verdict must be one of: ${VERDICTS.join(", ")}`
+      );
     }
 
-    // material_ids validation
+    // material_id must be an array
     if (!Array.isArray(material_id) || material_id.length === 0) {
       throw createError(400, "material_id must be a non-empty array");
     }
 
-    // Remove duplicate material IDs
-    const uniqueMaterialIds = [...new Set(material_id.map(Number))];
+    // Convert to numbers and remove duplicates
+    const uniqueMaterialIds = [
+      ...new Set(material_id.map((id) => Number(id))),
+    ];
 
+    // Validate IDs
+    if (uniqueMaterialIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+      throw createError(400, "material_id contains invalid values");
+    }
+
+    // Find sampling
     const sampling = await Sampling.findOne({
-      where: { id: sampling_id, is_deleted: false },
+      where: {
+        id: sampling_id,
+        is_deleted: false,
+      },
     });
 
     if (!sampling) {
       throw createError(400, "Invalid sampling_id");
     }
 
-    /*
-     * Assuming Sampling has material_id JSON field
-     * Example: sampling.material_id = [1, 2, 3]
-     */
+    // Get materials assigned to this sampling
     const samplingMaterialIds = Array.isArray(sampling.material_id)
       ? sampling.material_id.map(Number)
       : [];
 
-    // Make sure selected materials actually belong to sampling
+    // Check submitted materials belong to sampling
     const invalidMaterials = uniqueMaterialIds.filter(
       (id) => !samplingMaterialIds.includes(id)
     );
@@ -165,14 +178,19 @@ create: async (req, res, next) => {
     if (invalidMaterials.length > 0) {
       throw createError(
         400,
-        `Material(s) ${invalidMaterials.join(", ")} do not belong to this sampling`
+        `Material(s) ${invalidMaterials.join(
+          ", "
+        )} do not belong to this sampling`
       );
     }
 
     // Validate variety
     if (variety_detected) {
       const variety = await VarietyMaster.findOne({
-        where: { id: variety_detected, is_deleted: false },
+        where: {
+          id: variety_detected,
+          is_deleted: false,
+        },
       });
 
       if (!variety) {
@@ -180,86 +198,99 @@ create: async (req, res, next) => {
       }
     }
 
-    // Check whether a lab test already exists for this sampling
-    const existing = await LabTest.findOne({
-      where: { sampling_id, is_deleted: false },
+    /*
+     * Find ALL previous lab tests for this sampling
+     */
+    const existingTests = await LabTest.findAll({
+      where: {
+        sampling_id,
+        is_deleted: false,
+      },
     });
 
-    let test;
-    let statusCode;
-    let msg;
-
-    if (existing) {
-      // Merge into the existing lab test instead of creating a new one
-      const existingMaterialIds = Array.isArray(existing.material_id)
-        ? existing.material_id.map(Number)
-        : [];
-
-      const duplicates = uniqueMaterialIds.filter((id) =>
-        existingMaterialIds.includes(id)
-      );
-      if (duplicates.length > 0) {
-        throw createError(
-          400,
-          `Material(s) ${duplicates.join(", ")} already have a lab test recorded for this sampling`
-        );
+    /*
+     * Collect all materials already tested
+     *
+     * Example existing rows:
+     *
+     * Row 1 -> material_id [1]
+     * Row 2 -> material_id [2, 3]
+     *
+     * Result:
+     * alreadyTestedMaterialIds = [1, 2, 3]
+     */
+    const alreadyTestedMaterialIds = existingTests.flatMap((test) => {
+      if (Array.isArray(test.material_id)) {
+        return test.material_id.map(Number);
       }
 
-      const mergedMaterialIds = [...existingMaterialIds, ...uniqueMaterialIds];
+      return [];
+    });
 
-      await existing.update({
-        material_id: mergedMaterialIds,
-        // latest submitted result fields overwrite the previous ones on the shared row;
-        // fall back to what's already stored if this request omitted them
-        moisture_pct: moisture_pct ?? existing.moisture_pct,
-        broken_pct: broken_pct ?? existing.broken_pct,
-        fm_pct: fm_pct ?? existing.fm_pct,
-        color: color ?? existing.color,
-        smell: smell ?? existing.smell,
-        variety_detected: variety_detected || existing.variety_detected,
-        grain_size: grain_size ?? existing.grain_size,
-        comment: comment ?? existing.comment,
-        verdict,
-        tested_at: tested_at || existing.tested_at,
-        updated_by: req.user ? req.user.id : null,
-      });
+    // Check whether submitted materials were already tested
+    const duplicates = uniqueMaterialIds.filter((id) =>
+      alreadyTestedMaterialIds.includes(id)
+    );
 
-      test = existing;
-      statusCode = 200;
-      msg = "Lab test updated with additional material(s)";
-    } else {
-      test = await LabTest.create({
-        sampling_id,
-        material_id: uniqueMaterialIds,
-        moisture_pct,
-        broken_pct,
-        fm_pct,
-        color,
-        smell,
-        variety_detected: variety_detected || null,
-        grain_size,
-        comment,
-        verdict,
-        tested_by: req.user ? req.user.id : null,
-        tested_at: tested_at || new Date(),
-        plant_id: plant_id || sampling.plant_id || (req.user ? req.user.plant_id : null),
-        created_by: req.user ? req.user.id : null,
-      });
-
-      statusCode = 201;
-      msg = "Lab test recorded";
+    if (duplicates.length > 0) {
+      throw createError(
+        400,
+        `Material(s) ${duplicates.join(
+          ", "
+        )} already have a lab test for this sampling`
+      );
     }
 
-    await applyVerdictToGateEntry(sampling_id, verdict, req.user ? req.user.id : null);
-    await openNegotiationIfNeeded(test, req.user ? req.user.id : null);
+    /*
+     * ALWAYS CREATE A NEW ROW
+     *
+     * Do not use existing.update()
+     */
+    const test = await LabTest.create({
+      sampling_id,
+      material_id: uniqueMaterialIds,
+      moisture_pct,
+      broken_pct,
+      fm_pct,
+      color,
+      smell,
+      variety_detected: variety_detected || null,
+      grain_size,
+      comment,
+      verdict,
+      tested_by: req.user ? req.user.id : null,
+      tested_at: tested_at || new Date(),
+      plant_id:
+        plant_id ||
+        sampling.plant_id ||
+        (req.user ? req.user.plant_id : null),
+      created_by: req.user ? req.user.id : null,
+    });
 
-    const created = await LabTest.findByPk(test.id, { include: detailIncludes });
+    // Apply verdict to gate entry
+    await applyVerdictToGateEntry(
+      sampling_id,
+      verdict,
+      req.user ? req.user.id : null
+    );
 
-    res.status(statusCode).json({
+    // Open negotiation if required
+    await openNegotiationIfNeeded(
+      test,
+      req.user ? req.user.id : null
+    );
+
+    // Get created record with details
+    const created = await LabTest.findByPk(test.id, {
+      include: detailIncludes,
+    });
+
+    return res.status(201).json({
       success: true,
-      msg,
+      msg: "Lab test recorded successfully",
       data: created,
     });
+
   } catch (err) {
     next(err);
   }
