@@ -850,7 +850,15 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
-    // 4. VALIDATE SALES ORDERS
+    // 4. RESOLVE PLANT
+    // ============================================================
+
+    const resolvedPlantId =
+      plant_id ||
+      (req.user ? req.user.plant_id : null);
+
+    // ============================================================
+    // 5. VALIDATE SALES ORDERS
     // ============================================================
 
     const validatedSalesOrders = [];
@@ -889,10 +897,6 @@ generateToken: async (req, res, next) => {
 
         // --------------------------------------------------------
         // FIND SALES ORDER
-        //
-        // IMPORTANT:
-        // material_id is no longer a column in SalesOrder.
-        // Materials are stored inside SalesOrder.items JSON.
         // --------------------------------------------------------
 
         const salesOrder = await SalesOrder.findOne({
@@ -912,7 +916,7 @@ generateToken: async (req, res, next) => {
         }
 
         // --------------------------------------------------------
-        // CHECK CUSTOMER
+        // CUSTOMER VALIDATION
         // --------------------------------------------------------
 
         if (
@@ -927,7 +931,7 @@ generateToken: async (req, res, next) => {
         }
 
         // --------------------------------------------------------
-        // CHECK APPROVAL
+        // APPROVAL VALIDATION
         // --------------------------------------------------------
 
         if (
@@ -941,7 +945,7 @@ generateToken: async (req, res, next) => {
         }
 
         // --------------------------------------------------------
-        // CHECK STATUS
+        // STATUS VALIDATION
         // --------------------------------------------------------
 
         if (
@@ -980,10 +984,12 @@ generateToken: async (req, res, next) => {
         }
 
         // --------------------------------------------------------
-        // DUPLICATE MATERIAL CHECK
+        // VALIDATE REQUESTED MATERIALS
         // --------------------------------------------------------
 
         const requestedMaterialIds = new Set();
+
+        const validatedMaterials = [];
 
         for (const materialItem of materials) {
           const {
@@ -1002,14 +1008,17 @@ generateToken: async (req, res, next) => {
             );
           }
 
-          // ------------------------------------------------------
-          // DUPLICATE MATERIAL IN REQUEST
-          // ------------------------------------------------------
+          const materialKey =
+            Number(material_id);
 
-          const materialKey = Number(material_id);
+          // ------------------------------------------------------
+          // DUPLICATE MATERIAL
+          // ------------------------------------------------------
 
           if (
-            requestedMaterialIds.has(materialKey)
+            requestedMaterialIds.has(
+              materialKey
+            )
           ) {
             throw createError(
               400,
@@ -1017,16 +1026,21 @@ generateToken: async (req, res, next) => {
             );
           }
 
-          requestedMaterialIds.add(materialKey);
+          requestedMaterialIds.add(
+            materialKey
+          );
 
           // ------------------------------------------------------
           // REQUESTED QTY
           // ------------------------------------------------------
 
-          const requestedQty = Number(qty);
+          const requestedQty =
+            Number(qty);
 
           if (
-            !Number.isFinite(requestedQty) ||
+            !Number.isFinite(
+              requestedQty
+            ) ||
             requestedQty <= 0
           ) {
             throw createError(
@@ -1036,14 +1050,17 @@ generateToken: async (req, res, next) => {
           }
 
           // ------------------------------------------------------
-          // FIND MATERIAL INSIDE SALES ORDER ITEMS JSON
+          // FIND MATERIAL INSIDE JSON ITEMS
           // ------------------------------------------------------
 
-          const soMaterial = soItems.find(
-            (item) =>
-              Number(item.material_id) ===
-              Number(material_id)
-          );
+          const soMaterial =
+            soItems.find(
+              (item) =>
+                Number(
+                  item.material_id
+                ) ===
+                Number(material_id)
+            );
 
           if (!soMaterial) {
             throw createError(
@@ -1056,12 +1073,15 @@ generateToken: async (req, res, next) => {
           // ORDERED QTY
           // ------------------------------------------------------
 
-          const orderedQty = Number(
-            soMaterial.qty || 0
-          );
+          const orderedQty =
+            Number(
+              soMaterial.qty || 0
+            );
 
           if (
-            !Number.isFinite(orderedQty) ||
+            !Number.isFinite(
+              orderedQty
+            ) ||
             orderedQty <= 0
           ) {
             throw createError(
@@ -1072,27 +1092,25 @@ generateToken: async (req, res, next) => {
 
           // ------------------------------------------------------
           // DISPATCHED QTY
-          //
-          // If dispatched_qty exists inside the JSON item,
-          // use it. Otherwise 0.
           // ------------------------------------------------------
 
-          const dispatchedQty = Number(
-            soMaterial.dispatched_qty || 0
-          );
+          const dispatchedQty =
+            Number(
+              soMaterial.dispatched_qty ||
+                0
+            );
 
           // ------------------------------------------------------
           // REMAINING QTY
           // ------------------------------------------------------
 
           const remainingQty =
-            orderedQty - dispatchedQty;
+            orderedQty -
+            dispatchedQty;
 
-          // ------------------------------------------------------
-          // CHECK REMAINING QTY
-          // ------------------------------------------------------
-
-          if (remainingQty <= 0) {
+          if (
+            remainingQty <= 0
+          ) {
             throw createError(
               400,
               `Sales Order ${so_id}, material ${material_id} has no remaining quantity`
@@ -1112,65 +1130,53 @@ generateToken: async (req, res, next) => {
               `Requested quantity ${requestedQty} exceeds remaining quantity ${remainingQty} for Sales Order ${so_id}, material ${material_id}`
             );
           }
-        }
 
-        // --------------------------------------------------------
-        // SAVE VALIDATED SALES ORDER
-        // --------------------------------------------------------
-
-        const validatedMaterials = [];
-
-        for (const materialItem of materials) {
-          const {
-            material_id,
-            qty,
-          } = materialItem;
-
-          const requestedQty = Number(qty);
-
-          const soMaterial = soItems.find(
-            (item) =>
-              Number(item.material_id) ===
-              Number(material_id)
-          );
+          // ------------------------------------------------------
+          // SAVE VALIDATED MATERIAL
+          // ------------------------------------------------------
 
           validatedMaterials.push({
             so_id: salesOrder.id,
 
-            material_id: Number(
-              soMaterial.material_id
-            ),
+            material_id:
+              Number(
+                soMaterial.material_id
+              ),
 
             qty: requestedQty,
 
-            rate: Number(
-              soMaterial.rate || 0
-            ),
+            rate:
+              Number(
+                soMaterial.rate || 0
+              ),
 
-            ordered_qty: Number(
-              soMaterial.qty || 0
-            ),
+            ordered_qty:
+              orderedQty,
 
-            dispatched_qty: Number(
-              soMaterial.dispatched_qty || 0
-            ),
+            dispatched_qty:
+              dispatchedQty,
 
             remaining_qty:
-              Number(soMaterial.qty || 0) -
-              Number(
-                soMaterial.dispatched_qty || 0
-              ),
+              remainingQty,
 
             salesOrder,
           });
         }
+
+        // --------------------------------------------------------
+        // SAVE VALIDATED SO
+        // --------------------------------------------------------
 
         validatedSalesOrders.push({
           so_id: salesOrder.id,
 
           so_no: salesOrder.so_no,
 
-          materials: validatedMaterials,
+          customer_id:
+            salesOrder.customer_id,
+
+          materials:
+            validatedMaterials,
 
           salesOrder,
         });
@@ -1178,7 +1184,7 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
-    // 5. VALIDATE TOTAL EXPECTED QTY
+    // 6. CALCULATE TOTAL EXPECTED QTY
     // ============================================================
 
     let calculatedTotalQty = 0;
@@ -1190,9 +1196,14 @@ generateToken: async (req, res, next) => {
             return (
               total +
               so.materials.reduce(
-                (materialTotal, material) =>
+                (
+                  materialTotal,
+                  material
+                ) =>
                   materialTotal +
-                  Number(material.qty || 0),
+                  Number(
+                    material.qty || 0
+                  ),
                 0
               )
             );
@@ -1200,6 +1211,10 @@ generateToken: async (req, res, next) => {
           0
         );
     }
+
+    // ============================================================
+    // 7. VALIDATE EXPECTED QTY
+    // ============================================================
 
     if (
       entry_type === "sales" &&
@@ -1210,7 +1225,9 @@ generateToken: async (req, res, next) => {
         Number(expected_qty);
 
       if (
-        !Number.isFinite(expectedQtyNum) ||
+        !Number.isFinite(
+          expectedQtyNum
+        ) ||
         expectedQtyNum <= 0
       ) {
         throw createError(
@@ -1233,16 +1250,19 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
-    // 6. CREATE GATE ENTRY
+    // 8. GENERATE TOKEN NUMBER
     // ============================================================
 
-    const resolvedPlantId =
-      plant_id ||
-      (req.user
-        ? req.user.plant_id
-        : null);
+    const token_no =
+      await generateTokenNo();
+
+    // ============================================================
+    // 9. CREATE GATE ENTRY
+    // ============================================================
 
     const gateEntryData = {
+      token_no,
+
       vehicle_id,
 
       driver_id,
@@ -1268,17 +1288,19 @@ generateToken: async (req, res, next) => {
           ? calculatedTotalQty
           : null,
 
-      plant_id: resolvedPlantId,
+      plant_id:
+        resolvedPlantId,
 
       entry_type,
 
-      // Multiple SO/material relationships are stored
-      // in gate_entry_sales_orders.
+      // Multiple SOs are stored in
+      // gate_entry_sales_orders
       so_id: null,
 
       material_id: null,
 
-      gate_status: "waiting_token",
+      gate_status:
+        "waiting_token",
 
       created_by:
         req.user
@@ -1295,34 +1317,46 @@ generateToken: async (req, res, next) => {
       );
 
     // ============================================================
-    // 7. CREATE SALES ORDER RELATION RECORDS
+    // 10. CREATE SALES ORDER RELATION RECORDS
     // ============================================================
 
     if (entry_type === "sales") {
       const salesOrderRows = [];
 
-      for (const soItem of validatedSalesOrders) {
-        for (const material of soItem.materials) {
+      for (
+        const soItem
+        of validatedSalesOrders
+      ) {
+        for (
+          const material
+          of soItem.materials
+        ) {
           salesOrderRows.push({
-            gate_entry_id: gateEntry.id,
+            gate_entry_id:
+              gateEntry.id,
 
-            so_id: material.so_id,
+            so_id:
+              material.so_id,
 
             material_id:
               material.material_id,
 
-            qty: material.qty,
+            qty:
+              material.qty,
 
-            plant_id: resolvedPlantId,
+            plant_id:
+              resolvedPlantId,
 
             created_by:
               req.user
                 ? req.user.id
                 : null,
 
-            updated_by: null,
+            updated_by:
+              null,
 
-            is_deleted: false,
+            is_deleted:
+              false,
           });
         }
       }
@@ -1340,17 +1374,24 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
-    // 8. PURCHASE ORDER PROCESSING
+    // 11. PURCHASE ORDER PROCESSING
     // ============================================================
 
     if (entry_type === "purchase") {
       const purchaseOrderRows = [];
 
-      for (const poItem of purchase_orders) {
+      for (
+        const poItem
+        of purchase_orders
+      ) {
         const {
           po_id,
           materials,
         } = poItem || {};
+
+        // --------------------------------------------------------
+        // PO ID
+        // --------------------------------------------------------
 
         if (!po_id) {
           throw createError(
@@ -1359,8 +1400,14 @@ generateToken: async (req, res, next) => {
           );
         }
 
+        // --------------------------------------------------------
+        // MATERIALS
+        // --------------------------------------------------------
+
         if (
-          !Array.isArray(materials) ||
+          !Array.isArray(
+            materials
+          ) ||
           materials.length === 0
         ) {
           throw createError(
@@ -1369,11 +1416,22 @@ generateToken: async (req, res, next) => {
           );
         }
 
-        for (const material of materials) {
+        // --------------------------------------------------------
+        // PROCESS MATERIALS
+        // --------------------------------------------------------
+
+        for (
+          const material
+          of materials
+        ) {
           const {
             material_id,
             qty,
           } = material || {};
+
+          // ------------------------------------------------------
+          // MATERIAL ID
+          // ------------------------------------------------------
 
           if (!material_id) {
             throw createError(
@@ -1381,6 +1439,10 @@ generateToken: async (req, res, next) => {
               `material_id is required for Purchase Order ${po_id}`
             );
           }
+
+          // ------------------------------------------------------
+          // QTY
+          // ------------------------------------------------------
 
           const requestedQty =
             Number(qty);
@@ -1397,6 +1459,10 @@ generateToken: async (req, res, next) => {
             );
           }
 
+          // ------------------------------------------------------
+          // SAVE PO RELATION
+          // ------------------------------------------------------
+
           purchaseOrderRows.push({
             gate_entry_id:
               gateEntry.id,
@@ -1405,7 +1471,8 @@ generateToken: async (req, res, next) => {
 
             material_id,
 
-            qty: requestedQty,
+            qty:
+              requestedQty,
 
             plant_id:
               resolvedPlantId,
@@ -1415,12 +1482,18 @@ generateToken: async (req, res, next) => {
                 ? req.user.id
                 : null,
 
-            updated_by: null,
+            updated_by:
+              null,
 
-            is_deleted: false,
+            is_deleted:
+              false,
           });
         }
       }
+
+      // ----------------------------------------------------------
+      // BULK CREATE PO RELATIONS
+      // ----------------------------------------------------------
 
       if (
         purchaseOrderRows.length > 0
@@ -1435,13 +1508,13 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
-    // 9. COMMIT TRANSACTION
+    // 12. COMMIT TRANSACTION
     // ============================================================
 
     await t.commit();
 
     // ============================================================
-    // 10. GET CREATED GATE ENTRY
+    // 13. GET CREATED GATE ENTRY
     // ============================================================
 
     const createdGateEntry =
@@ -1450,30 +1523,45 @@ generateToken: async (req, res, next) => {
         {
           include: [
             {
-              model: GateEntrySalesOrder,
-              as: "sales_orders",
-              required: false,
+              model:
+                GateEntrySalesOrder,
+
+              as:
+                "sales_orders",
+
+              required:
+                false,
 
               include: [
                 {
-                  model: SalesOrder,
-                  as: "sales_order",
-                  required: false,
+                  model:
+                    SalesOrder,
+
+                  as:
+                    "sales_order",
+
+                  required:
+                    false,
                 },
               ],
             },
 
             {
-              model: GateEntryPurchaseOrder,
-              as: "purchase_orders",
-              required: false,
+              model:
+                GateEntryPurchaseOrder,
+
+              as:
+                "purchase_orders",
+
+              required:
+                false,
             },
           ],
         }
       );
 
     // ============================================================
-    // 11. RESPONSE
+    // 14. RESPONSE
     // ============================================================
 
     return res.status(201).json({
@@ -1484,7 +1572,8 @@ generateToken: async (req, res, next) => {
           ? "Gate entry created with Sales Order(s)"
           : "Gate entry created with Purchase Order(s)",
 
-      data: createdGateEntry,
+      data:
+        createdGateEntry,
     });
 
   } catch (err) {
