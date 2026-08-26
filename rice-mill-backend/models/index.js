@@ -53,6 +53,7 @@ const MachineMaintenance = require("./machineMaintenance.model");
 const AuditLog = require("./auditLog.model");
 const Notification = require("./notification.model");
 const ProcessTimeLog = require("./processTimeLog.model");
+const GateEntrySalesOrder = require("./gateEntrySalesOrder.model");
 
 // -- Associations -------------------------------------------------------------
 // Every belongsTo below has an implicit inverse (hasMany/hasOne) that callers
@@ -376,6 +377,35 @@ Sampling.belongsTo(PurchaseOrder, { foreignKey: "po_id", as: "purchaseOrder" });
 GateEntry.hasMany(GateEntryPurchaseOrder, {
   foreignKey: "gate_entry_id",
   as: "purchase_orders",
+});
+GateEntry.hasMany(GateEntrySalesOrder, {
+  foreignKey: "gate_entry_id",
+  as: "sales_orders",
+});
+
+GateEntrySalesOrder.belongsTo(GateEntry, {
+  foreignKey: "gate_entry_id",
+  as: "gate_entry",
+});
+
+SalesOrder.hasMany(GateEntrySalesOrder, {
+  foreignKey: "so_id",
+  as: "gate_entries",
+});
+
+GateEntrySalesOrder.belongsTo(SalesOrder, {
+  foreignKey: "so_id",
+  as: "sales_order",
+});
+
+MaterialMaster.hasMany(GateEntrySalesOrder, {
+  foreignKey: "material_id",
+  as: "gate_entry_sales_orders",
+});
+
+GateEntrySalesOrder.belongsTo(MaterialMaster, {
+  foreignKey: "material_id",
+  as: "material",
 });
 
 module.exports = {

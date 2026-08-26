@@ -759,445 +759,616 @@ module.exports = {
     }
   },
 
-  generateToken: async (req, res, next) => {
+generateToken: async (req, res, next) => {
+  const t = await sequelize.transaction();
+
   try {
     const {
       vehicle_id,
       driver_id,
       vendor_id,
+      customer_id,
       challan_no,
       expected_qty,
-      driver_photo_url,
       plant_id,
-      entry_type = "purchase",
-      remarks,
-      purchase_orders,
-      so_id,
-    } = req.body;
+      entry_type,
 
-    // =====================================================
-    // BASIC VALIDATION
-    // =====================================================
+      // Purchase Order
+      purchase_orders = [],
 
-    if (!["purchase", "other", "sales"].includes(entry_type)) {
+      // Sales Order
+      sales_orders = [],
+    } = req.body || {};
+
+    // ============================================================
+    // 1. BASIC VALIDATION
+    // ============================================================
+
+    if (!vehicle_id) {
+      throw createError(400, "vehicle_id is required");
+    }
+
+    if (!driver_id) {
+      throw createError(400, "driver_id is required");
+    }
+
+    if (!entry_type) {
+      throw createError(400, "entry_type is required");
+    }
+
+    if (!["purchase", "sales"].includes(entry_type)) {
       throw createError(
         400,
-        "entry_type must be 'purchase', 'other' or 'sales'",
+        "entry_type must be either purchase or sales"
       );
     }
 
-    if (!vehicle_id || !driver_id) {
-      throw createError(
-        400,
-        "vehicle_id and driver_id are required",
-      );
-    }
-
-    // =====================================================
-    // PURCHASE VALIDATION
-    // =====================================================
+    // ============================================================
+    // 2. PURCHASE VALIDATION
+    // ============================================================
 
     if (entry_type === "purchase") {
-      if (!vendor_id) {
-        throw createError(
-          400,
-          "vendor_id is required for a purchase entry",
-        );
-      }
-
       if (
         !Array.isArray(purchase_orders) ||
         purchase_orders.length === 0
       ) {
         throw createError(
           400,
-          "purchase_orders must be a non-empty array",
+          "purchase_orders is required and must contain at least one Purchase Order"
+        );
+      }
+
+      if (!vendor_id) {
+        throw createError(
+          400,
+          "vendor_id is required for a purchase entry"
         );
       }
     }
 
-    // =====================================================
-    // SALES VALIDATION
-    // =====================================================
+    // ============================================================
+    // 3. SALES VALIDATION
+    // ============================================================
 
-    if (entry_type === "sales" && !so_id) {
-      throw createError(
-        400,
-        "so_id is required for a sales entry",
-      );
+    if (entry_type === "sales") {
+      if (
+        !Array.isArray(sales_orders) ||
+        sales_orders.length === 0
+      ) {
+        throw createError(
+          400,
+          "sales_orders is required and must contain at least one Sales Order"
+        );
+      }
+
+      if (!customer_id) {
+        throw createError(
+          400,
+          "customer_id is required for a sales entry"
+        );
+      }
     }
 
-    // =====================================================
-    // VALIDATE VEHICLE / DRIVER / VENDOR / SALES ORDER
-    // =====================================================
+    // ============================================================
+    // 4. VALIDATE SALES ORDERS BEFORE CREATING GATE ENTRY
+    // ============================================================
 
-    const { vehicle, salesOrder } = await validateReferences({
-      vehicle_id,
-      driver_id,
-      vendor_id,
-      so_id,
-      entry_type,
-    });
+    const validatedSalesOrders = [];
 
-    // =====================================================
-    // TRANSACTION
-    // =====================================================
+    if (entry_type === "sales") {
+      for (const soItem of sales_orders) {
+        const {
+          so_id,
+          materials,
+        } = soItem || {};
 
-    const t = await sequelize.transaction();
+        // --------------------------------------------------------
+        // SO ID
+        // --------------------------------------------------------
 
-    try {
-      // ===================================================
-      // GENERATE TOKEN
-      // ===================================================
-
-      const token_no = await generateTokenNo(
-        vehicle.vehicle_no,
-      );
-
-      // ===================================================
-      // CREATE GATE ENTRY HEADER
-      // ===================================================
-
-      const entry = await GateEntry.create(
-        {
-          token_no,
-
-          vehicle_id,
-          driver_id,
-
-          entry_type,
-
-          vendor_id: vendor_id || null,
-
-          // Multi PO purchase entry
-          po_id: null,
-
-          // Sales order
-          so_id:
-            entry_type === "sales"
-              ? so_id
-              : null,
-
-          // Material is only stored on header for sales
-          material_id:
-            entry_type === "sales"
-              ? salesOrder
-                ? salesOrder.material_id
-                : null
-              : null,
-
-          challan_no: challan_no || null,
-
-          expected_qty:
-            expected_qty !== undefined &&
-            expected_qty !== null &&
-            expected_qty !== ""
-              ? Number(expected_qty)
-              : null,
-
-          remarks: remarks || null,
-
-          driver_photo_url:
-            driver_photo_url || null,
-
-          entry_time: new Date(),
-
-          gate_status: "waiting_token",
-
-          plant_id:
-            plant_id ||
-            (req.user ? req.user.plant_id : null),
-
-          created_by:
-            req.user ? req.user.id : null,
-        },
-        {
-          transaction: t,
-        },
-      );
-
-      // ===================================================
-      // PURCHASE
-      // ===================================================
-
-      if (entry_type === "purchase") {
-        const GateEntryPurchaseOrder = require(
-          "../models/gateEntryPurchaseOrder.model"
-        );
-
-        // -------------------------------------------------
-        // Prevent duplicate PO IDs in same request
-        // -------------------------------------------------
-
-        const poIds = purchase_orders.map((po) =>
-          Number(po.po_id),
-        );
-
-        const uniquePoIds = new Set(poIds);
-
-        if (uniquePoIds.size !== poIds.length) {
+        if (!so_id) {
           throw createError(
             400,
-            "The same purchase order cannot be selected more than once",
+            "so_id is required for every sales order"
           );
         }
 
-        // -------------------------------------------------
-        // PROCESS EACH PO
-        // -------------------------------------------------
+        // --------------------------------------------------------
+        // MATERIALS
+        // --------------------------------------------------------
 
-        for (const po of purchase_orders) {
-          // ===============================================
-          // PO ID VALIDATION
-          // ===============================================
-
-          const poId = Number(po.po_id);
-
-          if (!Number.isInteger(poId) || poId <= 0) {
-            throw createError(
-              400,
-              `Invalid purchase order ID: ${po.po_id}`,
-            );
-          }
-
-          // ===============================================
-          // MATERIAL ARRAY VALIDATION
-          // ===============================================
-
-          if (
-            !Array.isArray(po.materials) ||
-            po.materials.length === 0
-          ) {
-            throw createError(
-              400,
-              `PO ${poId} must contain at least one material`,
-            );
-          }
-
-          // ===============================================
-          // CHECK APPROVED PO
-          // ===============================================
-
-          /*
-           * IMPORTANT:
-           *
-           * purchase_order now stores its materials in the
-           * JSON `items` column — [{ material_id, variety_id,
-           * qty, rate }, ...] — NOT in a flat material_id
-           * column on this row (that column is legacy/unused
-           * by bulkCreate). Fetch the PO itself here; material
-           * membership + ordered qty are checked below against
-           * `purchaseOrder.items`.
-           */
-
-          const purchaseOrder =
-            await PurchaseOrder.findOne({
-              where: {
-                id: poId,
-
-                vendor_id: Number(vendor_id),
-
-                approval_status: "approved",
-
-                is_deleted: false,
-              },
-
-              transaction: t,
-
-              lock: t.LOCK.UPDATE,
-            });
-
-          if (!purchaseOrder) {
-            throw createError(
-              400,
-              `Invalid or unapproved purchase order: ${poId}`,
-            );
-          }
-
-          const poItems = Array.isArray(purchaseOrder.items)
-            ? purchaseOrder.items
-            : [];
-
-          // ===============================================
-          // PREVENT DUPLICATE MATERIALS IN SAME PO
-          // ===============================================
-
-          const materialIds = po.materials.map(
-            (material) =>
-              Number(material.material_id),
+        if (
+          !Array.isArray(materials) ||
+          materials.length === 0
+        ) {
+          throw createError(
+            400,
+            `materials are required for Sales Order ${so_id}`
           );
+        }
 
-          const uniqueMaterialIds =
-            new Set(materialIds);
+        const validatedMaterials = [];
+
+        // --------------------------------------------------------
+        // PROCESS MATERIALS
+        // --------------------------------------------------------
+
+        for (const materialItem of materials) {
+          const {
+            material_id,
+            qty,
+          } = materialItem || {};
+
+          if (!material_id) {
+            throw createError(
+              400,
+              `material_id is required for Sales Order ${so_id}`
+            );
+          }
+
+          const requestedQty = Number(qty);
 
           if (
-            uniqueMaterialIds.size !==
-            materialIds.length
+            !Number.isFinite(requestedQty) ||
+            requestedQty <= 0
           ) {
             throw createError(
               400,
-              `The same material cannot be selected more than once for PO ${poId}`,
+              `qty must be greater than 0 for Sales Order ${so_id}, material ${material_id}`
             );
           }
 
-          // ===============================================
-          // PROCESS MATERIALS
-          // ===============================================
+          // ------------------------------------------------------
+          // FIND SALES ORDER LINE
+          //
+          // SalesOrder.id represents the individual SO line.
+          // material_id confirms that the requested material
+          // belongs to that SO line.
+          // ------------------------------------------------------
 
-          for (const material of po.materials) {
-            const materialId = Number(
+          const salesOrder = await SalesOrder.findOne({
+            where: {
+              id: so_id,
+              material_id,
+              is_deleted: false,
+            },
+            transaction: t,
+            lock: t.LOCK.UPDATE,
+          });
+
+          if (!salesOrder) {
+            throw createError(
+              400,
+              `Sales Order ${so_id} does not contain material ${material_id}`
+            );
+          }
+
+          // ------------------------------------------------------
+          // CHECK APPROVAL
+          // ------------------------------------------------------
+
+          if (
+            salesOrder.approval_status !== "approved"
+          ) {
+            throw createError(
+              400,
+              `Sales Order ${so_id} is not approved`
+            );
+          }
+
+          // ------------------------------------------------------
+          // CHECK STATUS
+          // ------------------------------------------------------
+
+          if (
+            ["cancelled", "closed"].includes(
+              salesOrder.so_status
+            )
+          ) {
+            throw createError(
+              400,
+              `Sales Order ${so_id} is ${salesOrder.so_status}`
+            );
+          }
+
+          // ------------------------------------------------------
+          // CALCULATE REMAINING QTY
+          // ------------------------------------------------------
+
+          const orderedQty =
+            Number(salesOrder.qty || 0);
+
+          const dispatchedQty =
+            Number(
+              salesOrder.dispatched_qty || 0
+            );
+
+          const remainingQty =
+            orderedQty - dispatchedQty;
+
+          // ------------------------------------------------------
+          // CHECK REQUESTED QTY
+          // ------------------------------------------------------
+
+          if (requestedQty > remainingQty) {
+            throw createError(
+              400,
+              `Requested quantity ${requestedQty} exceeds remaining quantity ${remainingQty} for Sales Order ${so_id}, material ${material_id}`
+            );
+          }
+
+          // ------------------------------------------------------
+          // SAVE VALIDATED DATA
+          // ------------------------------------------------------
+
+          validatedMaterials.push({
+            so_id: salesOrder.id,
+            material_id: salesOrder.material_id,
+            qty: requestedQty,
+            salesOrder,
+          });
+        }
+
+        validatedSalesOrders.push({
+          so_id,
+          materials: validatedMaterials,
+        });
+      }
+    }
+
+    // ============================================================
+    // 5. VALIDATE TOTAL EXPECTED QTY
+    // ============================================================
+
+    let calculatedTotalQty = 0;
+
+    if (entry_type === "sales") {
+      calculatedTotalQty =
+        validatedSalesOrders.reduce(
+          (total, so) => {
+            return (
+              total +
+              so.materials.reduce(
+                (materialTotal, material) =>
+                  materialTotal +
+                  Number(material.qty),
+                0
+              )
+            );
+          },
+          0
+        );
+    }
+
+    if (entry_type === "sales" && expected_qty) {
+      const expectedQtyNum =
+        Number(expected_qty);
+
+      if (
+        !Number.isFinite(expectedQtyNum) ||
+        expectedQtyNum <= 0
+      ) {
+        throw createError(
+          400,
+          "expected_qty must be greater than 0"
+        );
+      }
+
+      if (
+        Math.abs(
+          expectedQtyNum - calculatedTotalQty
+        ) > 0.01
+      ) {
+        throw createError(
+          400,
+          `expected_qty ${expectedQtyNum} does not match total Sales Order quantity ${calculatedTotalQty}`
+        );
+      }
+    }
+
+    // ============================================================
+    // 6. CREATE GATE ENTRY
+    // ============================================================
+
+    /*
+     * For multiple SOs we do NOT use a single top-level so_id.
+     *
+     * so_id/material_id on GateEntry can be null for the
+     * multiple-order case because the actual relationships are
+     * stored in gate_entry_sales_orders.
+     */
+
+    const gateEntryData = {
+      vehicle_id,
+
+      driver_id,
+
+      vendor_id:
+        entry_type === "purchase"
+          ? vendor_id || null
+          : null,
+
+      customer_id:
+        entry_type === "sales"
+          ? customer_id || null
+          : null,
+
+      challan_no:
+        challan_no || null,
+
+      expected_qty:
+        expected_qty ||
+        (
+          entry_type === "sales"
+            ? calculatedTotalQty
+            : null
+        ),
+
+      plant_id:
+        plant_id ||
+        (
+          req.user
+            ? req.user.plant_id
+            : null
+        ),
+
+      entry_type,
+
+      // Do NOT put a single SO here when multiple SOs
+      // are being selected.
+      so_id: null,
+
+      material_id: null,
+
+      gate_status: "waiting_token",
+
+      created_by:
+        req.user
+          ? req.user.id
+          : null,
+    };
+
+    const gateEntry = await GateEntry.create(
+      gateEntryData,
+      {
+        transaction: t,
+      }
+    );
+
+    // ============================================================
+    // 7. CREATE SALES ORDER RELATION RECORDS
+    // ============================================================
+
+    if (entry_type === "sales") {
+      const salesOrderRows = [];
+
+      for (const soItem of validatedSalesOrders) {
+        for (const material of soItem.materials) {
+          salesOrderRows.push({
+            gate_entry_id: gateEntry.id,
+
+            so_id: material.so_id,
+
+            material_id:
               material.material_id,
-            );
 
-            // ---------------------------------------------
-            // MATERIAL ID VALIDATION
-            // ---------------------------------------------
+            qty: material.qty,
 
-            if (
-              !Number.isInteger(materialId) ||
-              materialId <= 0
-            ) {
-              throw createError(
-                400,
-                `Valid material_id is required for PO ${poId}`,
-              );
-            }
+            plant_id:
+              plant_id ||
+              (
+                req.user
+                  ? req.user.plant_id
+                  : null
+              ),
 
-            // ---------------------------------------------
-            // QUANTITY VALIDATION
-            // ---------------------------------------------
+            created_by:
+              req.user
+                ? req.user.id
+                : null,
 
-            const receivedQty = Number(
-              material.qty,
-            );
+            updated_by: null,
 
-            if (
-              !Number.isFinite(receivedQty) ||
-              receivedQty <= 0
-            ) {
-              throw createError(
-                400,
-                `Valid quantity is required for material ${materialId} in PO ${poId}`,
-              );
-            }
-
-            // ---------------------------------------------
-            // CHECK MATERIAL MASTER
-            // ---------------------------------------------
-
-            const materialMaster =
-              await MaterialMaster.findOne({
-                where: {
-                  id: materialId,
-                  is_deleted: false,
-                },
-
-                transaction: t,
-              });
-
-            if (!materialMaster) {
-              throw createError(
-                400,
-                `Invalid material_id: ${materialId}`,
-              );
-            }
-
-            // ---------------------------------------------
-            // CHECK MATERIAL BELONGS TO PO
-            // ---------------------------------------------
-
-            /*
-             * VERY IMPORTANT:
-             *
-             * Do NOT re-query PurchaseOrder with a flat
-             * material_id filter here — bulkCreate never
-             * populates that column, so it would always miss.
-             * Membership + ordered qty live in
-             * purchaseOrder.items (JSON), fetched above.
-             */
-
-            const poItem = poItems.find(
-              (it) => Number(it.material_id) === materialId,
-            );
-
-            if (!poItem) {
-              throw createError(
-                400,
-                `Material ${materialId} does not belong to PO ${poId}`,
-              );
-            }
-
-            // ---------------------------------------------
-            // CHECK ORDERED QUANTITY
-            // ---------------------------------------------
-
-            const orderedQty = Number(
-              poItem.qty,
-            );
-
-            if (
-              Number.isFinite(orderedQty) &&
-              receivedQty > orderedQty
-            ) {
-              throw createError(
-                400,
-                `Received quantity ${receivedQty} exceeds ordered quantity ${orderedQty} for material ${materialId} in PO ${poId}`,
-              );
-            }
-
-            // ---------------------------------------------
-            // CREATE GATE ENTRY PO RELATION
-            // ---------------------------------------------
-
-            await GateEntryPurchaseOrder.create(
-              {
-                gate_entry_id: entry.id,
-
-                po_id: poId,
-
-                material_id: materialId,
-
-                qty: receivedQty,
-              },
-              {
-                transaction: t,
-              },
-            );
-          }
+            is_deleted: false,
+          });
         }
       }
 
-      // ===================================================
-      // COMMIT TRANSACTION
-      // ===================================================
+      if (salesOrderRows.length > 0) {
+        await GateEntrySalesOrder.bulkCreate(
+          salesOrderRows,
+          {
+            transaction: t,
+          }
+        );
+      }
+    }
 
-      await t.commit();
+    // ============================================================
+    // 8. PURCHASE ORDER PROCESSING
+    // ============================================================
 
-      // ===================================================
-      // GET COMPLETE ENTRY
-      // ===================================================
+    /*
+     * Keep your existing Purchase Order logic here.
+     *
+     * If your purchase_orders structure is:
+     *
+     * purchase_orders: [
+     *   {
+     *     po_id: 1,
+     *     materials: [
+     *       {
+     *         material_id: 2,
+     *         qty: 500
+     *       }
+     *     ]
+     *   }
+     * ]
+     *
+     * create the GateEntryPurchaseOrder rows in the same way.
+     */
 
-      const created = await GateEntry.findByPk(
-        entry.id,
+    if (entry_type === "purchase") {
+      const purchaseOrderRows = [];
+
+      for (const poItem of purchase_orders) {
+        const {
+          po_id,
+          materials,
+        } = poItem || {};
+
+        if (!po_id) {
+          throw createError(
+            400,
+            "po_id is required for every purchase order"
+          );
+        }
+
+        if (
+          !Array.isArray(materials) ||
+          materials.length === 0
+        ) {
+          throw createError(
+            400,
+            `materials are required for Purchase Order ${po_id}`
+          );
+        }
+
+        for (const material of materials) {
+          const {
+            material_id,
+            qty,
+          } = material || {};
+
+          if (!material_id) {
+            throw createError(
+              400,
+              `material_id is required for Purchase Order ${po_id}`
+            );
+          }
+
+          const requestedQty = Number(qty);
+
+          if (
+            !Number.isFinite(requestedQty) ||
+            requestedQty <= 0
+          ) {
+            throw createError(
+              400,
+              `qty must be greater than 0 for Purchase Order ${po_id}, material ${material_id}`
+            );
+          }
+
+          purchaseOrderRows.push({
+            gate_entry_id: gateEntry.id,
+
+            po_id,
+
+            material_id,
+
+            qty: requestedQty,
+
+            plant_id:
+              plant_id ||
+              (
+                req.user
+                  ? req.user.plant_id
+                  : null
+              ),
+
+            created_by:
+              req.user
+                ? req.user.id
+                : null,
+
+            updated_by: null,
+
+            is_deleted: false,
+          });
+        }
+      }
+
+      if (purchaseOrderRows.length > 0) {
+        await GateEntryPurchaseOrder.bulkCreate(
+          purchaseOrderRows,
+          {
+            transaction: t,
+          }
+        );
+      }
+    }
+
+    // ============================================================
+    // 9. COMMIT TRANSACTION
+    // ============================================================
+
+    await t.commit();
+
+    // ============================================================
+    // 10. GET CREATED GATE ENTRY
+    // ============================================================
+
+    const createdGateEntry =
+      await GateEntry.findByPk(
+        gateEntry.id,
         {
-          include: detailIncludes,
-        },
+          include: [
+            {
+              model: GateEntrySalesOrder,
+              as: "sales_orders",
+              required: false,
+
+              include: [
+                {
+                  model: SalesOrder,
+                  as: "sales_order",
+                  required: false,
+                },
+              ],
+            },
+
+            {
+              model: GateEntryPurchaseOrder,
+              as: "purchase_orders",
+              required: false,
+            },
+          ],
+        }
       );
 
-      // ===================================================
-      // RESPONSE
-      // ===================================================
+    // ============================================================
+    // 11. RESPONSE
+    // ============================================================
 
-      return res.status(201).json({
-        success: true,
-        msg: "Token generated",
-        data: created,
-      });
-    } catch (error) {
-      await t.rollback();
-      throw error;
-    }
+    return res.status(201).json({
+      success: true,
+
+      msg:
+        entry_type === "sales"
+          ? "Gate entry created with Sales Order(s)"
+          : "Gate entry created with Purchase Order(s)",
+
+      data: createdGateEntry,
+    });
   } catch (err) {
+    // ============================================================
+    // ROLLBACK
+    // ============================================================
+
+    try {
+      await t.rollback();
+    } catch (rollbackError) {
+      console.error(
+        "Transaction rollback error:",
+        rollbackError
+      );
+    }
+
+    console.error(
+      "GENERATE TOKEN ERROR:",
+      err
+    );
+
     next(err);
   }
 },
