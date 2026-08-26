@@ -21,66 +21,142 @@ const detailIncludes = [
 
 module.exports = {
  
-  getAllGrouped: async (req, res, next) => {
-    try {
-      const { search, customer_id, plant_id } = req.query;
+ getAllGrouped: async (req, res, next) => {
+  try {
+    const { search, customer_id, plant_id } = req.query;
 
-      const where = { is_deleted: false };
-       if (req.user.role !== "admin") {
+    const where = {
+      is_deleted: false,
+    };
+
+    // Non-admin users can only see approved SOs
+    if (req.user.role !== "admin") {
       where.approval_status = "approved";
     }
-      if (customer_id) where.customer_id = customer_id;
-      if (plant_id) where.plant_id = plant_id;
-      if (search) where.so_no = { [Op.like]: `%${search}%` };
 
-      const rows = await SalesOrder.findAll({
-        where,
-        include: detailIncludes,
-        order: [["so_no", "DESC"], ["created_at", "ASC"]],
-      });
+    if (customer_id) {
+      where.customer_id = customer_id;
+    }
 
-      const groups = new Map();
-      for (const row of rows) {
-        if (!groups.has(row.so_no)) {
-          groups.set(row.so_no, {
-            so_no: row.so_no,
-            customer_id: row.customer_id,
-            customer: row.customer,
-            order_type: row.order_type,
-            order_date: row.order_date,
-            plant_id: row.plant_id,
-            items: [],
-          });
+    if (plant_id) {
+      where.plant_id = plant_id;
+    }
+
+    if (search) {
+      where.so_no = {
+        [Op.like]: `%${search}%`,
+      };
+    }
+
+    const rows = await SalesOrder.findAll({
+      where,
+      include: detailIncludes,
+      order: [
+        ["so_no", "DESC"],
+        ["created_at", "ASC"],
+      ],
+    });
+
+    const result = [];
+
+    for (const row of rows) {
+      // Parse JSON items safely
+      let items = row.items || [];
+
+      if (typeof items === "string") {
+        try {
+          items = JSON.parse(items);
+        } catch (e) {
+          items = [];
         }
-        groups.get(row.so_no).items.push({
-          id: row.id,
-          material_id: row.material_id,
-          material: row.material,
-          qty: row.qty,
-          dispatched_qty: row.dispatched_qty,
-          rate: row.rate,
-          so_status: row.so_status,
+      }
+
+      if (!Array.isArray(items)) {
+        items = [];
+      }
+
+      // Get material IDs from JSON items
+      const materialIds = items
+        .map((item) => Number(item.material_id))
+        .filter(Boolean);
+
+      // Fetch materials
+      let materials = [];
+
+      if (materialIds.length > 0) {
+        materials = await MaterialMaster.findAll({
+          where: {
+            id: {
+              [Op.in]: materialIds,
+            },
+          },
         });
       }
 
-      const grouped = Array.from(groups.values()).map((g) => ({
-        ...g,
-        // Synthetic id for the frontend's generic EntitySelect (which needs
-        // exactly one `id` per option) — the first line item's real row id.
-        // Submitting a gate entry against this SO still resolves to the
-        // SPECIFIC line item matching whichever material the truck is
-        // actually collecting, not this placeholder (see gate.controller.js).
-        id: g.items[0].id,
-        item_count: g.items.length,
-        total_qty: g.items.reduce((s, i) => s + Number(i.qty), 0),
-        total_dispatched_qty: g.items.reduce((s, i) => s + Number(i.dispatched_qty || 0), 0),
-      }));
+      // Create material lookup
+      const materialMap = new Map(
+        materials.map((material) => [
+          Number(material.id),
+          material,
+        ])
+      );
 
-      res.status(200).json({ success: true, data: grouped });
-    } catch (err) {
-      next(err);
+      // Format items
+      const formattedItems = items.map((item, index) => {
+        const materialId = Number(item.material_id);
+
+        return {
+          id: `${row.id}_${index}`,
+          material_id: materialId,
+          material: materialMap.get(materialId) || null,
+          qty: Number(item.qty || 0),
+          rate: Number(item.rate || 0),
+
+          // Since dispatched_qty is currently stored at SO level,
+          // this will initially be 0 for each JSON item.
+          dispatched_qty: 0,
+
+          so_status: row.so_status,
+        };
+      });
+
+      result.push({
+        id: row.id,
+        so_no: row.so_no,
+        customer_id: row.customer_id,
+        customer: row.customer,
+        order_type: row.order_type,
+        order_date: row.order_date,
+        plant_id: row.plant_id,
+
+        approval_status: row.approval_status,
+        approved_by: row.approved_by,
+        approved_at: row.approved_at,
+        rejection_reason: row.rejection_reason,
+
+        items: formattedItems,
+
+        item_count: formattedItems.length,
+
+        total_qty: formattedItems.reduce(
+          (sum, item) => sum + Number(item.qty || 0),
+          0
+        ),
+
+        total_dispatched_qty: Number(
+          row.dispatched_qty || 0
+        ),
+      });
     }
-  },
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+},
 
   getAll: async (req, res, next) => {
   try {
@@ -154,94 +230,254 @@ module.exports = {
     }
   },
 
-  bulkCreate: async (req, res, next) => {
-    const t = await sequelize.transaction();
-    try {
-      const { customer_id, order_type, order_date, plant_id, items } = req.body;
+bulkCreate: async (req, res, next) => {
+  const t = await sequelize.transaction();
 
-      if (!customer_id || !order_type) throw createError(400, "customer_id and order_type are required");
-      if (!["fg", "by_product"].includes(order_type)) throw createError(400, "order_type must be 'fg' or 'by_product'");
-      if (!Array.isArray(items) || items.length === 0) {
-        throw createError(400, "items must be a non-empty array of { material_id, qty, rate }");
-      }
+  try {
+    const {
+      customer_id,
+      order_type,
+      order_date,
+      plant_id,
+      items,
+    } = req.body;
 
-      const customer = await Customer.findOne({ where: { id: customer_id, is_deleted: false } });
-      if (!customer) throw createError(400, "Invalid customer_id");
-
-      for (const item of items) {
-        if (!item.material_id || !item.qty || !item.rate) {
-          throw createError(400, "Every item needs material_id, qty and rate");
-        }
-        const material = await MaterialMaster.findOne({ where: { id: item.material_id, is_deleted: false } });
-        if (!material) throw createError(400, `Invalid material_id: ${item.material_id}`);
-      }
-
-      // Reject exact duplicate materials within the same submission.
-      const seen = new Set();
-      for (const item of items) {
-        if (seen.has(item.material_id)) throw createError(400, "Duplicate material in the same SO submission");
-        seen.add(item.material_id);
-      }
-
-      const so_no = await generateSoNo();
-      const resolvedPlantId = plant_id || (req.user ? req.user.plant_id : null);
-      const resolvedOrderDate = order_date || new Date().toISOString().slice(0, 10);
-
-      const created = [];
-      for (const item of items) {
-        const row = await SalesOrder.create(
-          {
-            so_no,
-            customer_id,
-            order_type,
-            material_id: item.material_id,
-            qty: item.qty,
-            rate: item.rate,
-            order_date: resolvedOrderDate,
-            so_status: "confirmed",
-            approval_status: "pending_approval",
-            plant_id: resolvedPlantId,
-            created_by: req.user ? req.user.id : null,
-          },
-          { transaction: t }
-        );
-        created.push(row);
-      }
-
-      await t.commit();
-
-      const fullRows = await SalesOrder.findAll({
-        where: { so_no, id: { [Op.in]: created.map((r) => r.id) } },
-        include: detailIncludes,
-      });
-
-      res.status(201).json({
-        success: true,
-        msg: `Sales order ${so_no} created with ${items.length} line item(s)`,
-        data: fullRows,
-      });
-    } catch (err) {
-      if (!t.finished) await t.rollback();
-
-      // Surface exactly which field(s) tripped a leftover DB-level
-      // constraint, instead of letting Sequelize's generic error through.
-      if (err.name === "SequelizeUniqueConstraintError") {
-        const fields = err.fields ? Object.keys(err.fields).join(", ") : "unknown field(s)";
-        return next(createError(
-          500,
-          `A database constraint still exists on: ${fields}. This is very likely a leftover unique index from ` +
-          `before multi-item Sales Orders were supported. Run "SHOW INDEX FROM sales_order;" in MySQL Workbench, ` +
-          `find the index covering [${fields}], and drop it with: ALTER TABLE sales_order DROP INDEX <index_name>;`
-        ));
-      }
-      if (err.name === "SequelizeValidationError" && Array.isArray(err.errors)) {
-        const detail = err.errors.map((e) => `${e.path}: ${e.message}`).join("; ");
-        return next(createError(400, `Validation failed — ${detail}`));
-      }
-
-      next(err);
+    // -----------------------------
+    // Basic validation
+    // -----------------------------
+    if (!customer_id || !order_type) {
+      throw createError(
+        400,
+        "customer_id and order_type are required"
+      );
     }
-  },
+
+    if (!["fg", "by_product"].includes(order_type)) {
+      throw createError(
+        400,
+        "order_type must be 'fg' or 'by_product'"
+      );
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      throw createError(
+        400,
+        "items must be a non-empty array of { material_id, qty, rate }"
+      );
+    }
+
+    // -----------------------------
+    // Validate customer
+    // -----------------------------
+    const customer = await Customer.findOne({
+      where: {
+        id: customer_id,
+        is_deleted: false,
+      },
+      transaction: t,
+    });
+
+    if (!customer) {
+      throw createError(400, "Invalid customer_id");
+    }
+
+    // -----------------------------
+    // Validate items
+    // -----------------------------
+    const seen = new Set();
+
+    for (const item of items) {
+      if (!item.material_id) {
+        throw createError(
+          400,
+          "Every item needs material_id"
+        );
+      }
+
+      if (
+        item.qty === undefined ||
+        item.qty === null ||
+        Number(item.qty) <= 0
+      ) {
+        throw createError(
+          400,
+          `Invalid qty for material_id: ${item.material_id}`
+        );
+      }
+
+      if (
+        item.rate === undefined ||
+        item.rate === null ||
+        Number(item.rate) < 0
+      ) {
+        throw createError(
+          400,
+          `Invalid rate for material_id: ${item.material_id}`
+        );
+      }
+
+      // Reject duplicate material IDs
+      if (seen.has(Number(item.material_id))) {
+        throw createError(
+          400,
+          `Duplicate material in the same SO submission: ${item.material_id}`
+        );
+      }
+
+      seen.add(Number(item.material_id));
+
+      // Validate material
+      const material = await MaterialMaster.findOne({
+        where: {
+          id: item.material_id,
+          is_deleted: false,
+        },
+        transaction: t,
+      });
+
+      if (!material) {
+        throw createError(
+          400,
+          `Invalid material_id: ${item.material_id}`
+        );
+      }
+    }
+
+    // -----------------------------
+    // Generate SO number
+    // -----------------------------
+    const so_no = await generateSoNo();
+
+    // -----------------------------
+    // Resolve plant
+    // -----------------------------
+    const resolvedPlantId =
+      plant_id ||
+      (req.user ? req.user.plant_id : null);
+
+    // -----------------------------
+    // Resolve order date
+    // -----------------------------
+    const resolvedOrderDate =
+      order_date ||
+      new Date().toISOString().slice(0, 10);
+
+    // -----------------------------
+    // Normalize items
+    // -----------------------------
+    const normalizedItems = items.map((item) => ({
+      material_id: Number(item.material_id),
+      qty: Number(item.qty),
+      rate: Number(item.rate),
+    }));
+
+    // -----------------------------
+    // Create ONE SalesOrder row
+    // -----------------------------
+    const created = await SalesOrder.create(
+      {
+        so_no,
+        customer_id,
+        order_type,
+
+        // Store all line items inside JSON
+        items: normalizedItems,
+
+        // These are no longer used for individual
+        // line items because everything is inside items.
+        //
+        // If these DB columns are still NOT NULL,
+        // you must make them nullable in MySQL.
+        material_id: null,
+        qty: null,
+        rate: null,
+
+        // Initially nothing has been dispatched
+        dispatched_qty: 0,
+
+        order_date: resolvedOrderDate,
+
+        so_status: "confirmed",
+
+        approval_status: "pending_approval",
+
+        plant_id: resolvedPlantId,
+
+        created_by: req.user
+          ? req.user.id
+          : null,
+      },
+      {
+        transaction: t,
+      }
+    );
+
+    // -----------------------------
+    // Commit transaction
+    // -----------------------------
+    await t.commit();
+
+    // -----------------------------
+    // Fetch complete created SO
+    // -----------------------------
+    const fullRow = await SalesOrder.findOne({
+      where: {
+        id: created.id,
+      },
+      include: detailIncludes,
+    });
+
+    return res.status(201).json({
+      success: true,
+      msg: `Sales order ${so_no} created with ${items.length} line item(s)`,
+      data: fullRow,
+    });
+
+  } catch (err) {
+    if (!t.finished) {
+      await t.rollback();
+    }
+
+    // -----------------------------
+    // Unique constraint error
+    // -----------------------------
+    if (err.name === "SequelizeUniqueConstraintError") {
+      const fields = err.fields
+        ? Object.keys(err.fields).join(", ")
+        : "unknown field(s)";
+
+      return next(
+        createError(
+          500,
+          `A database constraint still exists on: ${fields}. ` +
+          `Run "SHOW INDEX FROM sales_order;" in MySQL Workbench ` +
+          `and remove any unwanted unique index.`
+        )
+      );
+    }
+
+    // -----------------------------
+    // Validation error
+    // -----------------------------
+    if (
+      err.name === "SequelizeValidationError" &&
+      Array.isArray(err.errors)
+    ) {
+      const detail = err.errors
+        .map((e) => `${e.path}: ${e.message}`)
+        .join("; ");
+
+      return next(
+        createError(
+          400,
+          `Validation failed — ${detail}`
+        )
+      );
+    }
+
+    next(err);
+  }
+},
 
   getPendingApprovals: async (req, res, next) => {
   try {

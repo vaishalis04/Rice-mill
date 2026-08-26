@@ -6,10 +6,6 @@ class SalesOrder extends Model {}
 SalesOrder.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    // No longer unique: a single SO can now have multiple line items
-    // (different material/qty/rate combos) sharing one so_no.
-    // Uniqueness is enforced instead on (so_no, material_id) — see
-    // salesOrder.controller.js's create/bulkCreate/addItem.
     so_no: { type: DataTypes.STRING(30), allowNull: false },
     customer_id: {
       type: DataTypes.BIGINT,
@@ -19,11 +15,16 @@ SalesOrder.init(
     order_type: { type: DataTypes.ENUM("fg", "by_product"), allowNull: false }, // note #25
     material_id: {
       type: DataTypes.BIGINT,
-      allowNull: false,
-      references: { model: "material_master", key: "id" },
+      allowNull: true,
+      references: {
+        model: "material_master",
+        key: "id",
+      },
     },
-    qty: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
-    // Running total of everything loaded against this order so far, across
+    qty: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: true,
+    }, // Running total of everything loaded against this order so far, across
     // possibly multiple trucks (see loading.controller.js). qty - dispatched_qty
     // = how much is still left to load.
     dispatched_qty: {
@@ -31,7 +32,10 @@ SalesOrder.init(
       allowNull: false,
       defaultValue: 0,
     },
-    rate: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
+    rate: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+    },
     order_date: { type: DataTypes.DATEONLY, allowNull: false },
     so_status: {
       type: DataTypes.ENUM(
@@ -87,6 +91,11 @@ SalesOrder.init(
     rejection_reason: {
       type: DataTypes.TEXT,
       allowNull: true,
+    },
+    items: {
+      type: DataTypes.JSON,
+      allowNull: false,
+      defaultValue: [],
     },
   },
   {
