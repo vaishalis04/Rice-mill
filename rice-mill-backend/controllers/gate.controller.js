@@ -12,6 +12,7 @@ const {
   PlantMaster,
   WarehouseMaster,
   SalesOrder,
+  GateEntrySalesOrder,
   Customer,
 } = require("../models/index");
 const { generateTokenNo } = require("../helpers/helperFunction");
