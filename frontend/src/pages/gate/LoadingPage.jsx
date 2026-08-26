@@ -5,6 +5,7 @@ import {
   updateLoadingApi,
   deleteLoadingApi,
   updateSalesOrderApi,
+  getGateEntryByIdApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
@@ -17,35 +18,104 @@ export default function LoadingPage() {
   const [loadings, setLoadings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
-  const [selectedSoItemId, setSelectedSoItemId] = useState("");
+  const [selectedItems, setSelectedItems] = useState([]);
+  const [materialQuantities, setMaterialQuantities] = useState({});
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [lastResult, setLastResult] = useState(null);
   const [completingSoId, setCompletingSoId] = useState(null);
-
+  const [gateEntryMaterials, setGateEntryMaterials] = useState([]);
+  const [loadingMaterials, setLoadingMaterials] = useState(false);
 
   const gateEntries = useEntityLookup("gate_entry");
   const vehicles = useEntityLookup("vehicle");
   const drivers = useEntityLookup("driver");
   const salesOrders = useEntityLookup("sales_order");
-  const salesOrderGroups = useEntityLookup("sales_order_grouped");
+  const materials = useEntityLookup("material");
 
   const getGateEntryRow = (gate_entry_id) =>
     gateEntries.rows.find((r) => String(r.id) === String(gate_entry_id));
 
   const selectedGateEntry = getGateEntryRow(form.gate_entry_id);
-  const selectedSalesOrder = selectedSoItemId
-    ? salesOrders.rows.find((r) => String(r.id) === String(selectedSoItemId))
-    : null;
-  const selectedRemainingQty = selectedSalesOrder
-    ? Math.round((Number(selectedSalesOrder.qty) - Number(selectedSalesOrder.dispatched_qty || 0)) * 100) / 100
-    : null;
-  const soGroup = selectedGateEntry
-    ? salesOrderGroups.rows.find(
-        (g) => Array.isArray(g.items) && g.items.some((i) => String(i.id) === String(selectedGateEntry.so_id))
-      )
-    : null;
+
+  // Fetch gate entry details with sales orders when selected
+  useEffect(() => {
+    const fetchGateEntryDetails = async () => {
+      if (!form.gate_entry_id) {
+        setGateEntryMaterials([]);
+        return;
+      }
+      
+      setLoadingMaterials(true);
+      try {
+        const response = await getGateEntryByIdApi(form.gate_entry_id);
+        const gateEntry = response.data.data || response.data;
+        
+        console.log("=== Gate Entry Data ===");
+        console.log("Gate Entry:", gateEntry);
+        console.log("Sales Orders:", gateEntry.sales_orders);
+        
+        // Check if gateEntry has sales_orders
+        // In the useEffect that fetches gate entry details
+if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
+  const materialsWithDetails = gateEntry.sales_orders.map(so => {
+    const material = materials.rows.find(m => String(m.id) === String(so.material_id));
+    
+    // Use the fields from the formatted response
+    const orderedQty = Number(so.ordered_qty || so.qty || 0);
+    const dispatchedQty = Number(so.dispatched_qty || 0);
+    const remainingQty = orderedQty - dispatchedQty;
+    
+    const uniqueKey = `${so.so_id}-${so.material_id}`;
+    
+    return {
+      id: uniqueKey,
+      so_id: so.so_id,
+      material_id: so.material_id,
+      material_name: material?.name || `Material ${so.material_id}`,
+      so_no: so.sales_order?.so_no || `SO-${so.so_id}`,
+      ordered_qty: orderedQty,
+      dispatched_qty: dispatchedQty,
+      remaining_qty: Math.max(remainingQty, 0),
+      is_fully_loaded: remainingQty <= 0,
+      so_status: so.sales_order?.so_status || 'pending'
+    };
+  });
+  setGateEntryMaterials(materialsWithDetails);
+} else {
+          setGateEntryMaterials([]);
+        }
+      } catch (err) {
+        console.error("Failed to fetch gate entry details:", err);
+        setGateEntryMaterials([]);
+      } finally {
+        setLoadingMaterials(false);
+      }
+    };
+
+    fetchGateEntryDetails();
+  }, [form.gate_entry_id, salesOrders.rows, materials.rows]);
+
+  const availableMaterials = gateEntryMaterials;
+  const isAnyMaterialAvailable = availableMaterials.some(m => {
+    const available = m.remaining_qty > 0 && !['dispatched', 'closed', 'cancelled'].includes(m.so_status);
+    console.log(`Material ${m.material_name}: remaining=${m.remaining_qty}, status=${m.so_status}, available=${available}`);
+    return available;
+  });
+  
+  // Calculate total remaining quantity
+  const totalRemainingQty = availableMaterials.reduce((sum, m) => {
+    if (selectedItems.includes(m.id) && m.remaining_qty > 0) {
+      return sum + m.remaining_qty;
+    }
+    return sum;
+  }, 0);
+  
+  // Calculate total loaded quantity from material quantities
+  const totalLoadedQty = Object.values(materialQuantities).reduce((sum, val) => {
+    return sum + (Number(val) || 0);
+  }, 0);
 
   const load = () => {
     setLoading(true);
@@ -57,12 +127,52 @@ export default function LoadingPage() {
 
   useEffect(load, []);
 
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setForm({ ...form, [name]: value });
+  };
 
   const handleGateEntryChange = (gate_entry_id) => {
     setForm({ ...form, gate_entry_id });
-    const ge = getGateEntryRow(gate_entry_id);
-    setSelectedSoItemId(ge ? ge.so_id : "");
+    setSelectedItems([]);
+    setMaterialQuantities({});
+    setGateEntryMaterials([]);
+  };
+
+  const toggleItemSelection = (materialId) => {
+    console.log("Toggling selection for:", materialId);
+    setSelectedItems(prev => {
+      const newSelection = prev.includes(materialId)
+        ? prev.filter(id => id !== materialId)
+        : [...prev, materialId];
+      
+      // Clean up quantities for deselected items
+      const newQuantities = { ...materialQuantities };
+      if (!newSelection.includes(materialId)) {
+        delete newQuantities[materialId];
+      }
+      setMaterialQuantities(newQuantities);
+      
+      return newSelection;
+    });
+  };
+
+  const handleQuantityChange = (materialId, value) => {
+    const material = availableMaterials.find(m => m.id === materialId);
+    if (!material) return;
+    
+    const numValue = Number(value) || 0;
+    
+    if (numValue > material.remaining_qty) {
+      setError(`Cannot exceed remaining quantity of ${material.remaining_qty} for ${material.material_name}`);
+      return;
+    }
+    
+    setMaterialQuantities(prev => ({
+      ...prev,
+      [materialId]: numValue
+    }));
+    setError("");
   };
 
   const handleSubmit = async (e) => {
@@ -70,58 +180,105 @@ export default function LoadingPage() {
     setError("");
     setInfo("");
     setLastResult(null);
+    
     try {
       if (editingId) {
-        await updateLoadingApi(editingId, { loaded_qty: Number(form.loaded_qty), remarks: form.remarks });
+        await updateLoadingApi(editingId, { 
+          loaded_qty: Number(form.loaded_qty), 
+          remarks: form.remarks 
+        });
         setInfo("Loading record updated.");
       } else {
+        // Validate selections
+        if (selectedItems.length === 0) {
+          throw new Error("Please select at least one material to load");
+        }
+        
+        // Validate quantities
+        const quantities = [];
+        let totalQty = 0;
+        
+        for (const materialId of selectedItems) {
+          const qty = Number(materialQuantities[materialId] || 0);
+          if (qty <= 0) {
+            const material = availableMaterials.find(m => m.id === materialId);
+            throw new Error(`Please enter quantity for ${material?.material_name || 'material'}`);
+          }
+          
+          const material = availableMaterials.find(m => m.id === materialId);
+          if (!material) {
+            throw new Error(`Material not found`);
+          }
+          
+          if (qty > material.remaining_qty) {
+            throw new Error(`Quantity for ${material.material_name} exceeds remaining (${material.remaining_qty})`);
+          }
+          
+          quantities.push({
+            so_id: Number(material.so_id),
+            material_id: Number(material.material_id),
+            qty: qty
+          });
+          totalQty += qty;
+        }
+        
+        // Validate total matches loaded_qty
+        if (Math.abs(totalQty - Number(form.loaded_qty || 0)) > 0.01) {
+          throw new Error(`Total material quantities (${totalQty}) must equal loaded_qty (${form.loaded_qty || 0})`);
+        }
+        
+        if (totalQty === 0) {
+          throw new Error("Total loaded quantity must be greater than 0");
+        }
+        
         const payload = {
           gate_entry_id: Number(form.gate_entry_id),
           loaded_qty: Number(form.loaded_qty),
+          material_quantities: quantities
         };
+        
         if (form.remarks) payload.remarks = form.remarks;
-        if (selectedSoItemId && selectedGateEntry && String(selectedSoItemId) !== String(selectedGateEntry.so_id)) {
-          payload.so_id = Number(selectedSoItemId);
-        }
+        
         const res = await createLoadingApi(payload);
         setInfo(
           res.data.msg ||
             "Loading recorded — gate entry moved to 'loaded', ready for check-out."
         );
         setLastResult({
-          so_id: res.data.so_id,
-          so_no: res.data.so_no,
-          ordered_qty: res.data.ordered_qty,
-          dispatched_qty: res.data.dispatched_qty,
-          remaining_qty: res.data.remaining_qty,
-          is_fully_loaded: res.data.is_fully_loaded,
+          results: res.data.results || [],
+          all_fully_loaded: res.data.all_fully_loaded
         });
         gateEntries.refetch();
         salesOrders.refetch();
-        salesOrderGroups.refetch();
+        materials.refetch();
       }
       setForm(emptyForm);
-      setSelectedSoItemId("");
+      setSelectedItems([]);
+      setMaterialQuantities({});
       setEditingId(null);
       load();
     } catch (err) {
       setError(
         err.response?.data?.msg ||
           err.response?.data?.message ||
-          "Save failed — the gate entry may not be a sales truck at 'waiting_loading' yet."
+          err.message ||
+          "Save failed — please check your inputs."
       );
     }
   };
 
   const handleMarkCompleted = async () => {
     if (!lastResult) return;
-    setCompletingSoId(lastResult.so_id);
+    setCompletingSoId(true);
     setError("");
     try {
-      await updateSalesOrderApi(lastResult.so_id, { so_status: "closed" });
-      setInfo(
-        `Sales Order ${lastResult.so_no} marked completed (closed) with ${lastResult.remaining_qty} left unloaded.`
-      );
+      // Mark all orders as completed
+      for (const result of lastResult.results) {
+        if (!result.is_fully_loaded) {
+          await updateSalesOrderApi(result.so_id, { so_status: "closed" });
+        }
+      }
+      setInfo(`Sales Order(s) marked completed with remaining quantities.`);
       setLastResult(null);
       salesOrders.refetch();
     } catch (err) {
@@ -138,13 +295,21 @@ export default function LoadingPage() {
       loaded_qty: row.loaded_qty ?? "",
       remarks: row.remarks || "",
     });
-    setSelectedSoItemId(row.so_id || "");
+    // For edit, we need to get the unique key
+    if (row.so_id && row.material_id) {
+      const uniqueKey = `${row.so_id}-${row.material_id}`;
+      setSelectedItems([uniqueKey]);
+    } else {
+      setSelectedItems([]);
+    }
+    setMaterialQuantities({});
   };
 
   const handleCancel = () => {
     setEditingId(null);
     setForm(emptyForm);
-    setSelectedSoItemId("");
+    setSelectedItems([]);
+    setMaterialQuantities({});
   };
 
   const handleDelete = async (id) => {
@@ -173,74 +338,185 @@ export default function LoadingPage() {
           required={!editingId}
           disabled={!!editingId}
         />
+        
         {!editingId && selectedGateEntry && (
-          <div className="sf-field">
-            <label>Details</label>
-            <div
-              style={{
-                padding: "8px 10px",
-                background: "#f8fafc",
-                border: "1px solid #e2e8f0",
-                borderRadius: 6,
-                fontSize: 13,
-              }}
-            >
-              <div><strong>Vehicle:</strong> {vehicles.getLabel(selectedGateEntry.vehicle_id)}</div>
-              <div><strong>Driver:</strong> {drivers.getLabel(selectedGateEntry.driver_id)}</div>
-              <div><strong>Sales Order:</strong> {soGroup ? soGroup.so_no : salesOrders.getLabel(selectedGateEntry.so_id)}</div>
-              {soGroup && <div><strong>Customer:</strong> {soGroup.customer?.name || "—"}</div>}
+          <>
+            <div className="sf-field">
+              <label>Details</label>
+              <div
+                style={{
+                  padding: "8px 10px",
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 6,
+                  fontSize: 13,
+                }}
+              >
+                <div><strong>Vehicle:</strong> {vehicles.getLabel(selectedGateEntry.vehicle_id)}</div>
+                <div><strong>Driver:</strong> {drivers.getLabel(selectedGateEntry.driver_id)}</div>
+                <div><strong>Token:</strong> {selectedGateEntry.token_no}</div>
+              </div>
             </div>
-          </div>
-        )}
-        {!editingId && soGroup && (
-          <div className="sf-field">
-            <label>Which material is this truck loading?</label>
-            <div
-              style={{
-                padding: "8px 10px",
-                background: "#f8fafc",
-                border: "1px solid #e2e8f0",
-                borderRadius: 6,
-                fontSize: 13,
-              }}
-            >
-              {soGroup.items.length > 1 && (
-                <div style={{ color: "#b45309", marginBottom: 6, fontWeight: 600 }}>
-                  This Sales Order covers {soGroup.items.length} materials — tap the one on this truck ↓
-                </div>
-              )}
-              {soGroup.items.map((i, idx) => {
-                const remaining = Math.round((Number(i.qty || 0) - Number(i.dispatched_qty || 0)) * 100) / 100;
-                const isSelected = String(i.id) === String(selectedSoItemId);
-                const isDone = ["dispatched", "closed", "cancelled"].includes(i.so_status);
-                const clickable = soGroup.items.length > 1 && !isDone;
-                return (
-                  <div
-                    key={i.id}
-                    onClick={clickable ? () => setSelectedSoItemId(i.id) : undefined}
-                    style={{
-                      marginTop: idx === 0 ? 0 : 6,
-                      paddingTop: idx === 0 ? 0 : 6,
-                      borderTop: idx === 0 ? "none" : "1px dashed #e2e8f0",
-                      color: isDone ? "#94a3b8" : isSelected ? "#1d4ed8" : undefined,
-                      textDecoration: isDone ? "line-through" : "none",
-                      cursor: clickable ? "pointer" : "default",
-                      background: isSelected ? "#eff6ff" : "transparent",
-                      borderRadius: 4,
-                      padding: isSelected ? "4px 6px" : "0",
-                      margin: isSelected ? "2px -6px" : undefined,
-                    }}
-                  >
-                    <strong>{i.material?.name || "—"}</strong> — Ordered {i.qty}, Remaining {remaining}
-                    {isDone ? " (fully loaded)" : isSelected ? " ← loading this" : clickable ? " (tap to select)" : ""}
+            
+            {/* Materials Selection */}
+            <div className="sf-field">
+              <label>Materials to Load</label>
+              <div
+                style={{
+                  padding: "8px 10px",
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 6,
+                  fontSize: 13,
+                }}
+              >
+                {loadingMaterials && (
+                  <div style={{ color: "#64748b" }}>Loading materials...</div>
+                )}
+                
+                {!loadingMaterials && availableMaterials.length === 0 && (
+                  <div style={{ color: "#64748b" }}>
+                    No materials found for this gate entry.
                   </div>
-                );
-              })}
+                )}
+                
+                {!loadingMaterials && availableMaterials.length > 0 && (
+                  <>
+                    {availableMaterials.map((material, idx) => {
+                      const isSelected = selectedItems.includes(material.id);
+                      const isSelectable = material.remaining_qty > 0 && 
+                        !['dispatched', 'closed', 'cancelled'].includes(material.so_status);
+                      const currentQty = materialQuantities[material.id] || '';
+                      
+                      console.log(`Rendering ${material.material_name}: isSelectable=${isSelectable}, remaining=${material.remaining_qty}, status=${material.so_status}`);
+                      
+                      return (
+                        <div
+                          key={material.id}
+                          style={{
+                            marginTop: idx === 0 ? 0 : 8,
+                            paddingTop: idx === 0 ? 0 : 8,
+                            borderTop: idx === 0 ? "none" : "1px solid #e2e8f0",
+                            opacity: !isSelectable ? 0.6 : 1,
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                if (isSelectable) {
+                                  toggleItemSelection(material.id);
+                                } else {
+                                  setError(`Cannot select ${material.material_name} - ${material.remaining_qty <= 0 ? 'No remaining quantity' : 'Order is ' + material.so_status}`);
+                                }
+                              }}
+                              disabled={!isSelectable}
+                              style={{ cursor: isSelectable ? "pointer" : "not-allowed" }}
+                            />
+                            <div style={{ flex: 1 }}>
+                              <strong>{material.material_name}</strong>
+                              <span style={{ marginLeft: 8, color: "#64748b", fontSize: 12 }}>
+                                SO: {material.so_no}
+                              </span>
+                              <span style={{ marginLeft: 8, color: "#64748b", fontSize: 12 }}>
+                                Remaining: {material.remaining_qty} kg
+                              </span>
+                              {material.is_fully_loaded && (
+                                <span style={{ marginLeft: 8, color: "#22c55e", fontSize: 12 }}>
+                                  ✅ Fully Loaded
+                                </span>
+                              )}
+                              {!isSelectable && material.remaining_qty <= 0 && (
+                                <span style={{ marginLeft: 8, color: "#dc2626", fontSize: 12 }}>
+                                  ⚠️ No remaining quantity
+                                </span>
+                              )}
+                              {!isSelectable && ['dispatched', 'closed', 'cancelled'].includes(material.so_status) && (
+                                <span style={{ marginLeft: 8, color: "#dc2626", fontSize: 12 }}>
+                                  ⚠️ Order {material.so_status}
+                                </span>
+                              )}
+                            </div>
+                            {isSelectable && isSelected && (
+                              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max={material.remaining_qty}
+                                  value={currentQty}
+                                  onChange={(e) => handleQuantityChange(material.id, e.target.value)}
+                                  placeholder="Qty"
+                                  style={{
+                                    width: 100,
+                                    padding: "4px 6px",
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: 4,
+                                    fontSize: 13,
+                                  }}
+                                  required
+                                />
+                                <span style={{ fontSize: 12, color: "#64748b" }}>kg</span>
+                              </div>
+                            )}
+                          </div>
+                          {isSelected && currentQty > 0 && (
+                            <div style={{ fontSize: 11, color: "#64748b", marginTop: 2, marginLeft: 28 }}>
+                              {currentQty} kg loaded — {material.remaining_qty - currentQty} kg remaining after this truck
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    
+                    {selectedItems.length > 0 && (
+                      <div style={{ marginTop: 8, padding: "6px 8px", background: "#e6f7e6", borderRadius: 4 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+                          <strong>Selected: {selectedItems.length} material(s)</strong>
+                          <span>Total to load: {totalLoadedQty} kg</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedItems([]);
+                              setMaterialQuantities({});
+                            }}
+                            style={{
+                              padding: "2px 8px",
+                              fontSize: 12,
+                              background: "#dc2626",
+                              color: "white",
+                              border: "none",
+                              borderRadius: 4,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Clear All
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {!isAnyMaterialAvailable && availableMaterials.length > 0 && (
+                      <div style={{ marginTop: 8, color: "#dc2626", fontSize: 12 }}>
+                        ⚠️ No materials available for loading. All materials are either fully loaded or the order is closed/dispatched.
+                      </div>
+                    )}
+                    
+                    {isAnyMaterialAvailable && selectedItems.length === 0 && (
+                      <div style={{ marginTop: 8, color: "#b45309", fontSize: 12 }}>
+                        ⚠️ Please select at least one material to load
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          </>
         )}
+        
         <div className="sf-field">
-          <label>Loaded Qty (Tons)</label>
+          <label>Total Loaded Qty (kg)</label>
           <input
             name="loaded_qty"
             type="number"
@@ -248,20 +524,32 @@ export default function LoadingPage() {
             value={form.loaded_qty}
             onChange={handleChange}
             required
+            placeholder="Enter total quantity"
           />
-          {!editingId && selectedSalesOrder && (
+          {!editingId && selectedItems.length > 0 && (
             <p className="field-hint">
-              Cannot exceed the Sales Order's remaining qty for this material ({selectedRemainingQty}
-              {selectedRemainingQty < selectedSalesOrder.qty ? " — some was already loaded by an earlier truck" : ""}).
+              Total remaining across selected materials: {totalRemainingQty} kg
+              {totalLoadedQty > 0 && ` | Entered in materials: ${totalLoadedQty} kg`}
+              {Math.abs(totalLoadedQty - Number(form.loaded_qty || 0)) > 0.01 && totalLoadedQty > 0 && (
+                <span style={{ color: "#dc2626", display: "block" }}>
+                  ⚠️ Mismatch: {totalLoadedQty} kg entered in materials vs {form.loaded_qty || 0} kg total
+                </span>
+              )}
             </p>
           )}
         </div>
+        
         <div className="sf-field">
           <label>Remarks (optional)</label>
           <input name="remarks" value={form.remarks} onChange={handleChange} />
         </div>
+        
         <div style={{ display: "flex", gap: 8 }}>
-          <button className="sf-submit" type="submit">
+          <button 
+            className="sf-submit" 
+            type="submit"
+            disabled={selectedItems.length === 0 && !editingId}
+          >
             {editingId ? "Update Loading" : "Record Loading"}
           </button>
           {editingId && (
@@ -272,34 +560,44 @@ export default function LoadingPage() {
         </div>
       </form>
 
-      {lastResult && !lastResult.is_fully_loaded && (
+      {lastResult && !lastResult.all_fully_loaded && (
         <div
           className="sf-form"
           style={{ background: "#fffbeb", border: "1px solid #f5d76e", marginTop: 0 }}
         >
-          <h4 style={{ marginTop: 0 }}>
-            Sales Order {lastResult.so_no} — {lastResult.remaining_qty} of {lastResult.ordered_qty} still remaining
-          </h4>
-          <p className="field-hint" style={{ marginTop: -6 }}>
-            This truck didn't finish the material — ask Gate to check in another truck against{" "}
-            <strong>{lastResult.so_no}</strong> for the remaining {lastResult.remaining_qty}, or close it out
-            now if no more will be loaded against it.
+          <h4 style={{ marginTop: 0 }}>Partial Loading Detected</h4>
+          {lastResult.results.map((result, idx) => (
+            <div key={idx} style={{ fontSize: 14, marginBottom: 4 }}>
+              {result.so_no}: {result.dispatched_qty}/{result.ordered_qty} loaded — 
+              <strong> {result.remaining_qty} kg remaining</strong>
+              {result.is_fully_loaded && " ✅"}
+            </div>
+          ))}
+          <p className="field-hint">
+            Some materials still have remaining quantities. You can:
+            <br />1. Generate another gate entry against the same Sales Order to load the rest
+            <br />2. Or close the order now if no more will be loaded
           </p>
           <div style={{ display: "flex", gap: 8 }}>
             <button
               className="sf-cancel"
               onClick={handleMarkCompleted}
-              disabled={completingSoId === lastResult.so_id}
+              disabled={completingSoId}
             >
-              {completingSoId === lastResult.so_id ? "Marking Completed…" : "Order Completed"}
+              {completingSoId ? "Marking Completed…" : "Close Order"}
             </button>
           </div>
         </div>
       )}
-      {lastResult && lastResult.is_fully_loaded && (
+      
+      {lastResult && lastResult.all_fully_loaded && (
         <div className="dt-success" style={{ marginTop: 0 }}>
-          ✅ Sales Order {lastResult.so_no} is now fully loaded ({lastResult.dispatched_qty}/
-          {lastResult.ordered_qty}) and automatically marked 'dispatched'.
+          ✅ All materials are fully loaded!
+          {lastResult.results.map((result, idx) => (
+            <div key={idx}>
+              {result.so_no}: {result.dispatched_qty}/{result.ordered_qty} loaded ✓
+            </div>
+          ))}
         </div>
       )}
 
@@ -328,12 +626,7 @@ export default function LoadingPage() {
             label: "Sales Order",
             render: (row) => salesOrders.getLabel(row.so_id),
           },
-          { key: "loaded_qty", label: "Loaded Qty (Tons)" },
-          {
-            key: "lab_comment",
-            label: "Lab Comment",
-            render: (row) => row.gateEntry?.samplings?.find((s) => s.labTest?.comment)?.labTest?.comment || "—",
-          },
+          { key: "loaded_qty", label: "Loaded Qty (kg)" },
           {
             key: "loaded_at",
             label: "Loaded At",
@@ -345,13 +638,14 @@ export default function LoadingPage() {
       <ModuleGuide
         title="Loading"
         steps={[
-          "Only sales (outbound) gate entries that are checked in and 'waiting_loading' show up here — generate a Sales token and check it in on the Gate Entry tab first.",
-          "Selecting a Gate Entry shows the vehicle, driver, and its Sales Order. If that Sales Order covers more than one material, tap which one this truck is actually collecting — Gate Entry itself doesn't ask this.",
-          "Enter the actual quantity loaded onto the truck — it can't exceed that material's REMAINING quantity (not the full ordered quantity, if an earlier truck already loaded part of it).",
-          "Submitting moves the gate entry to 'loaded' (ready for check-out on the Gate Entry tab).",
-          "If that material isn't fully loaded yet, ask Gate to check in another truck against the same Sales Order for the rest, or use 'Order Completed' to close it out early (e.g. the buyer accepts a partial delivery).",
-          "Once a material is fully loaded, it stops showing up as pickable here — the Sales Order itself only auto-closes as 'dispatched' once every material on it is fully loaded.",
-          "This is a simplified, quantity-only record. For granular per-bag/pallet picking of Finished Goods and a printable delivery challan, use the separate Dispatch module instead.",
+          "Only sales (outbound) gate entries that are checked in and 'waiting_loading' show up here.",
+          "Select the gate entry, then choose which materials this truck is carrying.",
+          "Enter the quantity for each selected material — quantities are tracked per material.",
+          "The total of all material quantities must equal the total loaded_qty.",
+          "If a material isn't fully loaded, you can create another gate entry against the same Sales Order.",
+          "The remaining quantity will automatically show up for the next truck.",
+          "Once all materials are fully loaded, the Sales Order is automatically marked as 'dispatched'.",
+          "You can also manually close the order if you want to stop loading the remaining quantity."
         ]}
       />
     </div>

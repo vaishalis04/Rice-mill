@@ -157,6 +157,7 @@ const validateReferences = async ({
             }
           ]
         }
+
       ]
 
       Each material will be validated later inside
@@ -479,45 +480,48 @@ getAll: async (req, res, next) => {
       // ----------------------------------------------------------
 
       const formattedSalesOrders =
-        salesOrders.map((salesEntry) => {
-          return {
-            id: salesEntry.id,
-
-            gate_entry_id:
-              salesEntry.gate_entry_id,
-
-            so_id:
-              salesEntry.so_id,
-
-            material_id:
-              salesEntry.material_id,
-
-            qty:
-              salesEntry.qty,
-
-            created_by:
-              salesEntry.created_by,
-
-            updated_by:
-              salesEntry.updated_by,
-
-            is_deleted:
-              salesEntry.is_deleted,
-
-            plant_id:
-              salesEntry.plant_id,
-
-            createdAt:
-              salesEntry.createdAt,
-
-            updatedAt:
-              salesEntry.updatedAt,
-
-            // Actual Sales Order
-            sales_order:
-              salesEntry.sales_order || null,
-          };
-        });
+  salesOrders.map((salesEntry) => {
+    // Get the sales order and its items
+    const salesOrder = salesEntry.sales_order || {};
+    let soItems = salesOrder.items || [];
+    
+    // Parse items if string
+    if (typeof soItems === "string") {
+      try {
+        soItems = JSON.parse(soItems);
+      } catch (e) {
+        soItems = [];
+      }
+    }
+    
+    // Find this material in the items
+    const soItem = Array.isArray(soItems) 
+      ? soItems.find(i => Number(i.material_id) === Number(salesEntry.material_id))
+      : null;
+    
+    // Calculate remaining quantity from the items JSON
+    const orderedQty = soItem ? Number(soItem.qty || salesEntry.qty) : Number(salesEntry.qty);
+    const dispatchedQty = soItem ? Number(soItem.dispatched_qty || 0) : 0;
+    const remainingQty = orderedQty - dispatchedQty;
+    
+    return {
+      id: salesEntry.id,
+      gate_entry_id: salesEntry.gate_entry_id,
+      so_id: salesEntry.so_id,
+      material_id: salesEntry.material_id,
+      qty: salesEntry.qty,
+      ordered_qty: orderedQty,
+      dispatched_qty: dispatchedQty,
+      remaining_qty: Math.max(remainingQty, 0),
+      created_by: salesEntry.created_by,
+      updated_by: salesEntry.updated_by,
+      is_deleted: salesEntry.is_deleted,
+      plant_id: salesEntry.plant_id,
+      createdAt: salesEntry.createdAt,
+      updatedAt: salesEntry.updatedAt,
+      sales_order: salesEntry.sales_order || null,
+    };
+  });
 
       // ----------------------------------------------------------
       // FINAL RESPONSE
@@ -565,17 +569,129 @@ getAll: async (req, res, next) => {
 },
 
   getById: async (req, res, next) => {
-    try {
-      const entry = await GateEntry.findOne({
-        where: { id: req.params.id, is_deleted: false },
-        include: detailIncludes,
-      });
-      if (!entry) throw createError(404, "Gate entry not found");
-      res.status(200).json({ success: true, data: entry });
-    } catch (err) {
-      next(err);
-    }
-  },
+  try {
+    const entry = await GateEntry.findOne({
+      where: { id: req.params.id, is_deleted: false },
+      include: [
+        // Existing details
+        ...detailIncludes,
+        
+        // Purchase Order Relations
+        {
+          model: GateEntryPurchaseOrder,
+          as: "purchaseOrders",
+          required: false,
+          where: {
+            is_deleted: false,
+          },
+        },
+        
+        // Sales Order Relations - with full Sales Order data including items
+        {
+          model: GateEntrySalesOrder,
+          as: "sales_orders",
+          required: false,
+          where: {
+            is_deleted: false,
+          },
+          include: [
+            {
+              model: SalesOrder,
+              as: "sales_order",
+              required: false,
+              include: [
+                {
+                  model: Customer,
+                  as: "customer",
+                  attributes: ["id", "customer_code", "name"],
+                },
+                {
+                  model: MaterialMaster,
+                  as: "material",
+                  attributes: ["id", "material_code", "name"],
+                },
+              ]
+            },
+            {
+              model: MaterialMaster,
+              as: "material",
+              attributes: ["id", "material_code", "name"],
+            }
+          ],
+        },
+      ],
+    });
+    
+    if (!entry) throw createError(404, "Gate entry not found");
+    
+    // Format the response
+    const item = entry.toJSON();
+    
+    // Format sales orders with proper remaining quantities
+    const salesOrders = item.sales_orders || [];
+    const formattedSalesOrders = salesOrders.map((salesEntry) => {
+      const salesOrder = salesEntry.sales_order || {};
+      let soItems = salesOrder.items || [];
+      
+      // Parse items if string
+      if (typeof soItems === "string") {
+        try {
+          soItems = JSON.parse(soItems);
+        } catch (e) {
+          soItems = [];
+        }
+      }
+      
+      // Find this material in the items
+      const soItem = Array.isArray(soItems) 
+        ? soItems.find(i => Number(i.material_id) === Number(salesEntry.material_id))
+        : null;
+      
+      // Calculate remaining quantity from the items JSON
+      const orderedQty = soItem ? Number(soItem.qty || salesEntry.qty) : Number(salesEntry.qty);
+      const dispatchedQty = soItem ? Number(soItem.dispatched_qty || 0) : 0;
+      const remainingQty = orderedQty - dispatchedQty;
+      
+      return {
+        id: salesEntry.id,
+        gate_entry_id: salesEntry.gate_entry_id,
+        so_id: salesEntry.so_id,
+        material_id: salesEntry.material_id,
+        qty: salesEntry.qty,
+        ordered_qty: orderedQty,
+        dispatched_qty: dispatchedQty,
+        remaining_qty: Math.max(remainingQty, 0),
+        created_by: salesEntry.created_by,
+        updated_by: salesEntry.updated_by,
+        is_deleted: salesEntry.is_deleted,
+        plant_id: salesEntry.plant_id,
+        createdAt: salesEntry.createdAt,
+        updatedAt: salesEntry.updatedAt,
+        sales_order: {
+          ...salesOrder,
+          items: soItems, // Keep the full items for reference
+        },
+        material: salesEntry.material || null,
+      };
+    });
+    
+    // Format purchase orders
+    const purchaseOrders = item.purchaseOrders || [];
+    
+    res.status(200).json({
+      success: true,
+      data: {
+        ...item,
+        sales_orders: formattedSalesOrders,
+        purchase_orders: purchaseOrders,
+        // Remove Sequelize association names
+        purchaseOrders: undefined,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+},
 
   create: async (req, res, next) => {
     try {
@@ -1677,7 +1793,7 @@ generateToken: async (req, res, next) => {
     await t.commit();
 
     // ============================================================
-    // 14. GET CREATED GATE ENTRY
+    // 14. GET CREATED GATE ENTRY - FIXED INCLUDES
     // ============================================================
 
     const createdGateEntry =
@@ -1686,38 +1802,21 @@ generateToken: async (req, res, next) => {
         {
           include: [
             {
-              model:
-                GateEntrySalesOrder,
-
-              as:
-                "sales_orders",
-
-              required:
-                false,
-
+              model: GateEntrySalesOrder,
+              as: "sales_orders",
+              required: false,
               include: [
                 {
-                  model:
-                    SalesOrder,
-
-                  as:
-                    "sales_orders",
-
-                  required:
-                    false,
+                  model: SalesOrder,
+                  as: "sales_order", // ✅ FIXED: Changed from "sales_orders" to "sales_order"
+                  required: false,
                 },
               ],
             },
-
             {
-              model:
-                GateEntryPurchaseOrder,
-
-              as:
-                "purchase_orders",
-
-              required:
-                false,
+              model: GateEntryPurchaseOrder,
+              as: "purchase_orders",
+              required: false,
             },
           ],
         }
