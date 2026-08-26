@@ -314,9 +314,9 @@ getAll: async (req, res, next) => {
       limit = 20,
     } = req.query;
 
-    // --------------------------------------------------
-    // WHERE CONDITIONS FOR GATE ENTRY
-    // --------------------------------------------------
+    // ============================================================
+    // WHERE CONDITIONS
+    // ============================================================
 
     const where = {
       is_deleted: false,
@@ -346,9 +346,9 @@ getAll: async (req, res, next) => {
       where.plant_id = plant_id;
     }
 
-    // --------------------------------------------------
+    // ============================================================
     // DATE FILTER
-    // --------------------------------------------------
+    // ============================================================
 
     if (from || to) {
       where.entry_time = {};
@@ -370,7 +370,7 @@ getAll: async (req, res, next) => {
           throw createError(400, "Invalid to date");
         }
 
-        // Include complete day when only date is provided
+        // Include complete day when only YYYY-MM-DD is supplied
         if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
           toDate.setHours(23, 59, 59, 999);
         }
@@ -379,29 +379,32 @@ getAll: async (req, res, next) => {
       }
     }
 
-    // --------------------------------------------------
+    // ============================================================
     // PAGINATION
-    // --------------------------------------------------
+    // ============================================================
 
     const pageNumber = Math.max(Number(page) || 1, 1);
     const pageLimit = Math.max(Number(limit) || 20, 1);
 
     const offset = (pageNumber - 1) * pageLimit;
 
-    // --------------------------------------------------
+    // ============================================================
     // GET GATE ENTRIES
-    // --------------------------------------------------
+    // ============================================================
 
     const { rows, count } = await GateEntry.findAndCountAll({
       where,
 
       include: [
-        // Existing Gate Entry details
+        // ========================================================
+        // EXISTING GATE ENTRY DETAILS
+        // ========================================================
+
         ...(detailIncludes || []),
 
-        // ------------------------------------------------
-        // PURCHASE ORDERS
-        // ------------------------------------------------
+        // ========================================================
+        // PURCHASE ORDER RELATIONS
+        // ========================================================
 
         {
           model: GateEntryPurchaseOrder,
@@ -410,20 +413,38 @@ getAll: async (req, res, next) => {
           where: {
             is_deleted: false,
           },
+
+          // If you have associations from
+          // GateEntryPurchaseOrder -> PurchaseOrder,
+          // you can add the PurchaseOrder include here.
         },
 
-        // ------------------------------------------------
-        // SALES ORDER
-        // ------------------------------------------------
+        // ========================================================
+        // SALES ORDER RELATIONS
+        // ========================================================
 
         {
-          model: SalesOrder,
-          as: "salesOrder",
+          model: GateEntrySalesOrder,
+          as: "sales_orders",
           required: false,
+
+          where: {
+            is_deleted: false,
+          },
+
+          include: [
+            {
+              model: SalesOrder,
+              as: "sales_order",
+              required: false,
+            },
+          ],
         },
       ],
 
-      order: [["entry_time", "DESC"]],
+      order: [
+        ["entry_time", "DESC"],
+      ],
 
       limit: pageLimit,
 
@@ -432,31 +453,96 @@ getAll: async (req, res, next) => {
       distinct: true,
     });
 
-    // --------------------------------------------------
+    // ============================================================
     // FORMAT RESPONSE
-    // --------------------------------------------------
+    // ============================================================
 
     const data = rows.map((gateEntry) => {
       const item = gateEntry.toJSON();
 
+      // ----------------------------------------------------------
+      // PURCHASE ORDERS
+      // ----------------------------------------------------------
+
+      const purchaseOrders =
+        item.purchaseOrders || [];
+
+      // ----------------------------------------------------------
+      // SALES ORDERS
+      // ----------------------------------------------------------
+
+      const salesOrders =
+        item.sales_orders || [];
+
+      // ----------------------------------------------------------
+      // FORMAT SALES ORDER DATA
+      // ----------------------------------------------------------
+
+      const formattedSalesOrders =
+        salesOrders.map((salesEntry) => {
+          return {
+            id: salesEntry.id,
+
+            gate_entry_id:
+              salesEntry.gate_entry_id,
+
+            so_id:
+              salesEntry.so_id,
+
+            material_id:
+              salesEntry.material_id,
+
+            qty:
+              salesEntry.qty,
+
+            created_by:
+              salesEntry.created_by,
+
+            updated_by:
+              salesEntry.updated_by,
+
+            is_deleted:
+              salesEntry.is_deleted,
+
+            plant_id:
+              salesEntry.plant_id,
+
+            createdAt:
+              salesEntry.createdAt,
+
+            updatedAt:
+              salesEntry.updatedAt,
+
+            // Actual Sales Order
+            sales_order:
+              salesEntry.sales_order || null,
+          };
+        });
+
+      // ----------------------------------------------------------
+      // FINAL RESPONSE
+      // ----------------------------------------------------------
+
       return {
         ...item,
 
-        // Purchase orders
-        purchase_orders: item.purchaseOrders || [],
+        // Purchase entries
+        purchase_orders:
+          purchaseOrders,
 
-        // Sales order
-        sales_orders: item.salesOrders || [],
+        // Sales entries
+        sales_orders:
+          formattedSalesOrders,
 
         // Remove Sequelize association names
-        purchaseOrders: undefined,
-        salesOrder: undefined,
+        purchaseOrders:
+          undefined,
       };
     });
 
-    // --------------------------------------------------
+    // ============================================================
     // RESPONSE
-    // --------------------------------------------------
+    // ============================================================
 
     return res.status(200).json({
       success: true,
@@ -467,9 +553,12 @@ getAll: async (req, res, next) => {
         total: count,
         page: pageNumber,
         limit: pageLimit,
-        totalPages: Math.ceil(count / pageLimit),
+        totalPages: Math.ceil(
+          count / pageLimit
+        ),
       },
     });
+
   } catch (err) {
     next(err);
   }
