@@ -393,8 +393,8 @@ export const deleteWeightSlipApi = (id) =>
 export const startUnloadingApi = (data) =>
   axiosInstance.post("/lots/start-unloading", data);
 
-export const completeUnloadingApi = (id, data) =>
-  axiosInstance.patch(`/lots/${id}/complete-unloading`, data);
+export const completeUnloadingApi = (data) =>
+  axiosInstance.patch('/lots/complete-unloading', data);
 
 export const getLotsApi = (params = {}) =>
   axiosInstance.get("/lots", { params });

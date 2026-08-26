@@ -160,6 +160,12 @@ export default function UnloadingPage() {
     setError("");
     setInfo("");
     
+    // Check if there are items to process
+    if (!unloadingItems || unloadingItems.length === 0) {
+      setError("No items to complete unloading. Please start unloading first.");
+      return;
+    }
+    
     for (const item of unloadingItems) {
       if (!item.bag_size || Number(item.bag_size) <= 0) {
         setError(`Please enter bag size for ${item.material_name}`);
@@ -187,6 +193,7 @@ export default function UnloadingPage() {
 
       console.log('Sending payload:', payload);
 
+      // Call the API without the id parameter since route is now /complete-unloading
       const res = await completeUnloadingApi(payload);
       
       console.log('Complete unloading response:', res.data);
@@ -403,7 +410,6 @@ export default function UnloadingPage() {
             label: "Lab Comment",
             render: (row) => row.purchase?.gateEntry?.samplings?.find((s) => s.labTest?.comment)?.labTest?.comment || "—",
           },
-          // ADDED: Enter Bag Count button column
           {
             key: "bag_actions",
             label: "Bag Count",
