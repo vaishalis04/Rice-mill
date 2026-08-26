@@ -459,6 +459,7 @@ module.exports = {
   Invoice,
   Payment,
   MachineMaintenance,
+  GateEntrySalesOrder,
   AuditLog,
   Notification,
   ProcessTimeLog,

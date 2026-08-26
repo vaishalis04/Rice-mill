@@ -179,7 +179,7 @@ export default function WeighbridgePage() {
           onChange={(id) => setForm({ ...form, gate_entry_id: id })}
           filter={(row) =>
             row.gate_status === "accepted" ||
-            (row.entry_type === "other" && row.gate_status === "waiting_weighment")
+            (row.gate_status === "waiting_weighment")
           }
           required={!editingId}
           disabled={!!editingId}

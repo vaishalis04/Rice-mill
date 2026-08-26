@@ -656,7 +656,7 @@ module.exports = {
       // trucks go straight into the loading queue.
       let nextStatus = "waiting_sampling";
       if (entry.entry_type === "other") nextStatus = "waiting_weighment";
-      else if (entry.entry_type === "sales") nextStatus = "waiting_loading";
+      else if (entry.entry_type === "sales") nextStatus = "waiting_weighment";
 
       await entry.update({
         gate_status: nextStatus,

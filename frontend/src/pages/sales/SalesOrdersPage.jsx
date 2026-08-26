@@ -12,22 +12,16 @@ import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
-// A Sales Order can cover several materials for the same customer — under
-// the hood each material is still its own row sharing one so_no (so Gate ->
-// Loading can track each material's dispatch independently), but the UI
-// here treats a so_no as ONE order: one row in the list, one edit panel
-// that lets you keep adding materials to it, not several duplicate-looking
-// rows for the same SO number. Mirrors PurchaseOrdersPage.jsx.
+// A Sales Order now stores all materials as a JSON array in a single record
+// The UI treats a so_no as ONE order: one row in the list, one edit panel
+// that lets you keep adding materials to it.
 const emptyHeader = { customer_id: "", order_type: "fg", order_date: "" };
 const emptyItem = { material_id: "", qty: "", rate: "" };
 
-// Confirmed from the doc: "confirmed" (on create) and "dispatched" (after
-// dispatch). "closed"/"cancelled" are named in the KPI description
-// ("not yet dispatched/closed/cancelled") so included as filter options too.
 const STATUS_FILTERS = ["", "confirmed", "dispatched", "closed", "cancelled"];
 
 export default function SalesOrdersPage() {
-  const [orders, setOrders] = useState([]); // grouped: [{ so_no, customer_id, customer, order_type, order_date, items:[...] }]
+  const [orders, setOrders] = useState([]); // [{ so_no, customer_id, customer, order_type, order_date, items:[...] }]
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const customers = useEntityLookup("customer");
@@ -38,12 +32,10 @@ export default function SalesOrdersPage() {
   const [currentItem, setCurrentItem] = useState(emptyItem);
   const [cartItems, setCartItems] = useState([]);
 
-  // Editing an EXISTING SO (by so_no) — header fields + its items, plus a
-  // mini "add material" form that hits the server directly (each add is
-  // its own request, since this SO already exists).
+  // Editing an EXISTING SO — header fields + its items array
   const [editingSoNo, setEditingSoNo] = useState(null);
   const [editHeader, setEditHeader] = useState(emptyHeader);
-  const [editItems, setEditItems] = useState([]); // [{ id, material_id, qty, rate, so_status }]
+  const [editItems, setEditItems] = useState([]); // Array of items from the SO's JSON
   const [newItem, setNewItem] = useState(emptyItem);
 
   const [error, setError] = useState("");
@@ -54,7 +46,15 @@ export default function SalesOrdersPage() {
     const params = {};
     if (so_status) params.so_status = so_status;
     getSalesOrdersGroupedApi(params)
-      .then((res) => setOrders(res.data.data ?? res.data))
+      .then((res) => {
+        const data = res.data.data ?? res.data;
+        // Ensure items is always an array
+        const normalized = data.map(order => ({
+          ...order,
+          items: order.items || []
+        }));
+        setOrders(normalized);
+      })
       .catch(() => setError("Failed to load sales orders"))
       .finally(() => setLoading(false));
   };
@@ -77,7 +77,7 @@ export default function SalesOrdersPage() {
       setError("That material is already in this SO — remove it first if you want to change the qty/rate.");
       return;
     }
-    setCartItems([...cartItems, currentItem]);
+    setCartItems([...cartItems, { ...currentItem }]);
     setCurrentItem(emptyItem);
   };
 
@@ -117,7 +117,7 @@ export default function SalesOrdersPage() {
     }
   };
 
-  // ---- editing an existing SO (header + items) ----
+  // ---- editing an existing SO (header + items array) ----
 
   const handleEditSo = (so) => {
     setError("");
@@ -128,13 +128,15 @@ export default function SalesOrdersPage() {
       order_type: so.order_type || "fg",
       order_date: so.order_date?.slice(0, 10) || "",
     });
+    // Items are stored as JSON array in the database
     setEditItems(
-      so.items.map((i) => ({
-        id: i.id,
-        material_id: i.material_id || "",
-        qty: i.qty,
-        rate: i.rate,
-        so_status: i.so_status,
+      (so.items || []).map((item, index) => ({
+        // Use index as temporary id for new items, or real id if present
+        id: item.id || `temp_${index}`,
+        material_id: item.material_id || "",
+        qty: item.qty || 0,
+        rate: item.rate || 0,
+        so_status: item.so_status || "confirmed",
       }))
     );
     setNewItem(emptyItem);
@@ -166,19 +168,40 @@ export default function SalesOrdersPage() {
     }
   };
 
-  const handleEditItemFieldChange = (itemId, field, value) => {
-    setEditItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, [field]: value } : it)));
+  const handleEditItemFieldChange = (itemIndex, field, value) => {
+    setEditItems((prev) => prev.map((it, idx) => 
+      idx === itemIndex ? { ...it, [field]: field === 'material_id' ? Number(value) : value } : it
+    ));
   };
 
-  const handleSaveItem = async (item) => {
+  const handleSaveItem = async (itemIndex) => {
     setError("");
     setInfo("");
+    const item = editItems[itemIndex];
+    
     try {
-      await updateSalesOrderApi(item.id, {
-        material_id: Number(item.material_id),
-        qty: Number(item.qty),
-        rate: Number(item.rate),
+      // Update the entire items array via the bulk update endpoint
+      const updatedItems = editItems.map((it, idx) => {
+        if (idx === itemIndex) {
+          return {
+            material_id: Number(it.material_id),
+            qty: Number(it.qty),
+            rate: Number(it.rate),
+            so_status: it.so_status || "confirmed",
+          };
+        }
+        return {
+          material_id: Number(it.material_id),
+          qty: Number(it.qty),
+          rate: Number(it.rate),
+          so_status: it.so_status || "confirmed",
+        };
       });
+
+      await updateSalesOrderApi(editingSoNo, {
+        items: updatedItems,
+      });
+      
       setInfo("Material line updated.");
       load();
     } catch (err) {
@@ -186,13 +209,25 @@ export default function SalesOrdersPage() {
     }
   };
 
-  const handleRemoveExistingItem = async (itemId) => {
+  const handleRemoveExistingItem = async (itemIndex) => {
     if (!window.confirm("Remove this material from the SO?")) return;
     setError("");
     setInfo("");
     try {
-      await deleteSalesOrderApi(itemId);
-      setEditItems((prev) => prev.filter((it) => it.id !== itemId));
+      const updatedItems = editItems
+        .filter((_, idx) => idx !== itemIndex)
+        .map((it) => ({
+          material_id: Number(it.material_id),
+          qty: Number(it.qty),
+          rate: Number(it.rate),
+          so_status: it.so_status || "confirmed",
+        }));
+
+      await updateSalesOrderApi(editingSoNo, {
+        items: updatedItems,
+      });
+      
+      setEditItems((prev) => prev.filter((_, idx) => idx !== itemIndex));
       setInfo("Material removed from the SO.");
       load();
     } catch {
@@ -210,25 +245,49 @@ export default function SalesOrdersPage() {
       setError("Pick a material and enter qty and rate before adding it.");
       return;
     }
+
+    // Check for duplicates
+    const dupe = editItems.some((i) => i.material_id === Number(newItem.material_id));
+    if (dupe) {
+      setError("That material is already in this SO.");
+      return;
+    }
+
     try {
-      const res = await addSalesOrderItemApi(editingSoNo, {
+      const newItemData = {
         material_id: Number(newItem.material_id),
         qty: Number(newItem.qty),
         rate: Number(newItem.rate),
+        so_status: "confirmed",
+      };
+
+      const updatedItems = [
+        ...editItems.map((it) => ({
+          material_id: Number(it.material_id),
+          qty: Number(it.qty),
+          rate: Number(it.rate),
+          so_status: it.so_status || "confirmed",
+        })),
+        newItemData,
+      ];
+
+      await updateSalesOrderApi(editingSoNo, {
+        items: updatedItems,
       });
-      const created = res.data.data;
+
       setEditItems((prev) => [
         ...prev,
         {
-          id: created.id,
-          material_id: created.material_id,
-          qty: created.qty,
-          rate: created.rate,
-          so_status: created.so_status,
+          id: `temp_${Date.now()}`,
+          material_id: newItemData.material_id,
+          qty: newItemData.qty,
+          rate: newItemData.rate,
+          so_status: newItemData.so_status,
         },
       ]);
+      
       setNewItem(emptyItem);
-      setInfo(res.data.msg || "Material added to the SO.");
+      setInfo("Material added to the SO.");
       load();
     } catch (err) {
       setError(err.response?.data?.msg || err.response?.data?.message || "Could not add that material");
@@ -240,7 +299,7 @@ export default function SalesOrdersPage() {
     setError("");
     setInfo("");
     try {
-      await Promise.all(so.items.map((i) => deleteSalesOrderApi(i.id)));
+      await deleteSalesOrderApi(so.so_no);
       setInfo(`SO ${so.so_no} deleted.`);
       load();
     } catch {
@@ -248,24 +307,29 @@ export default function SalesOrdersPage() {
     }
   };
 
-  // DataTable's built-in onDelete only passes the row's `id` (the grouped
-  // row's synthetic id, i.e. its first line item) — look the full grouped
-  // row back up so handleDeleteWholeSo can remove every line under this so_no.
   const handleDeleteWholeSoById = (id) => {
     const so = orders.find((o) => String(o.id) === String(id));
     if (so) handleDeleteWholeSo(so);
   };
 
-  // Cancel/Close a single material line within an SO — the backend has
-  // always supported these statuses via PUT, applied per line item (each
-  // material on an SO can be at a different stage of its own delivery).
   const handleStatusChange = async (item, so, newStatus) => {
     const verb = newStatus === "cancelled" ? "cancel" : "close";
-    if (!window.confirm(`Are you sure you want to ${verb} the ${item.material?.name || "material"} line on ${so.so_no}?`)) return;
+    if (!window.confirm(`Are you sure you want to ${verb} the ${materialLabel(item.material_id)} line on ${so.so_no}?`)) return;
     setError("");
     try {
-      await updateSalesOrderApi(item.id, { so_status: newStatus });
-      setInfo(`${so.so_no} — ${item.material?.name || "material"} marked ${newStatus}.`);
+      // Update the specific item's status in the items array
+      const updatedItems = so.items.map((it) => {
+        if (it.material_id === item.material_id) {
+          return { ...it, so_status: newStatus };
+        }
+        return it;
+      });
+
+      await updateSalesOrderApi(so.so_no, {
+        items: updatedItems,
+      });
+      
+      setInfo(`${so.so_no} — ${materialLabel(item.material_id)} marked ${newStatus}.`);
       load();
     } catch (err) {
       setError(err.response?.data?.message || `Failed to mark line item ${newStatus}`);
@@ -273,6 +337,17 @@ export default function SalesOrdersPage() {
   };
 
   const materialLabel = (id) => materials.getLabel(id);
+
+  // Helper to get status badge color
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'confirmed': return '#4CAF50';
+      case 'dispatched': return '#2196F3';
+      case 'closed': return '#9E9E9E';
+      case 'cancelled': return '#f44336';
+      default: return '#FF9800';
+    }
+  };
 
   return (
     <div>
@@ -317,6 +392,7 @@ export default function SalesOrdersPage() {
             <table className="dt-table">
               <thead>
                 <tr>
+                  <th>#</th>
                   <th>Material</th>
                   <th>Qty (Tons)</th>
                   <th>Rate</th>
@@ -325,13 +401,14 @@ export default function SalesOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {editItems.map((item) => (
-                  <tr key={item.id}>
+                {editItems.map((item, index) => (
+                  <tr key={item.id || index}>
+                    <td>{index + 1}</td>
                     <td style={{ minWidth: 160 }}>
                       <EntitySelect
                         entity="material"
                         value={item.material_id}
-                        onChange={(id) => handleEditItemFieldChange(item.id, "material_id", id)}
+                        onChange={(id) => handleEditItemFieldChange(index, "material_id", id)}
                       />
                     </td>
                     <td>
@@ -339,7 +416,7 @@ export default function SalesOrdersPage() {
                         type="number"
                         value={item.qty}
                         style={{ width: 90 }}
-                        onChange={(e) => handleEditItemFieldChange(item.id, "qty", e.target.value)}
+                        onChange={(e) => handleEditItemFieldChange(index, "qty", e.target.value)}
                       />
                     </td>
                     <td>
@@ -348,15 +425,17 @@ export default function SalesOrdersPage() {
                         step="0.01"
                         value={item.rate}
                         style={{ width: 90 }}
-                        onChange={(e) => handleEditItemFieldChange(item.id, "rate", e.target.value)}
+                        onChange={(e) => handleEditItemFieldChange(index, "rate", e.target.value)}
                       />
                     </td>
                     <td>
-                      <span className="dt-badge">{item.so_status}</span>
+                      <span className="dt-badge" style={{ backgroundColor: getStatusColor(item.so_status) }}>
+                        {item.so_status || "confirmed"}
+                      </span>
                     </td>
                     <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <button className="dt-btn" onClick={() => handleSaveItem(item)}>Save</button>
-                      <button className="dt-btn" onClick={() => handleRemoveExistingItem(item.id)}>Remove</button>
+                      <button className="dt-btn" onClick={() => handleSaveItem(index)}>Save</button>
+                      <button className="dt-btn" onClick={() => handleRemoveExistingItem(index)}>Remove</button>
                     </td>
                   </tr>
                 ))}
@@ -440,6 +519,7 @@ export default function SalesOrdersPage() {
                 <table className="dt-table">
                 <thead>
                   <tr>
+                    <th>#</th>
                     <th>Material</th>
                     <th>Qty (Tons)</th>
                     <th>Rate</th>
@@ -449,6 +529,7 @@ export default function SalesOrdersPage() {
                 <tbody>
                   {cartItems.map((item, i) => (
                     <tr key={i}>
+                      <td>{i + 1}</td>
                       <td>{materialLabel(item.material_id)}</td>
                       <td>{item.qty}</td>
                       <td>{item.rate}</td>
@@ -506,19 +587,21 @@ export default function SalesOrdersPage() {
             label: "Materials",
             render: (row) => (
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {row.items.map((i) => (
-                  <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                {(row.items || []).map((item, index) => (
+                  <div key={index} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <span>
-                      {i.material?.name || materialLabel(i.material_id)} — {i.qty} @ ₹{i.rate}
+                      {materialLabel(item.material_id)} — {item.qty} @ ₹{item.rate}
                     </span>
-                    <span className="dt-badge">{i.so_status}</span>
-                    {["pending", "confirmed"].includes(i.so_status) && (
-                      <button className="dt-btn" onClick={() => handleStatusChange(i, row, "cancelled")}>
+                    <span className="dt-badge" style={{ backgroundColor: getStatusColor(item.so_status) }}>
+                      {item.so_status || "confirmed"}
+                    </span>
+                    {["pending", "confirmed"].includes(item.so_status || "confirmed") && (
+                      <button className="dt-btn" onClick={() => handleStatusChange(item, row, "cancelled")}>
                         Cancel
                       </button>
                     )}
-                    {i.so_status === "dispatched" && (
-                      <button className="dt-btn" onClick={() => handleStatusChange(i, row, "closed")}>
+                    {item.so_status === "dispatched" && (
+                      <button className="dt-btn" onClick={() => handleStatusChange(item, row, "closed")}>
                         Close
                       </button>
                     )}
@@ -530,7 +613,7 @@ export default function SalesOrdersPage() {
           {
             key: "total_qty",
             label: "Total Qty (Tons)",
-            render: (row) => row.total_qty ?? row.items.reduce((s, i) => s + Number(i.qty), 0),
+            render: (row) => (row.items || []).reduce((s, i) => s + Number(i.qty), 0),
           },
           { key: "order_date", label: "Order Date" },
         ]}
