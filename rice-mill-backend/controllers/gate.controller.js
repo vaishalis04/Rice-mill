@@ -859,7 +859,52 @@ generateToken: async (req, res, next) => {
       (req.user ? req.user.plant_id : null);
 
     // ============================================================
-    // 5. VALIDATE SALES ORDERS
+    // 5. GET VEHICLE
+    // ============================================================
+
+    /*
+     * IMPORTANT:
+     * generateTokenNo() needs the actual vehicle number.
+     *
+     * Example:
+     * vehicle_id = 1
+     * vehicle_no = MP09 AB 1234
+     *
+     * Generated token:
+     * GT-MP09AB1234-0001
+     */
+
+    const vehicle = await Vehicle.findOne({
+      where: {
+        id: vehicle_id,
+        is_deleted: false,
+      },
+      transaction: t,
+    });
+
+    if (!vehicle) {
+      throw createError(
+        400,
+        `Invalid vehicle_id: ${vehicle_id}`
+      );
+    }
+
+    // Change vehicle_no to your actual column name if different.
+    const vehicleNo =
+      vehicle.vehicle_no ||
+      vehicle.vehicle_number ||
+      vehicle.registration_no ||
+      vehicle.reg_no;
+
+    if (!vehicleNo) {
+      throw createError(
+        400,
+        `Vehicle ${vehicle_id} does not have a vehicle number`
+      );
+    }
+
+    // ============================================================
+    // 6. VALIDATE SALES ORDERS
     // ============================================================
 
     const validatedSalesOrders = [];
@@ -989,7 +1034,6 @@ generateToken: async (req, res, next) => {
         // --------------------------------------------------------
 
         const requestedMaterialIds = new Set();
-
         const validatedMaterials = [];
 
         for (const materialItem of materials) {
@@ -1137,14 +1181,16 @@ generateToken: async (req, res, next) => {
           // ------------------------------------------------------
 
           validatedMaterials.push({
-            so_id: salesOrder.id,
+            so_id:
+              salesOrder.id,
 
             material_id:
               Number(
                 soMaterial.material_id
               ),
 
-            qty: requestedQty,
+            qty:
+              requestedQty,
 
             rate:
               Number(
@@ -1169,9 +1215,11 @@ generateToken: async (req, res, next) => {
         // --------------------------------------------------------
 
         validatedSalesOrders.push({
-          so_id: salesOrder.id,
+          so_id:
+            salesOrder.id,
 
-          so_no: salesOrder.so_no,
+          so_no:
+            salesOrder.so_no,
 
           customer_id:
             salesOrder.customer_id,
@@ -1185,7 +1233,7 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
-    // 6. CALCULATE TOTAL EXPECTED QTY
+    // 7. CALCULATE TOTAL EXPECTED QTY
     // ============================================================
 
     let calculatedTotalQty = 0;
@@ -1214,7 +1262,7 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
-    // 7. VALIDATE EXPECTED QTY
+    // 8. VALIDATE EXPECTED QTY
     // ============================================================
 
     if (
@@ -1251,14 +1299,27 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
-    // 8. GENERATE TOKEN NUMBER
+    // 9. GENERATE TOKEN NUMBER
     // ============================================================
+
+    /*
+     * Pass the actual vehicle number here.
+     *
+     * Example:
+     * vehicleNo = "MP09 AB 1234"
+     *
+     * Helper cleans it:
+     * MP09AB1234
+     *
+     * Result:
+     * GT-MP09AB1234-0001
+     */
 
     const token_no =
-      await generateTokenNo();
+      await generateTokenNo(vehicleNo);
 
     // ============================================================
-    // 9. CREATE GATE ENTRY
+    // 10. CREATE GATE ENTRY
     // ============================================================
 
     const gateEntryData = {
@@ -1294,8 +1355,6 @@ generateToken: async (req, res, next) => {
 
       entry_type,
 
-      // Multiple SOs are stored in
-      // gate_entry_sales_orders
       so_id: null,
 
       material_id: null,
@@ -1318,7 +1377,7 @@ generateToken: async (req, res, next) => {
       );
 
     // ============================================================
-    // 10. CREATE SALES ORDER RELATION RECORDS
+    // 11. CREATE SALES ORDER RELATION RECORDS
     // ============================================================
 
     if (entry_type === "sales") {
@@ -1375,7 +1434,7 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
-    // 11. PURCHASE ORDER PROCESSING
+    // 12. PURCHASE ORDER PROCESSING
     // ============================================================
 
     if (entry_type === "purchase") {
@@ -1430,20 +1489,12 @@ generateToken: async (req, res, next) => {
             qty,
           } = material || {};
 
-          // ------------------------------------------------------
-          // MATERIAL ID
-          // ------------------------------------------------------
-
           if (!material_id) {
             throw createError(
               400,
               `material_id is required for Purchase Order ${po_id}`
             );
           }
-
-          // ------------------------------------------------------
-          // QTY
-          // ------------------------------------------------------
 
           const requestedQty =
             Number(qty);
@@ -1459,10 +1510,6 @@ generateToken: async (req, res, next) => {
               `qty must be greater than 0 for Purchase Order ${po_id}, material ${material_id}`
             );
           }
-
-          // ------------------------------------------------------
-          // SAVE PO RELATION
-          // ------------------------------------------------------
 
           purchaseOrderRows.push({
             gate_entry_id:
@@ -1509,13 +1556,13 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
-    // 12. COMMIT TRANSACTION
+    // 13. COMMIT TRANSACTION
     // ============================================================
 
     await t.commit();
 
     // ============================================================
-    // 13. GET CREATED GATE ENTRY
+    // 14. GET CREATED GATE ENTRY
     // ============================================================
 
     const createdGateEntry =
@@ -1562,7 +1609,7 @@ generateToken: async (req, res, next) => {
       );
 
     // ============================================================
-    // 14. RESPONSE
+    // 15. RESPONSE
     // ============================================================
 
     return res.status(201).json({
@@ -1578,6 +1625,7 @@ generateToken: async (req, res, next) => {
     });
 
   } catch (err) {
+
     // ============================================================
     // ROLLBACK
     // ============================================================
