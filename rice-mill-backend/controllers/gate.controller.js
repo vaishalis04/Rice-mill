@@ -773,10 +773,10 @@ generateToken: async (req, res, next) => {
       plant_id,
       entry_type,
 
-      // Purchase Order
+      // Purchase Orders
       purchase_orders = [],
 
-      // Sales Order
+      // Sales Orders
       sales_orders = [],
     } = req.body || {};
 
@@ -850,7 +850,7 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
-    // 4. VALIDATE SALES ORDERS BEFORE CREATING GATE ENTRY
+    // 4. VALIDATE SALES ORDERS
     // ============================================================
 
     const validatedSalesOrders = [];
@@ -887,11 +887,103 @@ generateToken: async (req, res, next) => {
           );
         }
 
-        const validatedMaterials = [];
+        // --------------------------------------------------------
+        // FIND SALES ORDER
+        //
+        // IMPORTANT:
+        // material_id is no longer a column in SalesOrder.
+        // Materials are stored inside SalesOrder.items JSON.
+        // --------------------------------------------------------
+
+        const salesOrder = await SalesOrder.findOne({
+          where: {
+            id: so_id,
+            is_deleted: false,
+          },
+          transaction: t,
+          lock: t.LOCK.UPDATE,
+        });
+
+        if (!salesOrder) {
+          throw createError(
+            400,
+            `Sales Order ${so_id} not found`
+          );
+        }
 
         // --------------------------------------------------------
-        // PROCESS MATERIALS
+        // CHECK CUSTOMER
         // --------------------------------------------------------
+
+        if (
+          customer_id &&
+          Number(salesOrder.customer_id) !==
+            Number(customer_id)
+        ) {
+          throw createError(
+            400,
+            `Sales Order ${so_id} does not belong to customer ${customer_id}`
+          );
+        }
+
+        // --------------------------------------------------------
+        // CHECK APPROVAL
+        // --------------------------------------------------------
+
+        if (
+          salesOrder.approval_status !==
+          "approved"
+        ) {
+          throw createError(
+            400,
+            `Sales Order ${so_id} is not approved`
+          );
+        }
+
+        // --------------------------------------------------------
+        // CHECK STATUS
+        // --------------------------------------------------------
+
+        if (
+          ["cancelled", "closed"].includes(
+            salesOrder.so_status
+          )
+        ) {
+          throw createError(
+            400,
+            `Sales Order ${so_id} is ${salesOrder.so_status}`
+          );
+        }
+
+        // --------------------------------------------------------
+        // GET ITEMS FROM JSON
+        // --------------------------------------------------------
+
+        let soItems = salesOrder.items || [];
+
+        if (typeof soItems === "string") {
+          try {
+            soItems = JSON.parse(soItems);
+          } catch (error) {
+            throw createError(
+              400,
+              `Invalid items JSON in Sales Order ${so_id}`
+            );
+          }
+        }
+
+        if (!Array.isArray(soItems)) {
+          throw createError(
+            400,
+            `Invalid items data in Sales Order ${so_id}`
+          );
+        }
+
+        // --------------------------------------------------------
+        // DUPLICATE MATERIAL CHECK
+        // --------------------------------------------------------
+
+        const requestedMaterialIds = new Set();
 
         for (const materialItem of materials) {
           const {
@@ -899,12 +991,37 @@ generateToken: async (req, res, next) => {
             qty,
           } = materialItem || {};
 
+          // ------------------------------------------------------
+          // MATERIAL ID
+          // ------------------------------------------------------
+
           if (!material_id) {
             throw createError(
               400,
               `material_id is required for Sales Order ${so_id}`
             );
           }
+
+          // ------------------------------------------------------
+          // DUPLICATE MATERIAL IN REQUEST
+          // ------------------------------------------------------
+
+          const materialKey = Number(material_id);
+
+          if (
+            requestedMaterialIds.has(materialKey)
+          ) {
+            throw createError(
+              400,
+              `Duplicate material ${material_id} in Sales Order ${so_id}`
+            );
+          }
+
+          requestedMaterialIds.add(materialKey);
+
+          // ------------------------------------------------------
+          // REQUESTED QTY
+          // ------------------------------------------------------
 
           const requestedQty = Number(qty);
 
@@ -919,24 +1036,16 @@ generateToken: async (req, res, next) => {
           }
 
           // ------------------------------------------------------
-          // FIND SALES ORDER LINE
-          //
-          // SalesOrder.id represents the individual SO line.
-          // material_id confirms that the requested material
-          // belongs to that SO line.
+          // FIND MATERIAL INSIDE SALES ORDER ITEMS JSON
           // ------------------------------------------------------
 
-          const salesOrder = await SalesOrder.findOne({
-            where: {
-              id: so_id,
-              material_id,
-              is_deleted: false,
-            },
-            transaction: t,
-            lock: t.LOCK.UPDATE,
-          });
+          const soMaterial = soItems.find(
+            (item) =>
+              Number(item.material_id) ===
+              Number(material_id)
+          );
 
-          if (!salesOrder) {
+          if (!soMaterial) {
             throw createError(
               400,
               `Sales Order ${so_id} does not contain material ${material_id}`
@@ -944,74 +1053,126 @@ generateToken: async (req, res, next) => {
           }
 
           // ------------------------------------------------------
-          // CHECK APPROVAL
+          // ORDERED QTY
           // ------------------------------------------------------
 
+          const orderedQty = Number(
+            soMaterial.qty || 0
+          );
+
           if (
-            salesOrder.approval_status !== "approved"
+            !Number.isFinite(orderedQty) ||
+            orderedQty <= 0
           ) {
             throw createError(
               400,
-              `Sales Order ${so_id} is not approved`
+              `Invalid ordered quantity for Sales Order ${so_id}, material ${material_id}`
             );
           }
 
           // ------------------------------------------------------
-          // CHECK STATUS
+          // DISPATCHED QTY
+          //
+          // If dispatched_qty exists inside the JSON item,
+          // use it. Otherwise 0.
           // ------------------------------------------------------
 
-          if (
-            ["cancelled", "closed"].includes(
-              salesOrder.so_status
-            )
-          ) {
-            throw createError(
-              400,
-              `Sales Order ${so_id} is ${salesOrder.so_status}`
-            );
-          }
+          const dispatchedQty = Number(
+            soMaterial.dispatched_qty || 0
+          );
 
           // ------------------------------------------------------
-          // CALCULATE REMAINING QTY
+          // REMAINING QTY
           // ------------------------------------------------------
-
-          const orderedQty =
-            Number(salesOrder.qty || 0);
-
-          const dispatchedQty =
-            Number(
-              salesOrder.dispatched_qty || 0
-            );
 
           const remainingQty =
             orderedQty - dispatchedQty;
 
           // ------------------------------------------------------
+          // CHECK REMAINING QTY
+          // ------------------------------------------------------
+
+          if (remainingQty <= 0) {
+            throw createError(
+              400,
+              `Sales Order ${so_id}, material ${material_id} has no remaining quantity`
+            );
+          }
+
+          // ------------------------------------------------------
           // CHECK REQUESTED QTY
           // ------------------------------------------------------
 
-          if (requestedQty > remainingQty) {
+          if (
+            requestedQty >
+            remainingQty
+          ) {
             throw createError(
               400,
               `Requested quantity ${requestedQty} exceeds remaining quantity ${remainingQty} for Sales Order ${so_id}, material ${material_id}`
             );
           }
+        }
 
-          // ------------------------------------------------------
-          // SAVE VALIDATED DATA
-          // ------------------------------------------------------
+        // --------------------------------------------------------
+        // SAVE VALIDATED SALES ORDER
+        // --------------------------------------------------------
+
+        const validatedMaterials = [];
+
+        for (const materialItem of materials) {
+          const {
+            material_id,
+            qty,
+          } = materialItem;
+
+          const requestedQty = Number(qty);
+
+          const soMaterial = soItems.find(
+            (item) =>
+              Number(item.material_id) ===
+              Number(material_id)
+          );
 
           validatedMaterials.push({
             so_id: salesOrder.id,
-            material_id: salesOrder.material_id,
+
+            material_id: Number(
+              soMaterial.material_id
+            ),
+
             qty: requestedQty,
+
+            rate: Number(
+              soMaterial.rate || 0
+            ),
+
+            ordered_qty: Number(
+              soMaterial.qty || 0
+            ),
+
+            dispatched_qty: Number(
+              soMaterial.dispatched_qty || 0
+            ),
+
+            remaining_qty:
+              Number(soMaterial.qty || 0) -
+              Number(
+                soMaterial.dispatched_qty || 0
+              ),
+
             salesOrder,
           });
         }
 
         validatedSalesOrders.push({
-          so_id,
+          so_id: salesOrder.id,
+
+          so_no: salesOrder.so_no,
+
           materials: validatedMaterials,
+
+          salesOrder,
         });
       }
     }
@@ -1031,7 +1192,7 @@ generateToken: async (req, res, next) => {
               so.materials.reduce(
                 (materialTotal, material) =>
                   materialTotal +
-                  Number(material.qty),
+                  Number(material.qty || 0),
                 0
               )
             );
@@ -1040,7 +1201,11 @@ generateToken: async (req, res, next) => {
         );
     }
 
-    if (entry_type === "sales" && expected_qty) {
+    if (
+      entry_type === "sales" &&
+      expected_qty !== undefined &&
+      expected_qty !== null
+    ) {
       const expectedQtyNum =
         Number(expected_qty);
 
@@ -1056,7 +1221,8 @@ generateToken: async (req, res, next) => {
 
       if (
         Math.abs(
-          expectedQtyNum - calculatedTotalQty
+          expectedQtyNum -
+            calculatedTotalQty
         ) > 0.01
       ) {
         throw createError(
@@ -1070,13 +1236,11 @@ generateToken: async (req, res, next) => {
     // 6. CREATE GATE ENTRY
     // ============================================================
 
-    /*
-     * For multiple SOs we do NOT use a single top-level so_id.
-     *
-     * so_id/material_id on GateEntry can be null for the
-     * multiple-order case because the actual relationships are
-     * stored in gate_entry_sales_orders.
-     */
+    const resolvedPlantId =
+      plant_id ||
+      (req.user
+        ? req.user.plant_id
+        : null);
 
     const gateEntryData = {
       vehicle_id,
@@ -1097,25 +1261,19 @@ generateToken: async (req, res, next) => {
         challan_no || null,
 
       expected_qty:
-        expected_qty ||
-        (
-          entry_type === "sales"
-            ? calculatedTotalQty
-            : null
-        ),
+        expected_qty !== undefined &&
+        expected_qty !== null
+          ? Number(expected_qty)
+          : entry_type === "sales"
+          ? calculatedTotalQty
+          : null,
 
-      plant_id:
-        plant_id ||
-        (
-          req.user
-            ? req.user.plant_id
-            : null
-        ),
+      plant_id: resolvedPlantId,
 
       entry_type,
 
-      // Do NOT put a single SO here when multiple SOs
-      // are being selected.
+      // Multiple SO/material relationships are stored
+      // in gate_entry_sales_orders.
       so_id: null,
 
       material_id: null,
@@ -1128,12 +1286,13 @@ generateToken: async (req, res, next) => {
           : null,
     };
 
-    const gateEntry = await GateEntry.create(
-      gateEntryData,
-      {
-        transaction: t,
-      }
-    );
+    const gateEntry =
+      await GateEntry.create(
+        gateEntryData,
+        {
+          transaction: t,
+        }
+      );
 
     // ============================================================
     // 7. CREATE SALES ORDER RELATION RECORDS
@@ -1154,13 +1313,7 @@ generateToken: async (req, res, next) => {
 
             qty: material.qty,
 
-            plant_id:
-              plant_id ||
-              (
-                req.user
-                  ? req.user.plant_id
-                  : null
-              ),
+            plant_id: resolvedPlantId,
 
             created_by:
               req.user
@@ -1174,7 +1327,9 @@ generateToken: async (req, res, next) => {
         }
       }
 
-      if (salesOrderRows.length > 0) {
+      if (
+        salesOrderRows.length > 0
+      ) {
         await GateEntrySalesOrder.bulkCreate(
           salesOrderRows,
           {
@@ -1187,26 +1342,6 @@ generateToken: async (req, res, next) => {
     // ============================================================
     // 8. PURCHASE ORDER PROCESSING
     // ============================================================
-
-    /*
-     * Keep your existing Purchase Order logic here.
-     *
-     * If your purchase_orders structure is:
-     *
-     * purchase_orders: [
-     *   {
-     *     po_id: 1,
-     *     materials: [
-     *       {
-     *         material_id: 2,
-     *         qty: 500
-     *       }
-     *     ]
-     *   }
-     * ]
-     *
-     * create the GateEntryPurchaseOrder rows in the same way.
-     */
 
     if (entry_type === "purchase") {
       const purchaseOrderRows = [];
@@ -1247,10 +1382,13 @@ generateToken: async (req, res, next) => {
             );
           }
 
-          const requestedQty = Number(qty);
+          const requestedQty =
+            Number(qty);
 
           if (
-            !Number.isFinite(requestedQty) ||
+            !Number.isFinite(
+              requestedQty
+            ) ||
             requestedQty <= 0
           ) {
             throw createError(
@@ -1260,7 +1398,8 @@ generateToken: async (req, res, next) => {
           }
 
           purchaseOrderRows.push({
-            gate_entry_id: gateEntry.id,
+            gate_entry_id:
+              gateEntry.id,
 
             po_id,
 
@@ -1269,12 +1408,7 @@ generateToken: async (req, res, next) => {
             qty: requestedQty,
 
             plant_id:
-              plant_id ||
-              (
-                req.user
-                  ? req.user.plant_id
-                  : null
-              ),
+              resolvedPlantId,
 
             created_by:
               req.user
@@ -1288,7 +1422,9 @@ generateToken: async (req, res, next) => {
         }
       }
 
-      if (purchaseOrderRows.length > 0) {
+      if (
+        purchaseOrderRows.length > 0
+      ) {
         await GateEntryPurchaseOrder.bulkCreate(
           purchaseOrderRows,
           {
@@ -1350,13 +1486,16 @@ generateToken: async (req, res, next) => {
 
       data: createdGateEntry,
     });
+
   } catch (err) {
     // ============================================================
     // ROLLBACK
     // ============================================================
 
     try {
-      await t.rollback();
+      if (!t.finished) {
+        await t.rollback();
+      }
     } catch (rollbackError) {
       console.error(
         "Transaction rollback error:",
