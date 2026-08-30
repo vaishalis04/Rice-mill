@@ -115,6 +115,11 @@ module.exports = {
         throw createError(400, "customer_type must be 'fg' or 'by_product'");
       }
 
+      const normalizedCreditLimit =
+        credit_limit === "" || credit_limit === null || credit_limit === undefined
+          ? 0
+          : Number(credit_limit);
+
       // customer_code is auto-generated (CUST0001, CUST0002, ...) unless the
       // caller explicitly supplies one — kept optional-override for admin
       // tooling/imports, but the UI no longer asks for it.
@@ -130,7 +135,7 @@ module.exports = {
         name,
         gstin: gstin || null,
         address,
-        credit_limit: credit_limit ?? 0,
+        credit_limit: normalizedCreditLimit,
         customer_type: customer_type || "fg",
         plant_id: plant_id || (req.user ? req.user.plant_id : null),
         created_by: req.user ? req.user.id : null,
@@ -154,6 +159,12 @@ module.exports = {
       if (customer_type && !["fg", "by_product"].includes(customer_type)) {
         throw createError(400, "customer_type must be 'fg' or 'by_product'");
       }
+
+      const normalizedCreditLimit =
+        credit_limit === "" || credit_limit === null || credit_limit === undefined
+          ? 0
+          : Number(credit_limit);
+
       if (customer_code || gstin) {
         const dup = await Customer.findOne({
           where: {
@@ -164,7 +175,15 @@ module.exports = {
         if (dup) throw createError(409, "Another customer already uses this customer_code or gstin");
       }
 
-      const updates = { customer_code, name, gstin: gstin === "" ? null : gstin, address, credit_limit, customer_type, plant_id };
+      const updates = {
+        customer_code,
+        name,
+        gstin: gstin === "" ? null : gstin,
+        address,
+        credit_limit: normalizedCreditLimit,
+        customer_type,
+        plant_id,
+      };
       Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
       updates.updated_by = req.user ? req.user.id : null;
 

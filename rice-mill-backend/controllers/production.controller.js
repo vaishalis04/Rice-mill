@@ -1,4 +1,5 @@
 const createError = require("http-errors");
+const { Op } = require("sequelize");
 const {
   ProductionBatch, Lot, Dryer, MachineLog, MachineMaster, User,
   SeparatorOutput, ShinerProcess, ColorSorter, LengthGrading,
@@ -26,7 +27,7 @@ const STAGE_LABELS = {
 };
 
 const detailIncludes = [
-  { model: Lot, as: "lot", attributes: ["id", "lot_no", "material_id", "qty"] },
+  { model: Lot, as: "lot", attributes: ["id", "lot_no", "material_id", "qty", "warehouse_id", "destination", "bin_id"] },
   { model: Dryer, as: "dryer" },
   {
     model: MachineLog,
@@ -64,6 +65,23 @@ const ensureStage = (batch, stageName) => {
   if (batch.current_stage !== stageName) {
     throw createError(400, `This batch's current stage is '${batch.current_stage}'; the '${stageName}' stage is not unlocked yet`);
   }
+};
+
+const getAvailableWarehouseStock = async ({ warehouse_id, material_id }) => {
+  if (!warehouse_id || !material_id) return 0;
+
+  const rows = await Inventory.findAll({
+    where: {
+      is_deleted: false,
+      warehouse_id,
+      material_id,
+      balance_qty: { [Op.gt]: 0 },
+      stage: { [Op.in]: ["raw", "fg"] },
+    },
+    order: [["as_of", "ASC"]],
+  });
+
+  return rows.reduce((sum, row) => sum + Number(row.balance_qty || 0), 0);
 };
 
 const validateMachine = async (machine_id) => {
@@ -175,23 +193,59 @@ module.exports = {
   create: async (req, res, next) => {
     try {
       const {
-        lot_id, process_type, input_qty, production_date, plant_id,
-        long_qty, medium_qty, broken_qty, small_broken_qty,
+        lot_id,
+        warehouse_id,
+        material_id,
+        process_type,
+        input_qty,
+        production_date,
+        plant_id,
+        long_qty,
+        medium_qty,
+        broken_qty,
+        small_broken_qty,
       } = req.body;
-      if (!lot_id || !process_type) throw createError(400, "lot_id and process_type are required");
+      if (!process_type) throw createError(400, "process_type is required");
       if (!["dry", "wet"].includes(process_type)) throw createError(400, "process_type must be 'dry' or 'wet'");
 
-      const lot = await Lot.findOne({ where: { id: lot_id, is_deleted: false } });
-      if (!lot) throw createError(400, "Invalid lot_id");
+      let resolvedLotId = lot_id;
+      let lot = null;
+
+      if (resolvedLotId) {
+        lot = await Lot.findOne({ where: { id: resolvedLotId, is_deleted: false } });
+        if (!lot) throw createError(400, "Invalid lot_id");
+      } else if (warehouse_id && material_id) {
+        lot = await Lot.findOne({
+          where: {
+            warehouse_id,
+            material_id,
+            is_deleted: false,
+            unloading_status: "completed",
+            qty: { [Op.gt]: 0 },
+          },
+          order: [["created_at", "DESC"]],
+        });
+        if (!lot) throw createError(404, "No completed stock found for the selected warehouse and material");
+        resolvedLotId = lot.id;
+      } else {
+        throw createError(400, "lot_id or warehouse_id + material_id are required");
+      }
+
       if (lot.unloading_status !== "completed") {
         throw createError(400, "Cannot start a production batch before unloading is completed for this lot (bag counts not recorded yet)");
       }
-console.log("lot", lot);
-      const existing = await ProductionBatch.findOne({ where: { lot_id, is_deleted: false } });
+
+      const availableQty = await getAvailableWarehouseStock({ warehouse_id: lot.warehouse_id || warehouse_id, material_id: lot.material_id || material_id });
+      const resolvedInput = input_qty !== undefined ? Number(input_qty) : Number(lot.qty);
+      if (!resolvedInput || resolvedInput <= 0) throw createError(400, "input_qty must be greater than zero");
+      if (availableQty > 0 && resolvedInput > availableQty + 0.0001) {
+        throw createError(400, `Requested input qty (${resolvedInput} tons) exceeds available stock (${availableQty} tons) in the selected warehouse`);
+      }
+
+      const existing = await ProductionBatch.findOne({ where: { lot_id: resolvedLotId, is_deleted: false } });
       if (existing) throw createError(409, "A production batch already exists for this lot");
-console.log("existing", existing);
+
       const batch_no = await generateBatchNo();
-      console.log("batch_no", batch_no);
       const hasFinalResults = long_qty !== undefined;
       if (hasFinalResults) {
         const finalQuantities = [long_qty, medium_qty, broken_qty, small_broken_qty].map((value) => Number(value) || 0);
@@ -201,9 +255,9 @@ console.log("existing", existing);
 
       const batch = await ProductionBatch.create({
         batch_no,
-        lot_id,
+        lot_id: resolvedLotId,
         process_type,
-        input_qty: input_qty !== undefined ? input_qty : lot.qty,
+        input_qty: resolvedInput,
         production_date: production_date || new Date().toISOString().slice(0, 10),
         batch_status: hasFinalResults ? "completed" : "in_progress",
         current_stage: hasFinalResults ? "completed" : order[0],
@@ -215,7 +269,7 @@ console.log("existing", existing);
       if (hasFinalResults) {
         lengthGrading = await LengthGrading.create({
           batch_id: batch.id,
-          input_qty: input_qty !== undefined ? Number(input_qty) : Number(lot.qty),
+          input_qty: resolvedInput,
           long_qty: Number(long_qty) || 0,
           medium_qty: Number(medium_qty) || 0,
           broken_qty: Number(broken_qty) || 0,
@@ -234,11 +288,8 @@ console.log("existing", existing);
         data: { ...created.toJSON(), checklist: buildChecklist(created), lengthGrading },
       });
     } catch (err) {
-  console.log("ERROR:", err);
-  console.log("ERROR MESSAGE:", err.message);
-  console.log("SQL:", err.sql);
-  next(err);
-}
+      next(err);
+    }
   },
 
   // PUT /api/production/batches/:id  (metadata only — use the stage endpoints for processing)
@@ -280,6 +331,55 @@ console.log("existing", existing);
       const quantities = [long_qty, medium_qty, broken_qty, small_broken_qty].map((value) => Number(value) || 0);
       if (resolvedInput <= 0 || quantities.some((value) => value < 0)) {
         throw createError(400, "Input and output quantities must be valid positive values");
+      }
+
+      const lot = await Lot.findOne({ where: { id: batch.lot_id, is_deleted: false } });
+      if (!lot) throw createError(404, "Source lot not found for this production batch");
+
+      const remainingInput = Number(resolvedInput);
+      const sourceRows = await Inventory.findAll({
+        where: {
+          warehouse_id: lot.warehouse_id,
+          material_id: lot.material_id,
+          is_deleted: false,
+          balance_qty: { [Op.gt]: 0 },
+          stage: { [Op.in]: ["raw", "fg"] },
+        },
+        order: [["as_of", "ASC"]],
+      });
+
+      let remainingToConsume = remainingInput;
+      for (const row of sourceRows) {
+        if (remainingToConsume <= 0) break;
+        const available = Number(row.balance_qty || 0);
+        const toConsume = Math.min(available, remainingToConsume);
+        if (toConsume <= 0) continue;
+        row.balance_qty = Number(row.balance_qty) - toConsume;
+        row.qty_out = Number(row.qty_out || 0) + toConsume;
+        row.as_of = new Date();
+        row.updated_by = req.user ? req.user.id : null;
+        await row.save();
+        remainingToConsume -= toConsume;
+      }
+
+      if (remainingToConsume > 0.0001) {
+        throw createError(400, "Not enough stock in the selected warehouse to complete this production run");
+      }
+
+      const totalOutput = quantities.reduce((sum, value) => sum + Number(value || 0), 0);
+      if (totalOutput > 0) {
+        await Inventory.create({
+          lot_id: lot.id,
+          material_id: lot.material_id,
+          warehouse_id: lot.warehouse_id,
+          stage: "fg",
+          qty_in: totalOutput,
+          qty_out: 0,
+          balance_qty: totalOutput,
+          as_of: new Date(),
+          plant_id: batch.plant_id,
+          created_by: req.user ? req.user.id : null,
+        });
       }
 
       const lengthGrading = await LengthGrading.create({

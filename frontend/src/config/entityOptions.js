@@ -55,7 +55,21 @@ export const ENTITY_OPTIONS = {
     },
   },
   vehicle: {
-    fetch: () => getVehiclesDriversApi("vehicle").then(unwrap),
+    fetch: async () => {
+      const [vehicleRows, gateRows] = await Promise.all([
+        getVehiclesDriversApi("vehicle").then(unwrap),
+        getGateEntriesApi().then(unwrap),
+      ]);
+      const exitedVehicleIds = new Set(
+        (gateRows || [])
+          .filter((row) => row.gate_status === "exited")
+          .map((row) => String(row.vehicle_id))
+          .filter(Boolean),
+      );
+      return (vehicleRows || []).filter(
+        (row) => !exitedVehicleIds.has(String(row.id)),
+      );
+    },
     getLabel: (row) =>
       `${row.vehicle_no}${row.vehicle_type ? ` — ${row.vehicle_type}` : ""}`,
     quickCreate: {
@@ -94,7 +108,21 @@ export const ENTITY_OPTIONS = {
     },
   },
   driver: {
-    fetch: () => getVehiclesDriversApi("driver").then(unwrap),
+    fetch: async () => {
+      const [driverRows, gateRows] = await Promise.all([
+        getVehiclesDriversApi("driver").then(unwrap),
+        getGateEntriesApi().then(unwrap),
+      ]);
+      const exitedDriverIds = new Set(
+        (gateRows || [])
+          .filter((row) => row.gate_status === "exited")
+          .map((row) => String(row.driver_id))
+          .filter(Boolean),
+      );
+      return (driverRows || []).filter(
+        (row) => !exitedDriverIds.has(String(row.id)),
+      );
+    },
     getLabel: (row) => `${row.name}${row.mobile ? ` (${row.mobile})` : ""}`,
     quickCreate: {
       label: "Driver",

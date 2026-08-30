@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
-import { createProductionBatchApi, finalizeProductionBatchApi, getProductionBatchesApi } from "../../api/api";
+import {
+  createProductionBatchApi,
+  finalizeProductionBatchApi,
+  getProductionBatchesApi,
+  getWarehouseStockApi,
+} from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyCreateForm = {
-  lot_id: "",
+  warehouse_id: "",
+  material_id: "",
   process_type: "wet",
   input_qty: "",
 };
@@ -25,9 +31,30 @@ export default function ProductionBatchPage() {
   const [outputForm, setOutputForm] = useState(emptyOutputForm);
   const [selectedBatch, setSelectedBatch] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [availableStock, setAvailableStock] = useState(0);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const lots = useEntityLookup("lot");
+  const warehouses = useEntityLookup("warehouse");
+  const materials = useEntityLookup("material");
+
+  useEffect(() => {
+    if (!createForm.warehouse_id || !createForm.material_id) {
+      setAvailableStock(0);
+      return;
+    }
+
+    getWarehouseStockApi({
+      warehouse_id: createForm.warehouse_id,
+      material_id: createForm.material_id,
+    })
+      .then((res) => {
+        const rows = res.data.data ?? res.data ?? [];
+        const total = rows.reduce((sum, row) => sum + Number(row.balance_qty ?? row.qty ?? 0), 0);
+        setAvailableStock(total);
+      })
+      .catch(() => setAvailableStock(0));
+  }, [createForm.warehouse_id, createForm.material_id]);
 
   const load = () => {
     setLoading(true);
@@ -53,7 +80,8 @@ export default function ProductionBatchPage() {
     setInfo("");
     try {
       const res = await createProductionBatchApi({
-        lot_id: Number(createForm.lot_id),
+        warehouse_id: Number(createForm.warehouse_id),
+        material_id: Number(createForm.material_id),
         process_type: createForm.process_type,
         input_qty: Number(createForm.input_qty),
       });
@@ -98,14 +126,21 @@ export default function ProductionBatchPage() {
 
       <h3>Create Batch</h3>
       <p className="field-hint">
-        First select a lot, process type, and input quantity. After the batch is created, enter the final output.
+        Select the warehouse and raw material to consume. The system will pull the available stock in tons and create a production batch against that stock.
       </p>
       <form className="sf-form" onSubmit={handleCreate}>
         <EntitySelect
-          entity="lot"
-          label="Lot"
-          value={createForm.lot_id}
-          onChange={(id) => setCreateForm({ ...createForm, lot_id: id })}
+          entity="warehouse"
+          label="Warehouse"
+          value={createForm.warehouse_id}
+          onChange={(id) => setCreateForm({ ...createForm, warehouse_id: id })}
+          required
+        />
+        <EntitySelect
+          entity="material"
+          label="Material"
+          value={createForm.material_id}
+          onChange={(id) => setCreateForm({ ...createForm, material_id: id })}
           required
         />
         <div className="sf-field">
@@ -116,10 +151,14 @@ export default function ProductionBatchPage() {
           </select>
         </div>
         <div className="sf-field">
+          <label>Available Stock (Tons)</label>
+          <input type="number" value={availableStock} readOnly />
+        </div>
+        <div className="sf-field">
           <label>Input Qty (Tons)</label>
           <input name="input_qty" type="number" step="0.01" min="0.01" value={createForm.input_qty} onChange={handleCreateChange} required />
         </div>
-        <button className="sf-submit" type="submit">Create Batch</button>
+        <button className="sf-submit" type="submit" disabled={!createForm.warehouse_id || !createForm.material_id}>Create Batch</button>
       </form>
 
       {selectedBatch && (
@@ -153,7 +192,23 @@ export default function ProductionBatchPage() {
         rows={batches}
         columns={[
           { key: "batch_no", label: "Batch No." },
-          { key: "lot_id", label: "Lot", render: (row) => lots.getLabel(row.lot_id) },
+          {
+            key: "material",
+            label: "Material",
+            render: (row) => {
+              const materialId = row.lot?.material_id ?? row.material_id;
+              return materialId ? materials.getLabel(materialId) : "—";
+            },
+          },
+          {
+            key: "warehouse",
+            label: "Warehouse",
+            render: (row) => {
+              const warehouseId = row.lot?.warehouse_id ?? row.warehouse_id;
+              return warehouseId ? warehouses.getLabel(warehouseId) : "—";
+            },
+          },
+          { key: "input_qty", label: "Input (Tons)" },
           { key: "process_type", label: "Process" },
           { key: "batch_status", label: "Status" },
           { key: "current_stage", label: "Stage", render: (row) => <span className="dt-badge">{row.current_stage}</span> },
@@ -162,9 +217,10 @@ export default function ProductionBatchPage() {
       <ModuleGuide
         title="Production"
         steps={[
-          "Select a completed unloading lot and choose Wet or Dry process type.",
-          "After batch creation, enter the final long, medium, broken, and small-broken quantities.",
-          "Saving the output completes production and makes the batch available in Packing.",
+          "Choose the warehouse and raw material that has stock available in tons.",
+          "Set the input quantity against that stock and choose Wet or Dry process type.",
+          "After batch creation, enter the final long, medium, broken, and small-broken output quantities in tons.",
+          "The system reduces the raw stock and records the produced output back into warehouse stock so it can later be dispatched.",
         ]}
       />
     </div>

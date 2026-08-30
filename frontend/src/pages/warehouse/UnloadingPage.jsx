@@ -30,6 +30,7 @@ export default function UnloadingPage() {
   const [unloadingItems, setUnloadingItems] = useState([]);
   const [isUnloadingFormOpen, setIsUnloadingFormOpen] = useState(false);
   const [currentGateEntryId, setCurrentGateEntryId] = useState(null);
+  const [currentWarehouseId, setCurrentWarehouseId] = useState(null);
 
   const gateEntries = useEntityLookup("gate_entry");
   const materials = useEntityLookup("material");
@@ -101,6 +102,7 @@ export default function UnloadingPage() {
 
       setUnloadingItems(unloadingItemsList);
       setCurrentGateEntryId(startFormState.gate_entry_id);
+      setCurrentWarehouseId(startFormState.warehouse_id);
       setIsUnloadingFormOpen(true);
       
       setInfo(
@@ -132,6 +134,8 @@ export default function UnloadingPage() {
       lot_no: lot.lot_no,
       material_id: lot.material_id,
       material_name: lot.material?.name || 'Unknown Material',
+      warehouse_id: currentWarehouseId || lot.warehouse_id,
+      gate_entry_id: currentGateEntryId,
       bag_size: lot.bag_size || "",
       accepted_bags: lot.accepted_bags || "",
       rejected_bags: lot.rejected_bags || "0",
@@ -184,7 +188,11 @@ export default function UnloadingPage() {
     try {
       const payload = {
         items: unloadingItems.map(item => ({
-          lot_id: item.lot_id,
+          lot_id: item.lot_id || null,
+          gate_entry_id: currentGateEntryId || item.gate_entry_id || null,
+          warehouse_id: item.warehouse_id || currentWarehouseId || null,
+          material_id: item.material_id || null,
+          variety_id: item.variety_id || null,
           bag_size: Number(item.bag_size),
           accepted_bags: Number(item.accepted_bags),
           rejected_bags: Number(item.rejected_bags || 0)
@@ -200,6 +208,8 @@ export default function UnloadingPage() {
       setInfo(res.data.msg || "All materials unloaded successfully.");
       setIsUnloadingFormOpen(false);
       setUnloadingItems([]);
+      setCurrentGateEntryId(null);
+      setCurrentWarehouseId(null);
       gateEntries.refetch();
       load();
     } catch (err) {
@@ -221,6 +231,24 @@ export default function UnloadingPage() {
     }
   };
 
+  const addCustomUnloadingItem = () => {
+    const newItem = {
+      lot_id: null,
+      lot_no: "New material",
+      material_id: "",
+      variety_id: "",
+      warehouse_id: currentWarehouseId,
+      gate_entry_id: currentGateEntryId,
+      material_name: "New Material",
+      bag_size: "",
+      accepted_bags: "",
+      rejected_bags: "0",
+      accepted_qty: 0,
+      rejected_qty: 0,
+    };
+    setUnloadingItems((prev) => [...prev, newItem]);
+  };
+
   const renderUnloadingForm = () => {
     if (!isUnloadingFormOpen) return null;
 
@@ -234,8 +262,14 @@ export default function UnloadingPage() {
       }}>
         <h3 style={{ marginTop: 0 }}>Complete Unloading - Enter Bag Counts for Each Material</h3>
         
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <button type="button" className="dt-btn" onClick={addCustomUnloadingItem}>
+            + Add another material
+          </button>
+        </div>
+
         {unloadingItems.map((item, index) => (
-          <div key={item.lot_id} style={{ 
+          <div key={item.lot_id || `${item.material_id || 'new'}-${index}`} style={{ 
             border: '1px solid #e2e8f0', 
             padding: '15px', 
             borderRadius: '6px', 
@@ -243,8 +277,26 @@ export default function UnloadingPage() {
             background: 'white'
           }}>
             <h4 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>
-              {item.material_name} (Lot: {item.lot_no})
+              {item.lot_id ? `${item.material_name} (Lot: ${item.lot_no})` : 'New material / variety found'}
             </h4>
+            {!item.lot_id && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '12px' }}>
+                <div className="sf-field" style={{ marginBottom: 0 }}>
+                  <label>Material</label>
+                  <EntitySelect
+                    entity="material"
+                    label="Material"
+                    value={item.material_id}
+                    onChange={(id) => {
+                      const updated = [...unloadingItems];
+                      updated[index].material_id = id;
+                      updated[index].material_name = materials.getLabel(id) || 'New Material';
+                      setUnloadingItems(updated);
+                    }}
+                  />
+                </div>
+              </div>
+            )}
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
               <div className="sf-field" style={{ marginBottom: 0 }}>

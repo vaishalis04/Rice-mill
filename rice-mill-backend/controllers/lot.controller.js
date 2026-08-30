@@ -337,38 +337,63 @@ completeUnloading: async (req, res, next) => {
     for (const item of items) {
       const {
         lot_id,
+        material_id,
+        variety_id,
+        gate_entry_id,
+        warehouse_id,
+        bin_id,
         bag_size,
         accepted_bags,
         rejected_bags = 0,
       } = item || {};
 
-      // ----------------------------------------------------------
-      // LOT ID VALIDATION
-      // ----------------------------------------------------------
+      let lot = null;
 
-      if (!lot_id) {
-        throw createError(
-          400,
-          "lot_id is required for every item"
-        );
-      }
+      if (lot_id) {
+        lot = await Lot.findOne({
+          where: {
+            id: lot_id,
+            is_deleted: false,
+          },
+        });
 
-      // ----------------------------------------------------------
-      // FIND LOT
-      // ----------------------------------------------------------
+        if (!lot) {
+          throw createError(
+            404,
+            `Lot ${lot_id} not found`
+          );
+        }
+      } else {
+        if (!material_id) {
+          throw createError(
+            400,
+            "material_id is required when lot_id is not provided for a new unloading item"
+          );
+        }
 
-      const lot = await Lot.findOne({
-        where: {
-          id: lot_id,
-          is_deleted: false,
-        },
-      });
+        const material = await MaterialMaster.findOne({ where: { id: material_id, is_deleted: false } });
+        if (!material) {
+          throw createError(400, `Invalid material_id: ${material_id}`);
+        }
 
-      if (!lot) {
-        throw createError(
-          404,
-          `Lot ${lot_id} not found`
-        );
+        let purchaseId = null;
+        if (gate_entry_id) {
+          const matchingPurchase = await Purchase.findOne({ where: { gate_entry_id, is_deleted: false } });
+          if (matchingPurchase) purchaseId = matchingPurchase.id;
+        }
+
+        lot = await Lot.create({
+          lot_no: await generateLotNo(),
+          purchase_id: purchaseId,
+          material_id,
+          variety_id: variety_id || null,
+          qty: 0,
+          warehouse_id: warehouse_id || null,
+          bin_id: bin_id || null,
+          unloading_status: "in_progress",
+          plant_id: req.user ? req.user.plant_id : null,
+          created_by: req.user ? req.user.id : null,
+        });
       }
 
       // ----------------------------------------------------------

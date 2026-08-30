@@ -21,7 +21,7 @@ const TYPE_CONFIG = {
       // correctly without changing what gets submitted.
       { name: "vehicle_type", dbField: "type", label: "Vehicle Type" },
       { name: "capacity", label: "Capacity", type: "number" },
-      { name: "owner_vendor_id", label: "Owner Vendor", type: "entity", entity: "vendor" },
+      { name: "owner_vendor_id", label: "Owner Vendor (optional)", type: "entity", entity: "vendor" },
     ],
   },
   driver: {
@@ -143,7 +143,7 @@ export default function VehiclesDriversPage() {
               label={f.label}
               value={form[f.name] ?? ""}
               onChange={(id) => setForm({ ...form, [f.name]: id })}
-              required
+              required={f.name !== "owner_vendor_id"}
             />
           ) : (
             <div className="sf-field" key={f.name}>

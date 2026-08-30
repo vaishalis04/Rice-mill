@@ -6,8 +6,8 @@ const { sequelize } = require("../models/index");
 
 (async () => {
   try {
-    await sequelize.sync({ force: true });
-    console.log("✅ Database synced");
+    await sequelize.sync({ alter: true });
+    console.log("✅ Database schema aligned");
     process.exit(0);
   } catch (err) {
     console.error("❌ Sync failed:", err.message);

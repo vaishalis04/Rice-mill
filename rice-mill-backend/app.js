@@ -100,10 +100,16 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 3000;
 
-// Connect MySQL then start server
+// Connect MySQL, align schema for grouped item models, then start server
 sequelize.authenticate()
-  .then(() => {
+  .then(async () => {
     console.log("✅ MySQL connected");
+    try {
+      await sequelize.sync({ alter: true });
+      console.log("✅ Database schema verified/aligned");
+    } catch (syncErr) {
+      console.error("⚠️ Schema alignment warning:", syncErr.message);
+    }
     scheduleAgingJob();
     app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Rice Mill ERP running on port ${PORT}`));
   })

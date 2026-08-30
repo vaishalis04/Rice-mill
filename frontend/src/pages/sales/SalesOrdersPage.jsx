@@ -34,6 +34,7 @@ export default function SalesOrdersPage() {
 
   // Editing an EXISTING SO — header fields + its items array
   const [editingSoNo, setEditingSoNo] = useState(null);
+  const [editingSoId, setEditingSoId] = useState(null);
   const [editHeader, setEditHeader] = useState(emptyHeader);
   const [editItems, setEditItems] = useState([]); // Array of items from the SO's JSON
   const [newItem, setNewItem] = useState(emptyItem);
@@ -123,6 +124,7 @@ export default function SalesOrdersPage() {
     setError("");
     setInfo("");
     setEditingSoNo(so.so_no);
+    setEditingSoId(so.id);
     setEditHeader({
       customer_id: so.customer_id || "",
       order_type: so.order_type || "fg",
@@ -144,6 +146,7 @@ export default function SalesOrdersPage() {
 
   const handleCancelEdit = () => {
     setEditingSoNo(null);
+    setEditingSoId(null);
     setEditHeader(emptyHeader);
     setEditItems([]);
     setNewItem(emptyItem);
@@ -198,10 +201,10 @@ export default function SalesOrdersPage() {
         };
       });
 
-      await updateSalesOrderApi(editingSoNo, {
+      await updateSalesOrderApi(editingSoId, {
         items: updatedItems,
       });
-      
+
       setInfo("Material line updated.");
       load();
     } catch (err) {
@@ -223,10 +226,10 @@ export default function SalesOrdersPage() {
           so_status: it.so_status || "confirmed",
         }));
 
-      await updateSalesOrderApi(editingSoNo, {
+      await updateSalesOrderApi(editingSoId, {
         items: updatedItems,
       });
-      
+
       setEditItems((prev) => prev.filter((_, idx) => idx !== itemIndex));
       setInfo("Material removed from the SO.");
       load();
@@ -271,7 +274,7 @@ export default function SalesOrdersPage() {
         newItemData,
       ];
 
-      await updateSalesOrderApi(editingSoNo, {
+      await updateSalesOrderApi(editingSoId, {
         items: updatedItems,
       });
 
@@ -325,7 +328,7 @@ export default function SalesOrdersPage() {
         return it;
       });
 
-      await updateSalesOrderApi(so.so_no, {
+      await updateSalesOrderApi(so.id, {
         items: updatedItems,
       });
       

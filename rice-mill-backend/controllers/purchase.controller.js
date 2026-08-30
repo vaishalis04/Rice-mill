@@ -25,6 +25,111 @@ const poIncludes = [
   { model: VarietyMaster, as: "variety", attributes: ["id", "variety_name"] },
 ];
 
+const normalizePoItems = (row) => {
+  const list = [];
+
+  const jsonItems = Array.isArray(row?.items) ? row.items : [];
+  for (const item of jsonItems) {
+    if (!item) continue;
+    list.push({
+      material_id: item.material_id ?? row?.material_id ?? null,
+      variety_id: item.variety_id ?? row?.variety_id ?? null,
+      qty: item.qty ?? row?.qty ?? null,
+      rate: item.rate ?? row?.rate ?? null,
+      material: item.material || row?.material || null,
+      variety: item.variety || row?.variety || null,
+    });
+  }
+
+  if (
+    row &&
+    (row.material_id !== null || row.qty !== null || row.rate !== null) &&
+    !list.some(
+      (item) =>
+        String(item.material_id || "") === String(row.material_id || "") &&
+        String(item.variety_id || "") === String(row.variety_id || "") &&
+        Number(item.qty || 0) === Number(row.qty || 0) &&
+        Number(item.rate || 0) === Number(row.rate || 0),
+    )
+  ) {
+    list.push({
+      material_id: row.material_id ?? null,
+      variety_id: row.variety_id ?? null,
+      qty: row.qty ?? null,
+      rate: row.rate ?? null,
+      material: row.material || null,
+      variety: row.variety || null,
+    });
+  }
+
+  return list.filter((item) => item.material_id || item.qty !== null || item.rate !== null);
+};
+
+const buildGroupedPurchaseOrder = (rows) => {
+  const groups = new Map();
+
+  for (const row of rows) {
+    const key = row.po_no;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        id: row.id,
+        po_no: row.po_no,
+        vendor_id: row.vendor_id,
+        vendor: row.vendor,
+        material_id: row.material_id,
+        material: row.material,
+        variety_id: row.variety_id,
+        variety: row.variety,
+        qty: row.qty,
+        rate: row.rate,
+        po_date: row.po_date,
+        validity: row.validity,
+        do_no: row.do_no,
+        uploaded_by_vendor: row.uploaded_by_vendor,
+        plant_id: row.plant_id,
+        approval_status: row.approval_status,
+        rejection_reason: row.rejection_reason,
+        created_by: row.created_by,
+        updated_by: row.updated_by,
+        approved_by: row.approved_by,
+        approved_at: row.approved_at,
+        items: [],
+      });
+    }
+
+    const group = groups.get(key);
+    const merged = normalizePoItems(row);
+    const existingKeys = new Set(
+      (group.items || []).map((item) => {
+        const materialId = item.material_id ?? "";
+        const varietyId = item.variety_id ?? "";
+        return `${String(materialId)}::${String(varietyId)}::${String(item.qty ?? "")}::${String(item.rate ?? "")}`;
+      }),
+    );
+
+    for (const item of merged) {
+      const itemKey = `${String(item.material_id ?? "")}::${String(item.variety_id ?? "")}::${String(item.qty ?? "")}::${String(item.rate ?? "")}`;
+      if (!existingKeys.has(itemKey)) {
+        group.items.push(item);
+        existingKeys.add(itemKey);
+      }
+    }
+  }
+
+  return Array.from(groups.values()).map((group) => ({
+    ...group,
+    item_count: group.items?.length || 0,
+    total_qty: (group.items || []).reduce(
+      (sum, item) => sum + Number(item.qty || 0),
+      0,
+    ),
+    total_amount: (group.items || []).reduce(
+      (sum, item) => sum + Number(item.qty || 0) * Number(item.rate || 0),
+      0,
+    ),
+  }));
+};
+
 module.exports = {
   getAllGrouped: async (req, res, next) => {
     try {
@@ -50,12 +155,12 @@ module.exports = {
         ],
       });
 
-      // JSON `items` only stores {material_id, variety_id, qty, rate} — no
-      // nested objects — so batch-fetch names for everything referenced.
+      const grouped = buildGroupedPurchaseOrder(rows);
+
       const materialIds = new Set();
       const varietyIds = new Set();
-      for (const row of rows) {
-        for (const item of row.items || []) {
+      for (const group of grouped) {
+        for (const item of group.items || []) {
           if (item.material_id) materialIds.add(item.material_id);
           if (item.variety_id) varietyIds.add(item.variety_id);
         }
@@ -78,42 +183,16 @@ module.exports = {
       const materialById = new Map(materials.map((m) => [String(m.id), m]));
       const varietyById = new Map(varieties.map((v) => [String(v.id), v]));
 
-      const groups = new Map();
-
-      for (const row of rows) {
-        if (!groups.has(row.po_no)) {
-          const enrichedItems = (row.items || []).map((item) => ({
-            ...item,
-            material: materialById.get(String(item.material_id)) || null,
-            variety: item.variety_id
-              ? varietyById.get(String(item.variety_id)) || null
-              : null,
-          }));
-
-          groups.set(row.po_no, {
-            id: row.id, // real PurchaseOrder PK — was previously items[0].id (always null)
-            po_no: row.po_no,
-            vendor_id: row.vendor_id,
-            vendor: row.vendor,
-            po_date: row.po_date,
-            validity: row.validity,
-            do_no: row.do_no,
-            plant_id: row.plant_id,
-            items: enrichedItems,
-          });
-        }
-      }
-
-      const grouped = Array.from(groups.values()).map((g) => ({
-        ...g,
-        item_count: g.items?.length || 0,
-        total_qty: (g.items || []).reduce(
-          (sum, i) => sum + Number(i.qty || 0),
-          0,
-        ),
+      const enriched = grouped.map((group) => ({
+        ...group,
+        items: (group.items || []).map((item) => ({
+          ...item,
+          material: item.material || materialById.get(String(item.material_id)) || null,
+          variety: item.variety || (item.variety_id ? varietyById.get(String(item.variety_id)) || null : null),
+        })),
       }));
 
-      res.status(200).json({ success: true, data: grouped });
+      res.status(200).json({ success: true, data: enriched });
     } catch (err) {
       next(err);
     }
@@ -507,9 +586,46 @@ module.exports = {
         order: [["created_at", "DESC"]],
       });
 
+      const grouped = buildGroupedPurchaseOrder(purchaseOrders);
+
+      const materialIds = new Set();
+      const varietyIds = new Set();
+      for (const group of grouped) {
+        for (const item of group.items || []) {
+          if (item.material_id) materialIds.add(item.material_id);
+          if (item.variety_id) varietyIds.add(item.variety_id);
+        }
+      }
+
+      const [materials, varieties] = await Promise.all([
+        materialIds.size
+          ? MaterialMaster.findAll({
+              where: { id: Array.from(materialIds) },
+              attributes: ["id", "material_code", "name"],
+            })
+          : [],
+        varietyIds.size
+          ? VarietyMaster.findAll({
+              where: { id: Array.from(varietyIds) },
+              attributes: ["id", "variety_name"],
+            })
+          : [],
+      ]);
+      const materialById = new Map(materials.map((m) => [String(m.id), m]));
+      const varietyById = new Map(varieties.map((v) => [String(v.id), v]));
+
+      const enriched = grouped.map((group) => ({
+        ...group,
+        items: (group.items || []).map((item) => ({
+          ...item,
+          material: item.material || materialById.get(String(item.material_id)) || null,
+          variety: item.variety || (item.variety_id ? varietyById.get(String(item.variety_id)) || null : null),
+        })),
+      }));
+
       res.status(200).json({
         success: true,
-        data: purchaseOrders,
+        data: enriched,
       });
     } catch (err) {
       next(err);
@@ -661,16 +777,21 @@ module.exports = {
         if (!variety) throw createError(400, "Invalid variety_id");
       }
 
-      const dup = await PurchaseOrder.findOne({
+      const existingRows = await PurchaseOrder.findAll({
         where: {
           po_no,
-          material_id,
-          variety_id: variety_id || null,
           is_deleted: false,
         },
       });
-      if (dup)
+
+      const duplicateKey = `${material_id}-${variety_id || "null"}`;
+      const alreadyExists = existingRows.some((row) => {
+        const materialKey = `${row.material_id ?? "null"}-${row.variety_id ?? "null"}`;
+        return materialKey === duplicateKey;
+      });
+      if (alreadyExists) {
         throw createError(409, "This material/variety is already on this PO");
+      }
 
       const row = await PurchaseOrder.create({
         po_no,
@@ -686,6 +807,16 @@ module.exports = {
         plant_id: anyRow.plant_id,
         created_by: req.user ? req.user.id : null,
       });
+
+      const allRows = await PurchaseOrder.findAll({
+        where: { po_no, is_deleted: false },
+      });
+      const mergedItems = buildGroupedPurchaseOrder(allRows).flatMap((group) => group.items || []);
+
+      await PurchaseOrder.update(
+        { items: mergedItems },
+        { where: { po_no, is_deleted: false } },
+      );
 
       const created = await PurchaseOrder.findByPk(row.id, {
         include: poIncludes,

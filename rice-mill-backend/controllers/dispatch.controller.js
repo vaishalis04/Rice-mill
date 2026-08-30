@@ -75,8 +75,8 @@ module.exports = {
     try {
       const { so_id, vehicle_id, driver_id, finished_goods_ids, dispatch_weight, dispatch_time, dispatch_type, plant_id } = req.body;
 
-      if (!so_id || !vehicle_id || !driver_id || !Array.isArray(finished_goods_ids) || finished_goods_ids.length === 0) {
-        throw createError(400, "so_id, vehicle_id, driver_id and a non-empty finished_goods_ids array are required");
+      if (!so_id || !Array.isArray(finished_goods_ids) || finished_goods_ids.length === 0) {
+        throw createError(400, "so_id and a non-empty finished_goods_ids array are required");
       }
 
       const so = await SalesOrder.findOne({ where: { id: so_id, is_deleted: false } });
@@ -85,11 +85,18 @@ module.exports = {
         throw createError(400, `This sales order is already '${so.so_status}' and cannot be dispatched again`);
       }
 
-      const vehicle = await Vehicle.findOne({ where: { id: vehicle_id, is_deleted: false } });
-      if (!vehicle) throw createError(400, "Invalid vehicle_id");
+      const normalizedVehicleId = vehicle_id !== undefined && vehicle_id !== "" && vehicle_id !== null ? Number(vehicle_id) : null;
+      const normalizedDriverId = driver_id !== undefined && driver_id !== "" && driver_id !== null ? Number(driver_id) : null;
 
-      const driver = await Driver.findOne({ where: { id: driver_id, is_deleted: false } });
-      if (!driver) throw createError(400, "Invalid driver_id");
+      if (normalizedVehicleId !== null) {
+        const vehicle = await Vehicle.findOne({ where: { id: normalizedVehicleId, is_deleted: false } });
+        if (!vehicle) throw createError(400, "Invalid vehicle_id");
+      }
+
+      if (normalizedDriverId !== null) {
+        const driver = await Driver.findOne({ where: { id: normalizedDriverId, is_deleted: false } });
+        if (!driver) throw createError(400, "Invalid driver_id");
+      }
 
       const stockRows = await FinishedGoods.findAll({ where: { id: finished_goods_ids, is_deleted: false } });
       if (stockRows.length !== finished_goods_ids.length) {
@@ -106,8 +113,8 @@ module.exports = {
       const dispatch = await Dispatch.create({
         so_id,
         challan_no,
-        vehicle_id,
-        driver_id,
+        vehicle_id: normalizedVehicleId,
+        driver_id: normalizedDriverId,
         dispatch_weight: dispatch_weight !== undefined ? dispatch_weight : totalQty,
         dispatch_time: dispatch_time || new Date(),
         dispatch_type: dispatch_type || "normal",

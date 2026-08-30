@@ -114,10 +114,10 @@ export default function DispatchPage() {
     try {
       const payload = {
         so_id: Number(form.so_id),
-        vehicle_id: Number(form.vehicle_id),
-        driver_id: Number(form.driver_id),
         finished_goods_ids: selectedFgIds,
       };
+      if (form.vehicle_id !== "" && form.vehicle_id != null) payload.vehicle_id = Number(form.vehicle_id);
+      if (form.driver_id !== "" && form.driver_id != null) payload.driver_id = Number(form.driver_id);
       if (form.dispatch_weight !== "") payload.dispatch_weight = Number(form.dispatch_weight);
       if (form.dispatch_type) payload.dispatch_type = form.dispatch_type;
 
@@ -190,7 +190,6 @@ export default function DispatchPage() {
           label="Vehicle"
           value={form.vehicle_id}
           onChange={(id) => setForm({ ...form, vehicle_id: id })}
-          required
           creatable
         />
         <EntitySelect
@@ -198,13 +197,11 @@ export default function DispatchPage() {
           label="Driver"
           value={form.driver_id}
           onChange={(id) => setForm({ ...form, driver_id: id })}
-          required
           creatable
         />
         {priorDispatchForSo && form.so_id && (
           <p className="field-hint" style={{ gridColumn: "1 / -1", marginTop: -6 }}>
-            Vehicle & Driver auto-filled from this Sales Order's last dispatch — change them if
-            a different truck is doing this run.
+            Vehicle & Driver are optional here; they are only kept as dispatch notes for the SO.
           </p>
         )}
         <div className="sf-field">

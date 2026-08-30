@@ -822,12 +822,47 @@ bulkCreate: async (req, res, next) => {
 
   update: async (req, res, next) => {
     try {
-      const so = await SalesOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
+      const id = req.params.id;
+      const so = await SalesOrder.findOne({
+        where: {
+          is_deleted: false,
+          [Op.or]: [
+            { id: Number.isNaN(Number(id)) ? null : Number(id) },
+            { so_no: id },
+          ],
+        },
+      });
       if (!so) throw createError(404, "Sales order not found");
 
-      const { material_id, qty, rate, order_date, so_status, plant_id } = req.body;
+      const { material_id, qty, rate, order_date, so_status, plant_id, items } = req.body;
       if (so_status && !["pending", "confirmed", "allocated", "dispatched", "closed", "cancelled"].includes(so_status)) {
         throw createError(400, "Invalid so_status");
+      }
+
+      let nextItems = items;
+      if (Array.isArray(nextItems)) {
+        const normalizedItems = nextItems.map((item) => ({
+          material_id: Number(item.material_id),
+          qty: Number(item.qty),
+          rate: Number(item.rate),
+          so_status: item.so_status || "confirmed",
+        }));
+
+        const seen = new Set();
+        for (const item of normalizedItems) {
+          if (!item.material_id || !item.qty || !item.rate) {
+            throw createError(400, "Each SO item needs material_id, qty and rate");
+          }
+          if (seen.has(Number(item.material_id))) {
+            throw createError(409, "Duplicate material in the same SO");
+          }
+          seen.add(Number(item.material_id));
+
+          const material = await MaterialMaster.findOne({ where: { id: item.material_id, is_deleted: false } });
+          if (!material) throw createError(400, `Invalid material_id: ${item.material_id}`);
+        }
+
+        nextItems = normalizedItems;
       }
 
       if (material_id) {
@@ -840,7 +875,15 @@ bulkCreate: async (req, res, next) => {
         if (!material) throw createError(400, "Invalid material_id");
       }
 
-      const updates = { material_id, qty, rate, order_date, so_status, plant_id };
+      const updates = {
+        material_id,
+        qty,
+        rate,
+        order_date,
+        so_status,
+        plant_id,
+        ...(Array.isArray(nextItems) ? { items: nextItems } : {}),
+      };
       Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
       updates.updated_by = req.user ? req.user.id : null;
 

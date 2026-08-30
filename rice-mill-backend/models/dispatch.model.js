@@ -9,8 +9,8 @@ Dispatch.init(
     so_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "sales_order", key: "id" } },
     challan_no: { type: DataTypes.STRING(30), allowNull: false, unique: true },
     invoice_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "invoices", key: "id" } },
-    vehicle_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "vehicles", key: "id" } },
-    driver_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "drivers", key: "id" } },
+    vehicle_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "vehicles", key: "id" } },
+    driver_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "drivers", key: "id" } },
     dispatch_weight: { type: DataTypes.DECIMAL(12, 2) },
     dispatch_time: { type: DataTypes.DATE },
     dispatch_type: { type: DataTypes.ENUM("normal", "direct_outward"), defaultValue: "normal" }, // note #23: direct outward skips FG warehouse

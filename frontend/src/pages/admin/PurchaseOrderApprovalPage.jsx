@@ -366,13 +366,37 @@ export default function PurchaseOrderApprovalPage() {
     }
   };
 
+  const getPoItems = (po) => {
+    if (Array.isArray(po?.items) && po.items.length) return po.items;
+    if (po && (po.material_id || po.qty !== null || po.rate !== null)) {
+      return [{
+        material_id: po.material_id,
+        variety_id: po.variety_id,
+        qty: po.qty,
+        rate: po.rate,
+        material: po.material,
+        variety: po.variety,
+      }];
+    }
+    return [];
+  };
+
   const getVendorName = (po) => po?.vendor?.name || "—";
   const getVendorCode = (po) => po?.vendor?.vendor_code || "—";
 
-  const getMaterialName = (po) => po?.material?.name || "—";
-  const getMaterialCode = (po) => po?.material?.material_code || "—";
+  const getMaterialName = (po) => {
+    const firstItem = getPoItems(po)[0];
+    return firstItem?.material?.name || po?.material?.name || "—";
+  };
+  const getMaterialCode = (po) => {
+    const firstItem = getPoItems(po)[0];
+    return firstItem?.material?.material_code || po?.material?.material_code || "—";
+  };
 
-  const getVarietyName = (po) => po?.variety?.variety_name || "—";
+  const getVarietyName = (po) => {
+    const firstItem = getPoItems(po)[0];
+    return firstItem?.variety?.variety_name || po?.variety?.variety_name || "—";
+  };
 
   const getPODate = (po) => {
     if (!po?.po_date) return "—";
@@ -385,22 +409,38 @@ export default function PurchaseOrderApprovalPage() {
   };
 
   const getQty = (po) => {
-    if (po?.qty === undefined || po?.qty === null) return "—";
-    return Number(po.qty).toLocaleString("en-IN");
+    const items = getPoItems(po);
+    if (!items.length) return "—";
+    const totalQty = items.reduce(
+      (sum, item) => sum + Number(item.qty || 0),
+      0,
+    );
+    return Number(totalQty).toLocaleString("en-IN");
   };
 
   const getRate = (po) => {
-    if (po?.rate === undefined || po?.rate === null) return "—";
-    return `₹${Number(po.rate).toLocaleString("en-IN")}`;
+    const items = getPoItems(po);
+    if (!items.length) return "—";
+    const rates = items
+      .map((item) => Number(item.rate))
+      .filter((value) => Number.isFinite(value));
+    if (!rates.length) return "—";
+    const uniqueRates = [...new Set(rates.map((value) => value.toFixed(2)))];
+    if (uniqueRates.length === 1) {
+      return `₹${Number(uniqueRates[0]).toLocaleString("en-IN")}`;
+    }
+    return "Multiple";
   };
 
   const getAmount = (po) => {
-    const qty = Number(po?.qty);
-    const rate = Number(po?.rate);
+    const items = getPoItems(po);
+    if (!items.length) return "—";
+    const totalAmount = items.reduce(
+      (sum, item) => sum + Number(item.qty || 0) * Number(item.rate || 0),
+      0,
+    );
 
-    if (Number.isNaN(qty) || Number.isNaN(rate)) return "—";
-
-    return `₹${(qty * rate).toLocaleString("en-IN", {
+    return `₹${totalAmount.toLocaleString("en-IN", {
       maximumFractionDigits: 2,
     })}`;
   };
@@ -1030,16 +1070,18 @@ export default function PurchaseOrderApprovalPage() {
                 </thead>
 
                 <tbody>
-                  <tr>
-                    <td>
-                      <strong>{getMaterialName(selectedPO)}</strong>
-                      <div className="po-subtext">{getMaterialCode(selectedPO)}</div>
-                    </td>
-                    <td>{getVarietyName(selectedPO)}</td>
-                    <td>{getQty(selectedPO)}</td>
-                    <td>{getRate(selectedPO)}</td>
-                    <td>{getAmount(selectedPO)}</td>
-                  </tr>
+                  {getPoItems(selectedPO).map((item, idx) => (
+                    <tr key={`${item.material_id || "material"}-${item.variety_id || "variety"}-${idx}`}>
+                      <td>
+                        <strong>{item.material?.name || "—"}</strong>
+                        <div className="po-subtext">{item.material?.material_code || "—"}</div>
+                      </td>
+                      <td>{item.variety?.variety_name || "—"}</td>
+                      <td>{item.qty !== null && item.qty !== undefined ? Number(item.qty).toLocaleString("en-IN") : "—"}</td>
+                      <td>{item.rate !== null && item.rate !== undefined ? `₹${Number(item.rate).toLocaleString("en-IN")}` : "—"}</td>
+                      <td>{item.qty !== null && item.qty !== undefined && item.rate !== null && item.rate !== undefined ? `₹${(Number(item.qty) * Number(item.rate)).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "—"}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

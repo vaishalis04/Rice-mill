@@ -336,11 +336,30 @@ export default function SalesOrderApprovalPage() {
 
   // ---- Field readers, matched exactly to the real API shape ----
 
+  const getSoItems = (so) => {
+    if (Array.isArray(so?.items) && so.items.length) return so.items;
+    if (so && (so.material_id || so.qty !== null || so.rate !== null)) {
+      return [{
+        material_id: so.material_id,
+        qty: so.qty,
+        rate: so.rate,
+        material: so.material,
+      }];
+    }
+    return [];
+  };
+
   const getCustomerName = (so) => so?.customer?.name || "—";
   const getCustomerCode = (so) => so?.customer?.customer_code || "—";
 
-  const getMaterialName = (so) => so?.material?.name || "—";
-  const getMaterialCode = (so) => so?.material?.material_code || "—";
+  const getMaterialName = (so) => {
+    const firstItem = getSoItems(so)[0];
+    return firstItem?.material?.name || so?.material?.name || "—";
+  };
+  const getMaterialCode = (so) => {
+    const firstItem = getSoItems(so)[0];
+    return firstItem?.material?.material_code || so?.material?.material_code || "—";
+  };
 
   const getOrderDate = (so) => {
     if (!so?.order_date) return "—";
@@ -356,8 +375,10 @@ export default function SalesOrderApprovalPage() {
     SO_STATUS_LABELS[so?.so_status] || so?.so_status || "—";
 
   const getQty = (so) => {
-    if (so?.qty === undefined || so?.qty === null) return "—";
-    return Number(so.qty).toLocaleString("en-IN");
+    const items = getSoItems(so);
+    if (!items.length) return "—";
+    const totalQty = items.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+    return Number(totalQty).toLocaleString("en-IN");
   };
 
   const getDispatchedQty = (so) => {
@@ -367,19 +388,18 @@ export default function SalesOrderApprovalPage() {
   };
 
   const getRate = (so) => {
-    if (so?.rate === undefined || so?.rate === null) return "—";
-    return `₹${Number(so.rate).toLocaleString("en-IN")}`;
+    const items = getSoItems(so);
+    if (!items.length) return "—";
+    const uniqueRates = [...new Set(items.map((item) => Number(item.rate)).filter((value) => Number.isFinite(value)).map((value) => value.toFixed(2)))];
+    if (uniqueRates.length === 1) return `₹${Number(uniqueRates[0]).toLocaleString("en-IN")}`;
+    return "Multiple";
   };
 
   const getAmount = (so) => {
-    const qty = Number(so?.qty);
-    const rate = Number(so?.rate);
-
-    if (Number.isNaN(qty) || Number.isNaN(rate)) return "—";
-
-    return `₹${(qty * rate).toLocaleString("en-IN", {
-      maximumFractionDigits: 2,
-    })}`;
+    const items = getSoItems(so);
+    if (!items.length) return "—";
+    const total = items.reduce((sum, item) => sum + Number(item.qty || 0) * Number(item.rate || 0), 0);
+    return `₹${total.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
   };
 
   const getRowAmountValue = (so) => {
@@ -932,28 +952,28 @@ export default function SalesOrderApprovalPage() {
                 </thead>
 
                 <tbody>
-                  {(getSiblingRows(selectedSO).length
-                    ? getSiblingRows(selectedSO)
-                    : [selectedSO]
-                  ).map((row) => (
-                    <tr key={row.id}>
+                  {(getSoItems(selectedSO).length
+                    ? getSoItems(selectedSO)
+                    : [{ material: null, qty: null, rate: null }]
+                  ).map((row, index) => (
+                    <tr key={`${row.material_id ?? "material"}-${row.qty ?? "qty"}-${row.rate ?? "rate"}-${index}`}>
                       <td>
-                        <strong>{getMaterialName(row)}</strong>
-                        <div className="so-subtext">{getMaterialCode(row)}</div>
+                        <strong>{row.material?.name || getMaterialName(selectedSO)}</strong>
+                        <div className="so-subtext">{row.material?.material_code || getMaterialCode(selectedSO)}</div>
                       </td>
-                      <td>{getQty(row)}</td>
-                      <td>{getDispatchedQty(row)}</td>
-                      <td>{getRate(row)}</td>
-                      <td>{getAmount(row)}</td>
+                      <td>{row.qty !== null && row.qty !== undefined ? Number(row.qty).toLocaleString("en-IN") : "—"}</td>
+                      <td>{getDispatchedQty(selectedSO)}</td>
+                      <td>{row.rate !== null && row.rate !== undefined ? `₹${Number(row.rate).toLocaleString("en-IN")}` : "—"}</td>
+                      <td>{row.qty !== null && row.qty !== undefined && row.rate !== null && row.rate !== undefined ? `₹${(Number(row.qty) * Number(row.rate)).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "—"}</td>
                       {selectedSO.approval_status === "pending_approval" && (
                         <td>
                           <button
                             className="so-entity-delete-btn"
-                            onClick={() => handleRemoveRow(row)}
-                            disabled={removingId === row.id}
+                            onClick={() => handleRemoveRow({ ...selectedSO, id: selectedSO.id, material: row.material, qty: row.qty, rate: row.rate })}
+                            disabled={removingId === selectedSO.id}
                             title="Remove this material line"
                           >
-                            {removingId === row.id ? "…" : "🗑"}
+                            {removingId === selectedSO.id ? "…" : "🗑"}
                           </button>
                         </td>
                       )}
