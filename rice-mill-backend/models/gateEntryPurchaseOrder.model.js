@@ -6,13 +6,13 @@ class GateEntryPurchaseOrder extends Model {}
 GateEntryPurchaseOrder.init(
   {
     id: {
-      type: DataTypes.BIGINT.UNSIGNED,
+      type: DataTypes.BIGINT,
       primaryKey: true,
       autoIncrement: true,
     },
 
     gate_entry_id: {
-      type: DataTypes.BIGINT.UNSIGNED,
+      type: DataTypes.BIGINT,
       allowNull: false,
       references: {
         model: "gate_entry",
@@ -21,7 +21,7 @@ GateEntryPurchaseOrder.init(
     },
 
     po_id: {
-      type: DataTypes.BIGINT.UNSIGNED,
+      type: DataTypes.BIGINT,
       allowNull: false,
       references: {
         model: "purchase_order",
@@ -30,7 +30,7 @@ GateEntryPurchaseOrder.init(
     },
 
     material_id: {
-      type: DataTypes.BIGINT.UNSIGNED,
+      type: DataTypes.BIGINT,
       allowNull: false,
       references: {
         model: "material_master",
@@ -44,7 +44,7 @@ GateEntryPurchaseOrder.init(
     },
 
     created_by: {
-      type: DataTypes.BIGINT.UNSIGNED,
+      type: DataTypes.BIGINT,
       allowNull: true,
       references: {
         model: "users",
@@ -53,7 +53,7 @@ GateEntryPurchaseOrder.init(
     },
 
     updated_by: {
-      type: DataTypes.BIGINT.UNSIGNED,
+      type: DataTypes.BIGINT,
       allowNull: true,
       references: {
         model: "users",

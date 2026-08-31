@@ -15,7 +15,7 @@ GateEntrySalesOrder.init(
       type: DataTypes.BIGINT,
       allowNull: false,
       references: {
-        model: "gate_entries",
+        model: "gate_entry",
         key: "id",
       },
     },

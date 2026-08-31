@@ -315,7 +315,7 @@ completeUnloading: async (req, res, next) => {
     //   "accepted_bags": 100,
     //   "rejected_bags": 5
     // }
-    if (!items && body.lot_id) {
+    if (!items && (body.lot_id || body.material_id)) {
       items = [body];
     }
 

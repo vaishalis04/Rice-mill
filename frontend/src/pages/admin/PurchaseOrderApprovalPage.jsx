@@ -368,7 +368,15 @@ export default function PurchaseOrderApprovalPage() {
 
   const getPoItems = (po) => {
     if (Array.isArray(po?.items) && po.items.length) return po.items;
-    if (po && (po.material_id || po.qty !== null || po.rate !== null)) {
+    // Fallback for any older/flat response shape. Using `!= null` (not
+    // `!== null`) here matters: a genuinely absent field comes back as
+    // `undefined`, and `undefined !== null` is true — that previously
+    // pushed a single all-dash phantom row into the table even when the
+    // PO had no material data at all.
+    if (
+      po &&
+      (po.material_id != null || po.qty != null || po.rate != null)
+    ) {
       return [{
         material_id: po.material_id,
         variety_id: po.variety_id,

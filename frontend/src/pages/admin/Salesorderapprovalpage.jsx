@@ -14,7 +14,7 @@ import {
 } from "../../api/api";
 
 import "../../components/DataTable.css";
-import "./SalesOrderApprovalPage.css";
+import "./Salesorderapprovalpage.css";
 
 // Human-readable labels for the approval_status enum coming from the API.
 const STATUS_LABELS = {

@@ -25,10 +25,29 @@ const poIncludes = [
   { model: VarietyMaster, as: "variety", attributes: ["id", "variety_name"] },
 ];
 
+// The `items` column is a JSON column, but on MariaDB (and in some
+// mysql2/Sequelize version combos) it round-trips as a raw JSON
+// *string* instead of an already-parsed array/object. Every read of
+// row.items needs to tolerate both shapes, or a PO's line items
+// silently disappear (this was the root cause of the Approval page's
+// "Material Details" table showing blank).
+const parseItemsField = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
 const normalizePoItems = (row) => {
   const list = [];
 
-  const jsonItems = Array.isArray(row?.items) ? row.items : [];
+  const jsonItems = parseItemsField(row?.items);
   for (const item of jsonItems) {
     if (!item) continue;
     list.push({
@@ -130,6 +149,48 @@ const buildGroupedPurchaseOrder = (rows) => {
   }));
 };
 
+// Shared by getAllGrouped / getPendingApprovals / getById so a PO's items
+// always come back the same shape: grouped by po_no, with each item's
+// material/variety looked up and attached (some items only carry the
+// material_id/variety_id inside the JSON items column, with no
+// association pre-loaded on them).
+const enrichGroupedPurchaseOrders = async (grouped) => {
+  const materialIds = new Set();
+  const varietyIds = new Set();
+  for (const group of grouped) {
+    for (const item of group.items || []) {
+      if (item.material_id) materialIds.add(item.material_id);
+      if (item.variety_id) varietyIds.add(item.variety_id);
+    }
+  }
+
+  const [materials, varieties] = await Promise.all([
+    materialIds.size
+      ? MaterialMaster.findAll({
+          where: { id: Array.from(materialIds) },
+          attributes: ["id", "material_code", "name"],
+        })
+      : [],
+    varietyIds.size
+      ? VarietyMaster.findAll({
+          where: { id: Array.from(varietyIds) },
+          attributes: ["id", "variety_name"],
+        })
+      : [],
+  ]);
+  const materialById = new Map(materials.map((m) => [String(m.id), m]));
+  const varietyById = new Map(varieties.map((v) => [String(v.id), v]));
+
+  return grouped.map((group) => ({
+    ...group,
+    items: (group.items || []).map((item) => ({
+      ...item,
+      material: item.material || materialById.get(String(item.material_id)) || null,
+      variety: item.variety || (item.variety_id ? varietyById.get(String(item.variety_id)) || null : null),
+    })),
+  }));
+};
+
 module.exports = {
   getAllGrouped: async (req, res, next) => {
     try {
@@ -156,41 +217,7 @@ module.exports = {
       });
 
       const grouped = buildGroupedPurchaseOrder(rows);
-
-      const materialIds = new Set();
-      const varietyIds = new Set();
-      for (const group of grouped) {
-        for (const item of group.items || []) {
-          if (item.material_id) materialIds.add(item.material_id);
-          if (item.variety_id) varietyIds.add(item.variety_id);
-        }
-      }
-
-      const [materials, varieties] = await Promise.all([
-        materialIds.size
-          ? MaterialMaster.findAll({
-              where: { id: Array.from(materialIds) },
-              attributes: ["id", "material_code", "name"],
-            })
-          : [],
-        varietyIds.size
-          ? VarietyMaster.findAll({
-              where: { id: Array.from(varietyIds) },
-              attributes: ["id", "variety_name"],
-            })
-          : [],
-      ]);
-      const materialById = new Map(materials.map((m) => [String(m.id), m]));
-      const varietyById = new Map(varieties.map((v) => [String(v.id), v]));
-
-      const enriched = grouped.map((group) => ({
-        ...group,
-        items: (group.items || []).map((item) => ({
-          ...item,
-          material: item.material || materialById.get(String(item.material_id)) || null,
-          variety: item.variety || (item.variety_id ? varietyById.get(String(item.variety_id)) || null : null),
-        })),
-      }));
+      const enriched = await enrichGroupedPurchaseOrders(grouped);
 
       res.status(200).json({ success: true, data: enriched });
     } catch (err) {
@@ -248,14 +275,30 @@ module.exports = {
   },
 
   // GET /api/purchase/:id
+  // A PO can be made of several `purchase_order` rows sharing one po_no
+  // (multi-item POs from bulkCreate/addItem), plus items packed into the
+  // JSON `items` column. Fetching just the single row by id — as this
+  // used to do — showed a blank Material Details table on the Approval
+  // page whenever that particular row wasn't the one carrying the visible
+  // fields. Instead: resolve po_no from the requested id, then fetch and
+  // group every row for that po_no, same as the list endpoints do.
   getById: async (req, res, next) => {
     try {
-      const po = await PurchaseOrder.findOne({
+      const anchor = await PurchaseOrder.findOne({
         where: { id: req.params.id, is_deleted: false },
-        include: poIncludes,
       });
-      if (!po) throw createError(404, "Purchase order not found");
-      res.status(200).json({ success: true, data: po });
+      if (!anchor) throw createError(404, "Purchase order not found");
+
+      const rows = await PurchaseOrder.findAll({
+        where: { po_no: anchor.po_no, is_deleted: false },
+        include: poIncludes,
+        order: [["created_at", "ASC"]],
+      });
+
+      const grouped = buildGroupedPurchaseOrder(rows);
+      const [enriched] = await enrichGroupedPurchaseOrders(grouped);
+
+      res.status(200).json({ success: true, data: enriched });
     } catch (err) {
       next(err);
     }
@@ -587,41 +630,7 @@ module.exports = {
       });
 
       const grouped = buildGroupedPurchaseOrder(purchaseOrders);
-
-      const materialIds = new Set();
-      const varietyIds = new Set();
-      for (const group of grouped) {
-        for (const item of group.items || []) {
-          if (item.material_id) materialIds.add(item.material_id);
-          if (item.variety_id) varietyIds.add(item.variety_id);
-        }
-      }
-
-      const [materials, varieties] = await Promise.all([
-        materialIds.size
-          ? MaterialMaster.findAll({
-              where: { id: Array.from(materialIds) },
-              attributes: ["id", "material_code", "name"],
-            })
-          : [],
-        varietyIds.size
-          ? VarietyMaster.findAll({
-              where: { id: Array.from(varietyIds) },
-              attributes: ["id", "variety_name"],
-            })
-          : [],
-      ]);
-      const materialById = new Map(materials.map((m) => [String(m.id), m]));
-      const varietyById = new Map(varieties.map((v) => [String(v.id), v]));
-
-      const enriched = grouped.map((group) => ({
-        ...group,
-        items: (group.items || []).map((item) => ({
-          ...item,
-          material: item.material || materialById.get(String(item.material_id)) || null,
-          variety: item.variety || (item.variety_id ? varietyById.get(String(item.variety_id)) || null : null),
-        })),
-      }));
+      const enriched = await enrichGroupedPurchaseOrders(grouped);
 
       res.status(200).json({
         success: true,

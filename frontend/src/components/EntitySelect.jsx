@@ -16,6 +16,23 @@ export default function EntitySelect({
   onCreated,
 }) {
   const config = ENTITY_OPTIONS[entity];
+
+  // Gate entries whose vehicle has already exited (or the entry was
+  // cancelled) must never be pickable in a dropdown anywhere in the app —
+  // they're done, dead transactions. The only place they should ever be
+  // visible is the "Exited" tab on the Gate Entry page itself, which reads
+  // straight from the API and doesn't go through this component. Applying
+  // this here — once, centrally — means no page (current or future) can
+  // accidentally leak an exited/cancelled truck into a picker just by
+  // forgetting to write its own status filter.
+  const HIDDEN_GATE_STATUSES = ["exited", "cancelled"];
+  const combinedFilter =
+    entity === "gate_entry"
+      ? (row) =>
+          !HIDDEN_GATE_STATUSES.includes(row.gate_status) &&
+          (filter ? filter(row) : true)
+      : filter;
+
   const [options, setOptions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -71,8 +88,8 @@ export default function EntitySelect({
   );
 
   const visibleOptions = useMemo(
-    () => (filter ? options.filter(filter) : options),
-    [options, filter]
+    () => (combinedFilter ? options.filter(combinedFilter) : options),
+    [options, combinedFilter]
   );
 
   const filtered = useMemo(() => {

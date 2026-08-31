@@ -26,13 +26,21 @@ PurchaseOrder.init(
     },
 
     material_id: {
-      type: DataTypes.STRING(255),
+      type: DataTypes.BIGINT,
       allowNull: true,
+      references: {
+        model: "material_master",
+        key: "id",
+      },
     },
 
     variety_id: {
-      type: DataTypes.STRING(255),
+      type: DataTypes.BIGINT,
       allowNull: true,
+      references: {
+        model: "variety_master",
+        key: "id",
+      },
     },
 
     qty: {

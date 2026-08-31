@@ -75,6 +75,20 @@ module.exports = {
         items = [];
       }
 
+      // Simple (non-bulk) SOs never populate the `items` JSON column — their
+      // material/qty/rate live directly on the row, same as Purchase Orders.
+      // Fall back to those flat fields so single-material SOs still show up
+      // correctly in this grouped view.
+      if (items.length === 0 && row.material_id) {
+        items = [
+          {
+            material_id: row.material_id,
+            qty: row.qty,
+            rate: row.rate,
+          },
+        ];
+      }
+
       // Get material IDs from JSON items
       const materialIds = items
         .map((item) => Number(item.material_id))

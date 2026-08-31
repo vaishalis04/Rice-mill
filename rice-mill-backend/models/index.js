@@ -368,11 +368,23 @@ GateEntryPurchaseOrder.belongsTo(MaterialMaster, {
   foreignKey: "material_id",
   as: "material",
 });
+// NOTE: Sampling.material_id and Sampling.po_id are DataTypes.JSON (arrays) —
+// a single sampling record can cover multiple materials/POs pulled from a
+// multi-material gate entry (see sampling.controller.js). These associations
+// are kept (with constraints:false) purely so sampling.controller.js's
+// `detailIncludes` can still eager-load a single related row via `include`;
+// constraints:false stops Sequelize from trying to create a real DB-level FK
+// constraint on a JSON column, which was breaking schema sync.
 Sampling.belongsTo(MaterialMaster, {
   foreignKey: "material_id",
   as: "material",
+  constraints: false,
 });
-Sampling.belongsTo(PurchaseOrder, { foreignKey: "po_id", as: "purchaseOrder" });
+Sampling.belongsTo(PurchaseOrder, {
+  foreignKey: "po_id",
+  as: "purchaseOrder",
+  constraints: false,
+});
 
 GateEntry.hasMany(GateEntryPurchaseOrder, {
   foreignKey: "gate_entry_id",

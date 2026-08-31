@@ -9,7 +9,9 @@ Stack.init(
     stack_code: { type: DataTypes.STRING(30), allowNull: false, unique: true },
     lot_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "lots", key: "id" } },
     warehouse_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "warehouse_master", key: "id" } },
-    bin_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "bin_stack_master", key: "id" } },
+    // Nullable to match Lot.bin_id — many warehouses don't do bin-level
+    // tracking, so a stack can exist against a warehouse alone.
+    bin_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "bin_stack_master", key: "id" } },
     qty: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
     stacked_at: { type: DataTypes.DATE, allowNull: false },
     age_days: { type: DataTypes.VIRTUAL, get() { const s = this.getDataValue("stacked_at"); return s ? Math.floor((Date.now() - new Date(s)) / 86400000) : null; } }, // computed, not stored — note #24
