@@ -104,12 +104,51 @@ const PORT = process.env.PORT || 3000;
 sequelize.authenticate()
   .then(async () => {
     console.log("✅ MySQL connected");
+
+    // Phase 1 — sequelize.sync({ alter: true }) as one coordinated pass.
+    // This is what actually respects foreign-key dependency order (it
+    // topologically sorts models so a table is never created/altered
+    // before the tables it references), which per-model syncing cannot
+    // do on its own — attempting that on an empty DB makes every table
+    // fail with "foreign key constraint is incorrectly formed" simply
+    // because referenced tables don't exist yet.
     try {
       await sequelize.sync({ alter: true });
       console.log("✅ Database schema verified/aligned");
     } catch (syncErr) {
-      console.error("⚠️ Schema alignment warning:", syncErr.message);
+      // Phase 2 — this only runs if phase 1 hit a genuine per-table issue
+      // partway through (a bad FK, a stray/duplicate index, etc.). Phase 1
+      // already got every table up to that point into a mostly-correct
+      // state and correctly ordered, so re-attempting each model
+      // individually here just mops up the tables that phase 1 couldn't
+      // reach — one bad table can no longer silently block every table
+      // after it, which is what let earlier, unrelated schema issues mask
+      // real fixes to completely different tables (e.g. Stack/Loading
+      // never actually getting their column changes applied because
+      // something alphabetically/structurally earlier threw first).
+      console.error("⚠️ Schema alignment warning (pass 1):", syncErr.message);
+      console.log("↻ Retrying remaining tables individually...");
+
+      const models = Object.values(sequelize.models);
+      let failed = 0;
+      for (const model of models) {
+        try {
+          await model.sync({ alter: true });
+        } catch (modelErr) {
+          failed += 1;
+          console.error(
+            `⚠️ Schema alignment warning [${model.getTableName()}]:`,
+            modelErr.message,
+          );
+        }
+      }
+      console.log(
+        failed
+          ? `✅ Database schema aligned (${models.length - failed}/${models.length} tables — see warnings above for the rest)`
+          : "✅ Database schema aligned on retry",
+      );
     }
+
     scheduleAgingJob();
     app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Rice Mill ERP running on port ${PORT}`));
   })

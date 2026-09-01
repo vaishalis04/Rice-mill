@@ -535,6 +535,15 @@ const handleSalesMaterialQtyChange = (soId, materialId, qty) => {
 
   useEffect(() => load(), []);
 
+  // On the default "All" view (no explicit status tab picked), exited
+  // trucks are left out — a vehicle that's checked out no longer belongs
+  // in the working list; it's only meant to be found via the explicit
+  // "Exited" tab. Picking that tab (or any other specific status) shows
+  // exactly what was asked for, unfiltered.
+  const displayedEntries = statusFilter
+    ? entries
+    : entries.filter((e) => e.gate_status !== "exited");
+
   const handleStatusFilterChange = (status) => {
     setStatusFilter(status);
     load(status, entryTypeFilter);
@@ -1278,7 +1287,7 @@ const handleSalesMaterialQtyChange = (soId, materialId, qty) => {
 
       <DataTable
         loading={loading}
-        rows={entries}
+        rows={displayedEntries}
         columns={[
           {
             key: "token_no",
