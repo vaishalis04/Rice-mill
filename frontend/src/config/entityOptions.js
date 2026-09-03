@@ -58,7 +58,7 @@ export const ENTITY_OPTIONS = {
     fetch: async () => {
       const [vehicleRows, gateRows] = await Promise.all([
         getVehiclesDriversApi("vehicle").then(unwrap),
-        getGateEntriesApi().then(unwrap),
+        getGateEntriesApi(undefined, undefined, 500).then(unwrap),
       ]);
       const exitedVehicleIds = new Set(
         (gateRows || [])
@@ -111,7 +111,7 @@ export const ENTITY_OPTIONS = {
     fetch: async () => {
       const [driverRows, gateRows] = await Promise.all([
         getVehiclesDriversApi("driver").then(unwrap),
-        getGateEntriesApi().then(unwrap),
+        getGateEntriesApi(undefined, undefined, 500).then(unwrap),
       ]);
       const exitedDriverIds = new Set(
         (gateRows || [])
@@ -274,8 +274,17 @@ export const ENTITY_OPTIONS = {
         }).then(unwrap),
     },
   },
+  // The backend paginates /gate at 20 rows/page by default (entry_time
+  // DESC). Every dropdown that looks up gate entries here — this one, plus
+  // the "which vehicle/driver is exited" checks above — needs the whole
+  // working set, not just page 1: once the mill has more than 20 gate
+  // entries total (easy to hit fast), the entry someone actually needs
+  // silently falls off page 1 and the dropdown shows "No matches" even
+  // though the entry genuinely exists and is in the right status. The
+  // explicit limit here is that fix — high enough to cover the working set
+  // of open/recent entries without pulling the entire historical table.
   gate_entry: {
-    fetch: () => getGateEntriesApi().then(unwrap),
+    fetch: () => getGateEntriesApi(undefined, undefined, 500).then(unwrap),
     getLabel: (row) =>
       `${row.token_no || row.challan_no || `Entry #${row.id}`}${
         row.gate_status ? ` (${row.gate_status})` : ""

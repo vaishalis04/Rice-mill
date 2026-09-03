@@ -6,7 +6,7 @@ class Stack extends Model {}
 Stack.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    stack_code: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    stack_code: { type: DataTypes.STRING(30), allowNull: false, unique: "stacks_stack_code_unique" },
     lot_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "lots", key: "id" } },
     warehouse_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "warehouse_master", key: "id" } },
     // Nullable to match Lot.bin_id — many warehouses don't do bin-level

@@ -6,9 +6,9 @@ class Customer extends Model {}
 Customer.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    customer_code: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    customer_code: { type: DataTypes.STRING(30), allowNull: false, unique: "customers_customer_code_unique" },
     name: { type: DataTypes.STRING(150), allowNull: false },
-    gstin: { type: DataTypes.STRING(15), unique: true, validate: { len: [15, 15] } },
+    gstin: { type: DataTypes.STRING(15), unique: "customers_gstin_unique", validate: { len: [15, 15] } },
     address: { type: DataTypes.TEXT },
     credit_limit: { type: DataTypes.DECIMAL(12, 2), defaultValue: 0 },
     customer_type: { type: DataTypes.ENUM("fg", "by_product"), defaultValue: "fg" }, // note #25: by-product customers != FG customers

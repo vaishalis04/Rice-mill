@@ -6,7 +6,7 @@ class PlantMaster extends Model {}
 PlantMaster.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    plant_code: { type: DataTypes.STRING(20), allowNull: false, unique: true },
+    plant_code: { type: DataTypes.STRING(20), allowNull: false, unique: "plant_master_plant_code_unique" },
     name: { type: DataTypes.STRING(100), allowNull: false },
     address: { type: DataTypes.TEXT },
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },

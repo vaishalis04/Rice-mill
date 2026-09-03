@@ -6,7 +6,7 @@ class Role extends Model {}
 Role.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    role_name: { type: DataTypes.STRING(50), allowNull: false, unique: true },
+    role_name: { type: DataTypes.STRING(50), allowNull: false, unique: "roles_role_name_unique" },
     description: { type: DataTypes.TEXT },
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },

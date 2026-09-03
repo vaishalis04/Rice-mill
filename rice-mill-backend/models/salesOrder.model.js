@@ -6,7 +6,15 @@ class SalesOrder extends Model {}
 SalesOrder.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    so_no: { type: DataTypes.STRING(30), allowNull: false },
+    // Named unique constraint (not a bare `unique: true` — see
+    // user.model.js for why) closing the actual structural gap that let
+    // Sales Orders end up split into duplicate rows sharing one so_no in
+    // the first place: nothing enforced so_no uniqueness at the DB level,
+    // so a bug (the old updateBeforeApproval/addItem) or even a raw
+    // double-submit could silently create a second row for the same
+    // order. The model is one row per so_no by design — the DB should
+    // refuse anything that breaks that, not just the application code.
+    so_no: { type: DataTypes.STRING(30), allowNull: false, unique: "sales_order_so_no_unique" },
     customer_id: {
       type: DataTypes.BIGINT,
       allowNull: false,

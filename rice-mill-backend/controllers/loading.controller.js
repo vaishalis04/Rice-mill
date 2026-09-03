@@ -1,6 +1,34 @@
 const createError = require("http-errors");
+const sequelize = require("../config/db");
 const { Loading, GateEntry, SalesOrder, Customer, MaterialMaster, Vehicle, Driver, User, Sampling, LabTest ,GateEntrySalesOrder } = require("../models/index");
 const { generateLoadingNo } = require("../helpers/helperFunction");
+
+// Same MariaDB/Sequelize JSON-column quirk handled in purchase.controller.js:
+// a JSON column can round-trip as a raw string instead of an already-parsed
+// array, so every read needs to tolerate both shapes.
+const parseItemsField = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+// Normalize a Loading row (Sequelize instance or plain object) into a plain
+// object with `items` guaranteed to be a real array before it goes out over
+// the API.
+const serializeLoading = (loading) => {
+  if (!loading) return loading;
+  const plain = typeof loading.toJSON === "function" ? loading.toJSON() : loading;
+  return { ...plain, items: parseItemsField(plain.items) };
+};
+
+const parseSoItems = (so) => parseItemsField(so?.items);
 
 const detailIncludes = [
   {
@@ -53,7 +81,7 @@ module.exports = {
 
       res.status(200).json({
         success: true,
-        data: rows,
+        data: rows.map(serializeLoading),
         pagination: { total: count, page: Number(page), limit: Number(limit), totalPages: Math.ceil(count / limit) },
       });
     } catch (err) {
@@ -69,13 +97,13 @@ module.exports = {
         include: detailIncludes,
       });
       if (!loading) throw createError(404, "Loading record not found");
-      res.status(200).json({ success: true, data: loading });
+      res.status(200).json({ success: true, data: serializeLoading(loading) });
     } catch (err) {
       next(err);
     }
   },
-
- create: async (req, res, next) => {
+ 
+create: async (req, res, next) => {
   try {
     const { gate_entry_id, loaded_qty, loaded_at, remarks, plant_id, material_quantities } = req.body;
     
@@ -248,12 +276,12 @@ module.exports = {
     // Generate loading number
     const loading_no = await generateLoadingNo();
 
-    // Create a SINGLE loading record (since Loading table doesn't have material_id)
+    // Create a SINGLE loading record
     const loading = await Loading.create({
       loading_no,
       gate_entry_id,
-      so_id: soId, // Use the SO ID from the first material
-      loaded_qty: loaded_qty, // Use the total loaded quantity
+      so_id: soId,
+      loaded_qty: loaded_qty,
       loaded_at: loaded_at || new Date(),
       loading_operator_id: req.user ? req.user.id : null,
       remarks: remarks || `Loaded ${validatedMaterials.length} material(s)`,
@@ -269,7 +297,7 @@ module.exports = {
 
     // Update the sales order's dispatched quantity and items
     const so = validatedMaterials[0].salesOrder;
-    const soItems = validatedMaterials[0].soItems;
+    let soItems = validatedMaterials[0].soItems;
     
     // Update the items with dispatched quantities for all materials
     const updatedItems = soItems.map(item => {
@@ -284,20 +312,32 @@ module.exports = {
       return item;
     });
     
-    // Calculate total dispatched qty for the SO
+    // Calculate per-material remaining quantities
+    const materialsStatus = updatedItems.map(item => ({
+      material_id: item.material_id,
+      ordered_qty: Number(item.qty || 0),
+      dispatched_qty: Number(item.dispatched_qty || 0),
+      remaining_qty: Number(item.qty || 0) - Number(item.dispatched_qty || 0)
+    }));
+    
+    // Check if ALL materials are fully loaded
+    const allMaterialsFullyLoaded = materialsStatus.every(m => m.remaining_qty <= 0);
+    
+    // Calculate total dispatched quantity
     const totalDispatchedQty = updatedItems.reduce((sum, item) => {
       return sum + Number(item.dispatched_qty || 0);
     }, 0);
     
-    const newRemainingQty = Number(so.qty) - totalDispatchedQty;
-    const isFullyLoaded = newRemainingQty <= 0;
-    
+    // Update the SO
     await so.update({
       dispatched_qty: totalDispatchedQty,
-      so_status: isFullyLoaded ? "dispatched" : "allocated",
+      so_status: allMaterialsFullyLoaded ? "dispatched" : "allocated",
       items: updatedItems,
       updated_by: req.user ? req.user.id : null,
     });
+    
+    // Calculate remaining quantities for response
+    const newRemainingQty = Number(so.qty) - totalDispatchedQty; // ✅ This was missing
     
     const results = [{
       so_id: so.id,
@@ -305,7 +345,8 @@ module.exports = {
       ordered_qty: Number(so.qty),
       dispatched_qty: totalDispatchedQty,
       remaining_qty: Math.max(newRemainingQty, 0),
-      is_fully_loaded: isFullyLoaded,
+      is_fully_loaded: allMaterialsFullyLoaded,
+      materials_status: materialsStatus,
       materials_loaded: validatedMaterials.map(m => ({
         material_id: m.material_id,
         material_name: m.material_name,
@@ -325,38 +366,169 @@ module.exports = {
     // Return response
     res.status(201).json({
       success: true,
-      msg: isFullyLoaded
+      msg: allMaterialsFullyLoaded
         ? `Loading recorded — Sales Order ${so.so_no} is now fully loaded and marked 'dispatched'.`
         : `Loading recorded — Sales Order ${so.so_no} still has remaining quantities.`,
       data: created,
       results: results,
-      all_fully_loaded: isFullyLoaded
+      all_fully_loaded: allMaterialsFullyLoaded
     });
   } catch (err) {
     next(err);
   }
 },
 
-  // PUT /api/loading/:id  — correct the loaded qty after the fact (e.g. a re-weigh).
+  // PUT /api/loading/:id — correct a loading after the fact (e.g. a re-weigh
+  // or a miscounted material). Supports two payload shapes:
+  //   1. { material_quantities: [{ material_id, qty }, ...], remarks? }
+  //      — edits the material-wise breakdown; loaded_qty and the linked
+  //      Sales Order's dispatched quantities are recalculated from it.
+  //   2. { loaded_qty, remarks } (legacy) — only touches the total/remarks,
+  //      kept for any older callers; doesn't touch per-material figures.
   update: async (req, res, next) => {
+    const t = await sequelize.transaction();
     try {
-      const loading = await Loading.findOne({ where: { id: req.params.id, is_deleted: false } });
+      const loading = await Loading.findOne({
+        where: { id: req.params.id, is_deleted: false },
+        transaction: t,
+      });
       if (!loading) throw createError(404, "Loading record not found");
 
-      const { loaded_qty, remarks } = req.body;
-      const updates = {};
-      if (loaded_qty !== undefined) {
-        if (!(Number(loaded_qty) > 0)) throw createError(400, "loaded_qty must be greater than 0");
-        updates.loaded_qty = loaded_qty;
-      }
-      if (remarks !== undefined) updates.remarks = remarks;
-      updates.updated_by = req.user ? req.user.id : null;
+      const { loaded_qty, remarks, material_quantities } = req.body;
 
-      await loading.update(updates);
+      if (Array.isArray(material_quantities)) {
+        if (material_quantities.length === 0) {
+          throw createError(400, "material_quantities must include at least one material");
+        }
+
+        const so = await SalesOrder.findOne({
+          where: { id: loading.so_id, is_deleted: false },
+          transaction: t,
+        });
+        if (!so) throw createError(404, "Linked Sales Order not found");
+
+        const materialIds = await MaterialMaster.findAll({
+          where: { id: material_quantities.map((m) => m.material_id).filter(Boolean) },
+          attributes: ["id", "name"],
+          transaction: t,
+        });
+        const materialById = new Map(materialIds.map((m) => [String(m.id), m]));
+
+        // Step 1 — reverse what THIS loading previously contributed, so the
+        // remaining-qty check below is against the SO's state as if this
+        // loading had never happened.
+        const oldItems = parseItemsField(loading.items);
+        const oldQtyByMaterial = new Map(
+          oldItems.map((it) => [String(it.material_id), Number(it.qty) || 0]),
+        );
+
+        let soItems = parseSoItems(so);
+        soItems = soItems.map((item) => {
+          const reverseQty = oldQtyByMaterial.get(String(item.material_id));
+          if (reverseQty) {
+            return {
+              ...item,
+              dispatched_qty: Math.max(0, Number(item.dispatched_qty || 0) - reverseQty),
+            };
+          }
+          return item;
+        });
+
+        // Step 2 — validate and apply the new per-material quantities.
+        const newItems = [];
+        let newTotalQty = 0;
+
+        for (const entry of material_quantities) {
+          const { material_id, qty } = entry || {};
+          if (!material_id) throw createError(400, "material_id is required for each material quantity");
+
+          const qtyNum = Number(qty);
+          if (!Number.isFinite(qtyNum) || qtyNum < 0) {
+            throw createError(400, `Invalid quantity for material ${material_id}`);
+          }
+          if (qtyNum === 0) continue; // treat 0 as "remove this material's contribution"
+
+          const soItem = soItems.find((it) => Number(it.material_id) === Number(material_id));
+          if (!soItem) {
+            throw createError(400, `Material ${material_id} not found on Sales Order ${so.so_no}`);
+          }
+
+          const orderedQty = Number(soItem.qty || 0);
+          const dispatchedQty = Number(soItem.dispatched_qty || 0);
+          const remainingQty = orderedQty - dispatchedQty;
+
+          if (qtyNum > remainingQty) {
+            const name = materialById.get(String(material_id))?.name || `Material ${material_id}`;
+            throw createError(
+              400,
+              `Quantity (${qtyNum}) for ${name} exceeds remaining qty (${remainingQty}) on SO ${so.so_no}`,
+            );
+          }
+
+          soItem.dispatched_qty = dispatchedQty + qtyNum;
+          newTotalQty += qtyNum;
+          newItems.push({
+            so_id: loading.so_id,
+            material_id: Number(material_id),
+            qty: qtyNum,
+          });
+        }
+
+        if (newItems.length === 0) {
+          throw createError(400, "At least one material must have a quantity greater than 0");
+        }
+
+        const totalDispatchedQty = soItems.reduce(
+          (sum, item) => sum + Number(item.dispatched_qty || 0),
+          0,
+        );
+        // Same fix as create(): the SO's real ordered total is the sum of
+        // each item's own qty, not the deprecated row-level so.qty column.
+        const totalOrderedQty = soItems.reduce(
+          (sum, item) => sum + Number(item.qty || 0),
+          0,
+        );
+        const newRemainingQty = totalOrderedQty - totalDispatchedQty;
+        const isFullyLoaded = newRemainingQty <= 0;
+
+        await so.update(
+          {
+            dispatched_qty: totalDispatchedQty,
+            so_status: isFullyLoaded ? "dispatched" : "allocated",
+            items: soItems,
+            updated_by: req.user ? req.user.id : null,
+          },
+          { transaction: t },
+        );
+
+        await loading.update(
+          {
+            loaded_qty: newTotalQty,
+            items: newItems,
+            remarks: remarks !== undefined ? remarks : loading.remarks,
+            updated_by: req.user ? req.user.id : null,
+          },
+          { transaction: t },
+        );
+      } else {
+        // Legacy path — total-only edit, no per-material changes.
+        const updates = {};
+        if (loaded_qty !== undefined) {
+          if (!(Number(loaded_qty) > 0)) throw createError(400, "loaded_qty must be greater than 0");
+          updates.loaded_qty = loaded_qty;
+        }
+        if (remarks !== undefined) updates.remarks = remarks;
+        updates.updated_by = req.user ? req.user.id : null;
+
+        await loading.update(updates, { transaction: t });
+      }
+
+      await t.commit();
 
       const updated = await Loading.findByPk(loading.id, { include: detailIncludes });
-      res.status(200).json({ success: true, msg: "Loading record updated", data: updated });
+      res.status(200).json({ success: true, msg: "Loading record updated", data: serializeLoading(updated) });
     } catch (err) {
+      await t.rollback();
       next(err);
     }
   },

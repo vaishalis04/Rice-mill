@@ -6,7 +6,7 @@ class WarehouseMaster extends Model {}
 WarehouseMaster.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    warehouse_code: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    warehouse_code: { type: DataTypes.STRING(30), allowNull: false, unique: "warehouse_master_warehouse_code_unique" },
     name: { type: DataTypes.STRING(100), allowNull: false },
     location: { type: DataTypes.STRING(255) },
     capacity: { type: DataTypes.DECIMAL(12, 2) },

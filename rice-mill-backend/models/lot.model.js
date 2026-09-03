@@ -6,7 +6,7 @@ class Lot extends Model {}
 Lot.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    lot_no: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    lot_no: { type: DataTypes.STRING(30), allowNull: false, unique: "lots_lot_no_unique" },
     purchase_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "purchase", key: "id" } }, // null for production-generated lots
     material_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "material_master", key: "id" } },
     variety_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "variety_master", key: "id" } },

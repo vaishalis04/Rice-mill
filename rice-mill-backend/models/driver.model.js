@@ -7,8 +7,8 @@ Driver.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
     name: { type: DataTypes.STRING(100), allowNull: false },
-    mobile: { type: DataTypes.STRING(15), allowNull: false, unique: true },
-    license_no: { type: DataTypes.STRING(30), unique: true },
+    mobile: { type: DataTypes.STRING(15), allowNull: false, unique: "drivers_mobile_unique" },
+    license_no: { type: DataTypes.STRING(30), unique: "drivers_license_no_unique" },
     photo_url: { type: DataTypes.STRING(255) },
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },

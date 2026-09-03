@@ -22,7 +22,7 @@ ReasonCodeMaster.init(
     underscored: true,
     paranoid: false, // using explicit is_deleted flag instead of Sequelize's own soft-delete timestamp
     indexes: [
-      { unique: true, fields: ["category", "code"] },
+      { name: "reason_code_master_category_code_unique", unique: true, fields: ["category", "code"] },
     ],
   }
 );

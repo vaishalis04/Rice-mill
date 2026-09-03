@@ -568,25 +568,36 @@ getAll: async (req, res, next) => {
   }
 },
 
-  getById: async (req, res, next) => {
+getById: async (req, res, next) => {
   try {
     const entry = await GateEntry.findOne({
       where: { id: req.params.id, is_deleted: false },
       include: [
-        // Existing details
-        ...detailIncludes,
-        
-        // Purchase Order Relations
+        // Vehicle
         {
-          model: GateEntryPurchaseOrder,
-          as: "purchaseOrders",
-          required: false,
-          where: {
-            is_deleted: false,
-          },
+          model: Vehicle,
+          as: "vehicle",
+          attributes: ["id", "vehicle_no", "type", "capacity"],
         },
-        
-        // Sales Order Relations - with full Sales Order data including items
+        // Driver
+        {
+          model: Driver,
+          as: "driver",
+          attributes: ["id", "name", "mobile", "license_no", "photo_url"],
+        },
+        // Vendor
+        {
+          model: Vendor,
+          as: "vendor",
+          attributes: ["id", "vendor_code", "name", "vendor_type"],
+        },
+        // Plant
+        {
+          model: PlantMaster,
+          as: "plant",
+          attributes: ["id", "plant_code", "name"],
+        },
+        // Sales Order Relations - CRITICAL: Include the sales_order with items
         {
           model: GateEntrySalesOrder,
           as: "sales_orders",
@@ -619,21 +630,48 @@ getAll: async (req, res, next) => {
             }
           ],
         },
+        // Purchase Order Relations
+        {
+          model: GateEntryPurchaseOrder,
+          as: "purchaseOrders",
+          required: false,
+          where: {
+            is_deleted: false,
+          },
+          include: [
+            {
+              model: PurchaseOrder,
+              as: "purchaseOrder",
+              required: false,
+            },
+            {
+              model: MaterialMaster,
+              as: "material",
+              attributes: ["id", "material_code", "name"],
+            }
+          ],
+        },
       ],
     });
     
     if (!entry) throw createError(404, "Gate entry not found");
     
-    // Format the response
+    // Convert to JSON
     const item = entry.toJSON();
     
-    // Format sales orders with proper remaining quantities
+    // ============================================================
+    // FORMAT SALES ORDERS WITH PROPER REMAINING QUANTITIES
+    // ============================================================
+    
     const salesOrders = item.sales_orders || [];
     const formattedSalesOrders = salesOrders.map((salesEntry) => {
+      // Get the full sales order data
       const salesOrder = salesEntry.sales_order || {};
+      
+      // IMPORTANT: Get items from the sales order (not the junction table)
       let soItems = salesOrder.items || [];
       
-      // Parse items if string
+      // Parse items if they're stored as JSON string
       if (typeof soItems === "string") {
         try {
           soItems = JSON.parse(soItems);
@@ -642,15 +680,23 @@ getAll: async (req, res, next) => {
         }
       }
       
-      // Find this material in the items
-      const soItem = Array.isArray(soItems) 
-        ? soItems.find(i => Number(i.material_id) === Number(salesEntry.material_id))
-        : null;
+      // Ensure soItems is an array
+      if (!Array.isArray(soItems)) {
+        soItems = [];
+      }
       
-      // Calculate remaining quantity from the items JSON
-      const orderedQty = soItem ? Number(soItem.qty || salesEntry.qty) : Number(salesEntry.qty);
+      // Find the specific material in the items array
+      const soItem = soItems.find(
+        (i) => Number(i.material_id) === Number(salesEntry.material_id)
+      );
+      
+      // Calculate quantities from the sales order items
+      const orderedQty = soItem ? Number(soItem.qty || 0) : Number(salesEntry.qty || 0);
       const dispatchedQty = soItem ? Number(soItem.dispatched_qty || 0) : 0;
       const remainingQty = orderedQty - dispatchedQty;
+      
+      // Log for debugging
+      console.log(`Material ${salesEntry.material_id}: ordered=${orderedQty}, dispatched=${dispatchedQty}, remaining=${remainingQty}`);
       
       return {
         id: salesEntry.id,
@@ -667,24 +713,81 @@ getAll: async (req, res, next) => {
         plant_id: salesEntry.plant_id,
         createdAt: salesEntry.createdAt,
         updatedAt: salesEntry.updatedAt,
+        // Include the full sales order with items for reference
         sales_order: {
           ...salesOrder,
-          items: soItems, // Keep the full items for reference
+          items: soItems,
         },
         material: salesEntry.material || null,
       };
     });
     
-    // Format purchase orders
+    // ============================================================
+    // FORMAT PURCHASE ORDERS
+    // ============================================================
+    
     const purchaseOrders = item.purchaseOrders || [];
+    const formattedPurchaseOrders = purchaseOrders.map((poEntry) => {
+      // Get the full purchase order data
+      const purchaseOrder = poEntry.purchaseOrder || {};
+      
+      // Get items from the purchase order
+      let poItems = purchaseOrder.items || [];
+      
+      if (typeof poItems === "string") {
+        try {
+          poItems = JSON.parse(poItems);
+        } catch (e) {
+          poItems = [];
+        }
+      }
+      
+      if (!Array.isArray(poItems)) {
+        poItems = [];
+      }
+      
+      // Find the specific material in the items array
+      const poItem = poItems.find(
+        (i) => Number(i.material_id) === Number(poEntry.material_id)
+      );
+      
+      const orderedQty = poItem ? Number(poItem.qty || 0) : Number(poEntry.qty || 0);
+      const receivedQty = poItem ? Number(poItem.received_qty || 0) : 0;
+      const remainingQty = orderedQty - receivedQty;
+      
+      return {
+        id: poEntry.id,
+        gate_entry_id: poEntry.gate_entry_id,
+        po_id: poEntry.po_id,
+        material_id: poEntry.material_id,
+        qty: poEntry.qty,
+        ordered_qty: orderedQty,
+        received_qty: receivedQty,
+        remaining_qty: Math.max(remainingQty, 0),
+        created_by: poEntry.created_by,
+        updated_by: poEntry.updated_by,
+        is_deleted: poEntry.is_deleted,
+        plant_id: poEntry.plant_id,
+        createdAt: poEntry.createdAt,
+        updatedAt: poEntry.updatedAt,
+        purchase_order: {
+          ...purchaseOrder,
+          items: poItems,
+        },
+        material: poEntry.material || null,
+      };
+    });
+    
+    // ============================================================
+    // RESPONSE
+    // ============================================================
     
     res.status(200).json({
       success: true,
       data: {
         ...item,
         sales_orders: formattedSalesOrders,
-        purchase_orders: purchaseOrders,
-        // Remove Sequelize association names
+        purchase_orders: formattedPurchaseOrders,
         purchaseOrders: undefined,
       },
     });
@@ -1029,10 +1132,7 @@ generateToken: async (req, res, next) => {
     }
 
     if (!["purchase", "sales"].includes(entry_type)) {
-      throw createError(
-        400,
-        "entry_type must be either purchase or sales"
-      );
+      throw createError(400, "entry_type must be either purchase or sales");
     }
 
     // ============================================================
@@ -1040,10 +1140,7 @@ generateToken: async (req, res, next) => {
     // ============================================================
 
     if (entry_type === "purchase") {
-      if (
-        !Array.isArray(purchase_orders) ||
-        purchase_orders.length === 0
-      ) {
+      if (!Array.isArray(purchase_orders) || purchase_orders.length === 0) {
         throw createError(
           400,
           "purchase_orders is required and must contain at least one Purchase Order"
@@ -1051,10 +1148,7 @@ generateToken: async (req, res, next) => {
       }
 
       if (!vendor_id) {
-        throw createError(
-          400,
-          "vendor_id is required for a purchase entry"
-        );
+        throw createError(400, "vendor_id is required for a purchase entry");
       }
     }
 
@@ -1063,10 +1157,7 @@ generateToken: async (req, res, next) => {
     // ============================================================
 
     if (entry_type === "sales") {
-      if (
-        !Array.isArray(sales_orders) ||
-        sales_orders.length === 0
-      ) {
+      if (!Array.isArray(sales_orders) || sales_orders.length === 0) {
         throw createError(
           400,
           "sales_orders is required and must contain at least one Sales Order"
@@ -1074,10 +1165,7 @@ generateToken: async (req, res, next) => {
       }
 
       if (!customer_id) {
-        throw createError(
-          400,
-          "customer_id is required for a sales entry"
-        );
+        throw createError(400, "customer_id is required for a sales entry");
       }
     }
 
@@ -1085,25 +1173,11 @@ generateToken: async (req, res, next) => {
     // 4. RESOLVE PLANT
     // ============================================================
 
-    const resolvedPlantId =
-      plant_id ||
-      (req.user ? req.user.plant_id : null);
+    const resolvedPlantId = plant_id || (req.user ? req.user.plant_id : null);
 
     // ============================================================
     // 5. GET VEHICLE
     // ============================================================
-
-    /*
-     * IMPORTANT:
-     * generateTokenNo() needs the actual vehicle number.
-     *
-     * Example:
-     * vehicle_id = 1
-     * vehicle_no = MP09 AB 1234
-     *
-     * Generated token:
-     * GT-MP09AB1234-0001
-     */
 
     const vehicle = await Vehicle.findOne({
       where: {
@@ -1114,13 +1188,9 @@ generateToken: async (req, res, next) => {
     });
 
     if (!vehicle) {
-      throw createError(
-        400,
-        `Invalid vehicle_id: ${vehicle_id}`
-      );
+      throw createError(400, `Invalid vehicle_id: ${vehicle_id}`);
     }
 
-    // Change vehicle_no to your actual column name if different.
     const vehicleNo =
       vehicle.vehicle_no ||
       vehicle.vehicle_number ||
@@ -1142,30 +1212,21 @@ generateToken: async (req, res, next) => {
 
     if (entry_type === "sales") {
       for (const soItem of sales_orders) {
-        const {
-          so_id,
-          materials,
-        } = soItem || {};
+        const { so_id, materials } = soItem || {};
 
         // --------------------------------------------------------
         // SO ID
         // --------------------------------------------------------
 
         if (!so_id) {
-          throw createError(
-            400,
-            "so_id is required for every sales order"
-          );
+          throw createError(400, "so_id is required for every sales order");
         }
 
         // --------------------------------------------------------
         // MATERIALS
         // --------------------------------------------------------
 
-        if (
-          !Array.isArray(materials) ||
-          materials.length === 0
-        ) {
+        if (!Array.isArray(materials) || materials.length === 0) {
           throw createError(
             400,
             `materials are required for Sales Order ${so_id}`
@@ -1173,7 +1234,7 @@ generateToken: async (req, res, next) => {
         }
 
         // --------------------------------------------------------
-        // FIND SALES ORDER
+        // FIND SALES ORDER WITH LOCK
         // --------------------------------------------------------
 
         const salesOrder = await SalesOrder.findOne({
@@ -1186,10 +1247,7 @@ generateToken: async (req, res, next) => {
         });
 
         if (!salesOrder) {
-          throw createError(
-            400,
-            `Sales Order ${so_id} not found`
-          );
+          throw createError(400, `Sales Order ${so_id} not found`);
         }
 
         // --------------------------------------------------------
@@ -1198,8 +1256,7 @@ generateToken: async (req, res, next) => {
 
         if (
           customer_id &&
-          Number(salesOrder.customer_id) !==
-            Number(customer_id)
+          Number(salesOrder.customer_id) !== Number(customer_id)
         ) {
           throw createError(
             400,
@@ -1211,25 +1268,15 @@ generateToken: async (req, res, next) => {
         // APPROVAL VALIDATION
         // --------------------------------------------------------
 
-        if (
-          salesOrder.approval_status !==
-          "approved"
-        ) {
-          throw createError(
-            400,
-            `Sales Order ${so_id} is not approved`
-          );
+        if (salesOrder.approval_status !== "approved") {
+          throw createError(400, `Sales Order ${so_id} is not approved`);
         }
 
         // --------------------------------------------------------
         // STATUS VALIDATION
         // --------------------------------------------------------
 
-        if (
-          ["cancelled", "closed"].includes(
-            salesOrder.so_status
-          )
-        ) {
+        if (["cancelled", "closed"].includes(salesOrder.so_status)) {
           throw createError(
             400,
             `Sales Order ${so_id} is ${salesOrder.so_status}`
@@ -1260,6 +1307,13 @@ generateToken: async (req, res, next) => {
           );
         }
 
+        if (soItems.length === 0) {
+          throw createError(
+            400,
+            `Sales Order ${so_id} has no materials assigned. Please check the Sales Order configuration.`
+          );
+        }
+
         // --------------------------------------------------------
         // VALIDATE REQUESTED MATERIALS
         // --------------------------------------------------------
@@ -1268,10 +1322,7 @@ generateToken: async (req, res, next) => {
         const validatedMaterials = [];
 
         for (const materialItem of materials) {
-          const {
-            material_id,
-            qty,
-          } = materialItem || {};
+          const { material_id, qty } = materialItem || {};
 
           // ------------------------------------------------------
           // MATERIAL ID
@@ -1284,41 +1335,28 @@ generateToken: async (req, res, next) => {
             );
           }
 
-          const materialKey =
-            Number(material_id);
+          const materialKey = Number(material_id);
 
           // ------------------------------------------------------
           // DUPLICATE MATERIAL
           // ------------------------------------------------------
 
-          if (
-            requestedMaterialIds.has(
-              materialKey
-            )
-          ) {
+          if (requestedMaterialIds.has(materialKey)) {
             throw createError(
               400,
               `Duplicate material ${material_id} in Sales Order ${so_id}`
             );
           }
 
-          requestedMaterialIds.add(
-            materialKey
-          );
+          requestedMaterialIds.add(materialKey);
 
           // ------------------------------------------------------
           // REQUESTED QTY
           // ------------------------------------------------------
 
-          const requestedQty =
-            Number(qty);
+          const requestedQty = Number(qty);
 
-          if (
-            !Number.isFinite(
-              requestedQty
-            ) ||
-            requestedQty <= 0
-          ) {
+          if (!Number.isFinite(requestedQty) || requestedQty <= 0) {
             throw createError(
               400,
               `qty must be greater than 0 for Sales Order ${so_id}, material ${material_id}`
@@ -1329,14 +1367,9 @@ generateToken: async (req, res, next) => {
           // FIND MATERIAL INSIDE JSON ITEMS
           // ------------------------------------------------------
 
-          const soMaterial =
-            soItems.find(
-              (item) =>
-                Number(
-                  item.material_id
-                ) ===
-                Number(material_id)
-            );
+          const soMaterial = soItems.find(
+            (item) => Number(item.material_id) === Number(material_id)
+          );
 
           if (!soMaterial) {
             throw createError(
@@ -1349,17 +1382,9 @@ generateToken: async (req, res, next) => {
           // ORDERED QTY
           // ------------------------------------------------------
 
-          const orderedQty =
-            Number(
-              soMaterial.qty || 0
-            );
+          const orderedQty = Number(soMaterial.qty || 0);
 
-          if (
-            !Number.isFinite(
-              orderedQty
-            ) ||
-            orderedQty <= 0
-          ) {
+          if (!Number.isFinite(orderedQty) || orderedQty <= 0) {
             throw createError(
               400,
               `Invalid ordered quantity for Sales Order ${so_id}, material ${material_id}`
@@ -1370,37 +1395,26 @@ generateToken: async (req, res, next) => {
           // DISPATCHED QTY
           // ------------------------------------------------------
 
-          const dispatchedQty =
-            Number(
-              soMaterial.dispatched_qty ||
-                0
-            );
+          const dispatchedQty = Number(soMaterial.dispatched_qty || 0);
 
           // ------------------------------------------------------
           // REMAINING QTY
           // ------------------------------------------------------
 
-          const remainingQty =
-            orderedQty -
-            dispatchedQty;
+          const remainingQty = orderedQty - dispatchedQty;
 
-          if (
-            remainingQty <= 0
-          ) {
+          if (remainingQty <= 0) {
             throw createError(
               400,
-              `Sales Order ${so_id}, material ${material_id} has no remaining quantity`
+              `Sales Order ${so_id}, material ${material_id} has no remaining quantity (${remainingQty} remaining)`
             );
           }
 
           // ------------------------------------------------------
-          // CHECK REQUESTED QTY
+          // CHECK REQUESTED QTY DOESN'T EXCEED REMAINING
           // ------------------------------------------------------
 
-          if (
-            requestedQty >
-            remainingQty
-          ) {
+          if (requestedQty > remainingQty) {
             throw createError(
               400,
               `Requested quantity ${requestedQty} exceeds remaining quantity ${remainingQty} for Sales Order ${so_id}, material ${material_id}`
@@ -1412,31 +1426,13 @@ generateToken: async (req, res, next) => {
           // ------------------------------------------------------
 
           validatedMaterials.push({
-            so_id:
-              salesOrder.id,
-
-            material_id:
-              Number(
-                soMaterial.material_id
-              ),
-
-            qty:
-              requestedQty,
-
-            rate:
-              Number(
-                soMaterial.rate || 0
-              ),
-
-            ordered_qty:
-              orderedQty,
-
-            dispatched_qty:
-              dispatchedQty,
-
-            remaining_qty:
-              remainingQty,
-
+            so_id: salesOrder.id,
+            material_id: Number(soMaterial.material_id),
+            qty: requestedQty,
+            rate: Number(soMaterial.rate || 0),
+            ordered_qty: orderedQty,
+            dispatched_qty: dispatchedQty,
+            remaining_qty: remainingQty,
             salesOrder,
           });
         }
@@ -1446,261 +1442,51 @@ generateToken: async (req, res, next) => {
         // --------------------------------------------------------
 
         validatedSalesOrders.push({
-          so_id:
-            salesOrder.id,
-
-          so_no:
-            salesOrder.so_no,
-
-          customer_id:
-            salesOrder.customer_id,
-
-          materials:
-            validatedMaterials,
-
+          so_id: salesOrder.id,
+          so_no: salesOrder.so_no,
+          customer_id: salesOrder.customer_id,
+          materials: validatedMaterials,
           salesOrder,
         });
       }
     }
 
     // ============================================================
-    // 7. CALCULATE TOTAL EXPECTED QTY
+    // 7. VALIDATE PURCHASE ORDERS
     // ============================================================
 
-    let calculatedTotalQty = 0;
-
-    if (entry_type === "sales") {
-      calculatedTotalQty =
-        validatedSalesOrders.reduce(
-          (total, so) => {
-            return (
-              total +
-              so.materials.reduce(
-                (
-                  materialTotal,
-                  material
-                ) =>
-                  materialTotal +
-                  Number(
-                    material.qty || 0
-                  ),
-                0
-              )
-            );
-          },
-          0
-        );
-    }
-
-    // ============================================================
-    // 8. VALIDATE EXPECTED QTY
-    // ============================================================
-
-    if (
-      entry_type === "sales" &&
-      expected_qty !== undefined &&
-      expected_qty !== null
-    ) {
-      const expectedQtyNum =
-        Number(expected_qty);
-
-      if (
-        !Number.isFinite(
-          expectedQtyNum
-        ) ||
-        expectedQtyNum <= 0
-      ) {
-        throw createError(
-          400,
-          "expected_qty must be greater than 0"
-        );
-      }
-
-      if (
-        Math.abs(
-          expectedQtyNum -
-            calculatedTotalQty
-        ) > 0.01
-      ) {
-        throw createError(
-          400,
-          `expected_qty ${expectedQtyNum} does not match total Sales Order quantity ${calculatedTotalQty}`
-        );
-      }
-    }
-
-    // ============================================================
-    // 9. GENERATE TOKEN NUMBER
-    // ============================================================
-
-    /*
-     * Pass the actual vehicle number here.
-     *
-     * Example:
-     * vehicleNo = "MP09 AB 1234"
-     *
-     * Helper cleans it:
-     * MP09AB1234
-     *
-     * Result:
-     * GT-MP09AB1234-0001
-     */
-
-    const token_no =
-      await generateTokenNo(vehicleNo);
-
-    // ============================================================
-    // 10. CREATE GATE ENTRY
-    // ============================================================
-
-    const gateEntryData = {
-      token_no,
-
-      vehicle_id,
-
-      driver_id,
-
-      vendor_id:
-        entry_type === "purchase"
-          ? vendor_id || null
-          : null,
-
-      customer_id:
-        entry_type === "sales"
-          ? customer_id || null
-          : null,
-
-      challan_no:
-        challan_no || null,
-
-      expected_qty:
-        expected_qty !== undefined &&
-        expected_qty !== null
-          ? Number(expected_qty)
-          : entry_type === "sales"
-          ? calculatedTotalQty
-          : null,
-
-      plant_id:
-        resolvedPlantId,
-
-      entry_type,
-
-      so_id: null,
-
-      material_id: null,
-
-      gate_status:
-        "waiting_token",
-
-      created_by:
-        req.user
-          ? req.user.id
-          : null,
-    };
-
-    const gateEntry =
-      await GateEntry.create(
-        gateEntryData,
-        {
-          transaction: t,
-        }
-      );
-
-    // ============================================================
-    // 11. CREATE SALES ORDER RELATION RECORDS
-    // ============================================================
-
-    if (entry_type === "sales") {
-      const salesOrderRows = [];
-
-      for (
-        const soItem
-        of validatedSalesOrders
-      ) {
-        for (
-          const material
-          of soItem.materials
-        ) {
-          salesOrderRows.push({
-            gate_entry_id:
-              gateEntry.id,
-
-            so_id:
-              material.so_id,
-
-            material_id:
-              material.material_id,
-
-            qty:
-              material.qty,
-
-            plant_id:
-              resolvedPlantId,
-
-            created_by:
-              req.user
-                ? req.user.id
-                : null,
-
-            updated_by:
-              null,
-
-            is_deleted:
-              false,
-          });
-        }
-      }
-
-      if (
-        salesOrderRows.length > 0
-      ) {
-        await GateEntrySalesOrder.bulkCreate(
-          salesOrderRows,
-          {
-            transaction: t,
-          }
-        );
-      }
-    }
-
-    // ============================================================
-    // 12. PURCHASE ORDER PROCESSING
-    // ============================================================
+    const validatedPurchaseOrders = [];
 
     if (entry_type === "purchase") {
-      const purchaseOrderRows = [];
+      // Validate vendor exists
+      const vendor = await Vendor.findOne({
+        where: {
+          id: vendor_id,
+          is_deleted: false,
+        },
+        transaction: t,
+      });
 
-      for (
-        const poItem
-        of purchase_orders
-      ) {
-        const {
-          po_id,
-          materials,
-        } = poItem || {};
+      if (!vendor) {
+        throw createError(400, `Invalid vendor_id: ${vendor_id}`);
+      }
+
+      for (const poItem of purchase_orders) {
+        const { po_id, materials } = poItem || {};
 
         // --------------------------------------------------------
         // PO ID
         // --------------------------------------------------------
 
         if (!po_id) {
-          throw createError(
-            400,
-            "po_id is required for every purchase order"
-          );
+          throw createError(400, "po_id is required for every purchase order");
         }
 
         // --------------------------------------------------------
         // MATERIALS
         // --------------------------------------------------------
 
-        if (
-          !Array.isArray(
-            materials
-          ) ||
-          materials.length === 0
-        ) {
+        if (!Array.isArray(materials) || materials.length === 0) {
           throw createError(
             400,
             `materials are required for Purchase Order ${po_id}`
@@ -1708,17 +1494,77 @@ generateToken: async (req, res, next) => {
         }
 
         // --------------------------------------------------------
-        // PROCESS MATERIALS
+        // FIND PURCHASE ORDER WITH LOCK
         // --------------------------------------------------------
 
-        for (
-          const material
-          of materials
-        ) {
-          const {
-            material_id,
-            qty,
-          } = material || {};
+        const purchaseOrder = await PurchaseOrder.findOne({
+          where: {
+            id: po_id,
+            is_deleted: false,
+          },
+          transaction: t,
+          lock: t.LOCK.UPDATE,
+        });
+
+        if (!purchaseOrder) {
+          throw createError(400, `Purchase Order ${po_id} not found`);
+        }
+
+        // --------------------------------------------------------
+        // VENDOR VALIDATION
+        // --------------------------------------------------------
+
+        if (Number(purchaseOrder.vendor_id) !== Number(vendor_id)) {
+          throw createError(
+            400,
+            `Purchase Order ${po_id} does not belong to vendor ${vendor_id}`
+          );
+        }
+
+        // --------------------------------------------------------
+        // GET ITEMS FROM JSON
+        // --------------------------------------------------------
+
+        let poItems = purchaseOrder.items || [];
+
+        if (typeof poItems === "string") {
+          try {
+            poItems = JSON.parse(poItems);
+          } catch (error) {
+            throw createError(
+              400,
+              `Invalid items JSON in Purchase Order ${po_id}`
+            );
+          }
+        }
+
+        if (!Array.isArray(poItems)) {
+          throw createError(
+            400,
+            `Invalid items data in Purchase Order ${po_id}`
+          );
+        }
+
+        if (poItems.length === 0) {
+          throw createError(
+            400,
+            `Purchase Order ${po_id} has no materials assigned. Please check the Purchase Order configuration.`
+          );
+        }
+
+        // --------------------------------------------------------
+        // VALIDATE REQUESTED MATERIALS
+        // --------------------------------------------------------
+
+        const requestedMaterialIds = new Set();
+        const validatedPOMaterials = [];
+
+        for (const materialItem of materials) {
+          const { material_id, qty } = materialItem || {};
+
+          // ------------------------------------------------------
+          // MATERIAL ID
+          // ------------------------------------------------------
 
           if (!material_id) {
             throw createError(
@@ -1727,119 +1573,388 @@ generateToken: async (req, res, next) => {
             );
           }
 
-          const requestedQty =
-            Number(qty);
+          const materialKey = Number(material_id);
 
-          if (
-            !Number.isFinite(
-              requestedQty
-            ) ||
-            requestedQty <= 0
-          ) {
+          // ------------------------------------------------------
+          // DUPLICATE MATERIAL
+          // ------------------------------------------------------
+
+          if (requestedMaterialIds.has(materialKey)) {
+            throw createError(
+              400,
+              `Duplicate material ${material_id} in Purchase Order ${po_id}`
+            );
+          }
+
+          requestedMaterialIds.add(materialKey);
+
+          // ------------------------------------------------------
+          // REQUESTED QTY
+          // ------------------------------------------------------
+
+          const requestedQty = Number(qty);
+
+          if (!Number.isFinite(requestedQty) || requestedQty <= 0) {
             throw createError(
               400,
               `qty must be greater than 0 for Purchase Order ${po_id}, material ${material_id}`
             );
           }
 
-          purchaseOrderRows.push({
-            gate_entry_id:
-              gateEntry.id,
+          // ------------------------------------------------------
+          // FIND MATERIAL INSIDE JSON ITEMS
+          // ------------------------------------------------------
 
-            po_id,
+          const poMaterial = poItems.find(
+            (item) => Number(item.material_id) === Number(material_id)
+          );
 
-            material_id,
+          if (!poMaterial) {
+            throw createError(
+              400,
+              `Purchase Order ${po_id} does not contain material ${material_id}`
+            );
+          }
 
-            qty:
-              requestedQty,
+          // ------------------------------------------------------
+          // ORDERED QTY
+          // ------------------------------------------------------
 
-            plant_id:
-              resolvedPlantId,
+          const orderedQty = Number(poMaterial.qty || 0);
 
-            created_by:
-              req.user
-                ? req.user.id
-                : null,
+          if (!Number.isFinite(orderedQty) || orderedQty <= 0) {
+            throw createError(
+              400,
+              `Invalid ordered quantity for Purchase Order ${po_id}, material ${material_id}`
+            );
+          }
 
-            updated_by:
-              null,
+          // ------------------------------------------------------
+          // RECEIVED QTY
+          // ------------------------------------------------------
 
-            is_deleted:
-              false,
+          const receivedQty = Number(poMaterial.received_qty || 0);
+
+          // ------------------------------------------------------
+          // REMAINING QTY
+          // ------------------------------------------------------
+
+          const remainingQty = orderedQty - receivedQty;
+
+          if (remainingQty <= 0) {
+            throw createError(
+              400,
+              `Purchase Order ${po_id}, material ${material_id} has no remaining quantity (${remainingQty} remaining)`
+            );
+          }
+
+          // ------------------------------------------------------
+          // CHECK REQUESTED QTY
+          // ------------------------------------------------------
+
+          if (requestedQty > remainingQty) {
+            throw createError(
+              400,
+              `Requested quantity ${requestedQty} exceeds remaining quantity ${remainingQty} for Purchase Order ${po_id}, material ${material_id}`
+            );
+          }
+
+          // ------------------------------------------------------
+          // SAVE VALIDATED MATERIAL
+          // ------------------------------------------------------
+
+          validatedPOMaterials.push({
+            po_id: purchaseOrder.id,
+            material_id: Number(poMaterial.material_id),
+            qty: requestedQty,
+            rate: Number(poMaterial.rate || 0),
+            ordered_qty: orderedQty,
+            received_qty: receivedQty,
+            remaining_qty: remainingQty,
+            purchaseOrder,
           });
         }
+
+        // --------------------------------------------------------
+        // SAVE VALIDATED PO
+        // --------------------------------------------------------
+
+        validatedPurchaseOrders.push({
+          po_id: purchaseOrder.id,
+          po_no: purchaseOrder.po_no,
+          vendor_id: purchaseOrder.vendor_id,
+          materials: validatedPOMaterials,
+          purchaseOrder,
+        });
+      }
+    }
+
+    // ============================================================
+    // 8. CALCULATE TOTAL EXPECTED QTY
+    // ============================================================
+
+    let calculatedTotalQty = 0;
+
+    if (entry_type === "sales") {
+      calculatedTotalQty = validatedSalesOrders.reduce((total, so) => {
+        return (
+          total +
+          so.materials.reduce(
+            (materialTotal, material) =>
+              materialTotal + Number(material.qty || 0),
+            0
+          )
+        );
+      }, 0);
+    } else if (entry_type === "purchase") {
+      calculatedTotalQty = validatedPurchaseOrders.reduce((total, po) => {
+        return (
+          total +
+          po.materials.reduce(
+            (materialTotal, material) =>
+              materialTotal + Number(material.qty || 0),
+            0
+          )
+        );
+      }, 0);
+    }
+
+    // ============================================================
+    // 9. VALIDATE EXPECTED QTY
+    // ============================================================
+
+    if (expected_qty !== undefined && expected_qty !== null) {
+      const expectedQtyNum = Number(expected_qty);
+
+      if (!Number.isFinite(expectedQtyNum) || expectedQtyNum <= 0) {
+        throw createError(400, "expected_qty must be greater than 0");
       }
 
-      // ----------------------------------------------------------
-      // BULK CREATE PO RELATIONS
-      // ----------------------------------------------------------
-
-      if (
-        purchaseOrderRows.length > 0
-      ) {
-        await GateEntryPurchaseOrder.bulkCreate(
-          purchaseOrderRows,
-          {
-            transaction: t,
-          }
+      if (Math.abs(expectedQtyNum - calculatedTotalQty) > 0.01) {
+        throw createError(
+          400,
+          `expected_qty ${expectedQtyNum} does not match total quantity ${calculatedTotalQty}`
         );
       }
     }
 
     // ============================================================
-    // 13. COMMIT TRANSACTION
+    // 10. GENERATE TOKEN NUMBER
+    // ============================================================
+
+    const token_no = await generateTokenNo(vehicleNo);
+
+    // ============================================================
+    // 11. CREATE GATE ENTRY
+    // ============================================================
+
+    const gateEntryData = {
+      token_no,
+      vehicle_id,
+      driver_id,
+      vendor_id: entry_type === "purchase" ? vendor_id || null : null,
+      customer_id: entry_type === "sales" ? customer_id || null : null,
+      challan_no: challan_no || null,
+      expected_qty: expected_qty !== undefined && expected_qty !== null
+        ? Number(expected_qty)
+        : entry_type === "sales"
+        ? calculatedTotalQty
+        : null,
+      plant_id: resolvedPlantId,
+      entry_type,
+      so_id: null,
+      material_id: null,
+      gate_status: "waiting_token",
+      created_by: req.user ? req.user.id : null,
+    };
+
+    const gateEntry = await GateEntry.create(gateEntryData, {
+      transaction: t,
+    });
+
+    // ============================================================
+    // 12. CREATE SALES ORDER RELATION RECORDS
+    // ============================================================
+
+    if (entry_type === "sales") {
+      const salesOrderRows = [];
+
+      for (const soItem of validatedSalesOrders) {
+        for (const material of soItem.materials) {
+          salesOrderRows.push({
+            gate_entry_id: gateEntry.id,
+            so_id: material.so_id,
+            material_id: material.material_id,
+            qty: material.qty,
+            plant_id: resolvedPlantId,
+            created_by: req.user ? req.user.id : null,
+            updated_by: null,
+            is_deleted: false,
+          });
+        }
+      }
+
+      if (salesOrderRows.length > 0) {
+        await GateEntrySalesOrder.bulkCreate(salesOrderRows, {
+          transaction: t,
+        });
+      }
+    }
+
+    // ============================================================
+    // 13. CREATE PURCHASE ORDER RELATION RECORDS
+    // ============================================================
+
+    if (entry_type === "purchase") {
+      const purchaseOrderRows = [];
+
+      for (const poItem of validatedPurchaseOrders) {
+        for (const material of poItem.materials) {
+          purchaseOrderRows.push({
+            gate_entry_id: gateEntry.id,
+            po_id: material.po_id,
+            material_id: material.material_id,
+            qty: material.qty,
+            plant_id: resolvedPlantId,
+            created_by: req.user ? req.user.id : null,
+            updated_by: null,
+            is_deleted: false,
+          });
+        }
+      }
+
+      if (purchaseOrderRows.length > 0) {
+        await GateEntryPurchaseOrder.bulkCreate(purchaseOrderRows, {
+          transaction: t,
+        });
+      }
+    }
+
+    // ============================================================
+    // 14. COMMIT TRANSACTION
     // ============================================================
 
     await t.commit();
 
     // ============================================================
-    // 14. GET CREATED GATE ENTRY - FIXED INCLUDES
+    // 15. GET CREATED GATE ENTRY - FIXED ALIASES
     // ============================================================
 
-    const createdGateEntry =
-      await GateEntry.findByPk(
-        gateEntry.id,
+    const createdGateEntry = await GateEntry.findByPk(gateEntry.id, {
+      include: [
         {
+          model: GateEntrySalesOrder,
+          as: "sales_orders", // This matches the association alias
+          required: false,
           include: [
             {
-              model: GateEntrySalesOrder,
-              as: "sales_orders",
+              model: SalesOrder,
+              as: "sales_order", // This matches the association alias
               required: false,
-              include: [
-                {
-                  model: SalesOrder,
-                  as: "sales_order", // ✅ FIXED: Changed from "sales_orders" to "sales_order"
-                  required: false,
-                },
-              ],
             },
             {
-              model: GateEntryPurchaseOrder,
-              as: "purchase_orders",
-              required: false,
+              model: MaterialMaster,
+              as: "material", // This matches the association alias
+              attributes: ["id", "material_code", "name"],
             },
           ],
-        }
-      );
+        },
+        {
+          model: GateEntryPurchaseOrder,
+          as: "purchaseOrders", // ✅ FIXED: Changed from "purchase_orders" to "purchaseOrders" to match association
+          required: false,
+          include: [
+            {
+              model: PurchaseOrder,
+              as: "purchaseOrder", // ✅ FIXED: Changed from "purchase_order" to "purchaseOrder" to match association
+              required: false,
+            },
+            {
+              model: MaterialMaster,
+              as: "material", // This matches the association alias
+              attributes: ["id", "material_code", "name"],
+            },
+          ],
+        },
+        {
+          model: Vehicle,
+          as: "vehicle",
+          attributes: ["id", "vehicle_no", "type", "capacity"],
+        },
+        {
+          model: Driver,
+          as: "driver",
+          attributes: ["id", "name", "mobile", "license_no", "photo_url"],
+        },
+        {
+          model: Vendor,
+          as: "vendor",
+          attributes: ["id", "vendor_code", "name", "vendor_type"],
+        },
+        {
+          model: PlantMaster,
+          as: "plant",
+          attributes: ["id", "plant_code", "name"],
+        },
+      ],
+    });
 
     // ============================================================
-    // 15. RESPONSE
+    // 16. FORMAT RESPONSE WITH MATERIAL DETAILS
+    // ============================================================
+
+    let materialDetails = [];
+
+    if (entry_type === "sales") {
+      for (const soItem of validatedSalesOrders) {
+        for (const material of soItem.materials) {
+          materialDetails.push({
+            so_id: material.so_id,
+            so_no: soItem.so_no,
+            material_id: material.material_id,
+            requested_qty: material.qty,
+            ordered_qty: material.ordered_qty,
+            already_dispatched: material.dispatched_qty,
+            remaining_before: material.remaining_qty,
+            remaining_after: material.remaining_qty - material.qty,
+            is_fully_loaded: (material.remaining_qty - material.qty) <= 0,
+          });
+        }
+      }
+    } else if (entry_type === "purchase") {
+      for (const poItem of validatedPurchaseOrders) {
+        for (const material of poItem.materials) {
+          materialDetails.push({
+            po_id: material.po_id,
+            po_no: poItem.po_no,
+            material_id: material.material_id,
+            requested_qty: material.qty,
+            ordered_qty: material.ordered_qty,
+            already_received: material.received_qty,
+            remaining_before: material.remaining_qty,
+            remaining_after: material.remaining_qty - material.qty,
+            is_fully_received: (material.remaining_qty - material.qty) <= 0,
+          });
+        }
+      }
+    }
+
+    // ============================================================
+    // 17. RESPONSE
     // ============================================================
 
     return res.status(201).json({
       success: true,
-
       msg:
         entry_type === "sales"
           ? "Gate entry created with Sales Order(s)"
           : "Gate entry created with Purchase Order(s)",
-
-      data:
-        createdGateEntry,
+      token_no: token_no,
+      data: createdGateEntry,
+      material_details: materialDetails,
+      total_qty: calculatedTotalQty,
     });
-
   } catch (err) {
-
     // ============================================================
     // ROLLBACK
     // ============================================================
@@ -1849,16 +1964,10 @@ generateToken: async (req, res, next) => {
         await t.rollback();
       }
     } catch (rollbackError) {
-      console.error(
-        "Transaction rollback error:",
-        rollbackError
-      );
+      console.error("Transaction rollback error:", rollbackError);
     }
 
-    console.error(
-      "GENERATE TOKEN ERROR:",
-      err
-    );
+    console.error("GENERATE TOKEN ERROR:", err);
 
     next(err);
   }

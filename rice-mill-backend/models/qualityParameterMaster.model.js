@@ -6,7 +6,7 @@ class QualityParameterMaster extends Model {}
 QualityParameterMaster.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    parameter_name: { type: DataTypes.STRING(100), allowNull: false, unique: true },
+    parameter_name: { type: DataTypes.STRING(100), allowNull: false, unique: "quality_parameter_master_parameter_name_unique" },
     unit: { type: DataTypes.STRING(20) },
     acceptable_min: { type: DataTypes.DECIMAL(10, 2) },
     acceptable_max: { type: DataTypes.DECIMAL(10, 2) },

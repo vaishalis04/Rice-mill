@@ -6,7 +6,7 @@ class UomMaster extends Model {}
 UomMaster.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    uom_code: { type: DataTypes.STRING(10), allowNull: false, unique: true },
+    uom_code: { type: DataTypes.STRING(10), allowNull: false, unique: "uom_master_uom_code_unique" },
     name: { type: DataTypes.STRING(50), allowNull: false },
     conversion_factor: { type: DataTypes.DECIMAL(10, 4), defaultValue: 1 },
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },

@@ -7,7 +7,7 @@ Dispatch.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
     so_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "sales_order", key: "id" } },
-    challan_no: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    challan_no: { type: DataTypes.STRING(30), allowNull: false, unique: "dispatch_challan_no_unique" },
     invoice_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "invoices", key: "id" } },
     vehicle_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "vehicles", key: "id" } },
     driver_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "drivers", key: "id" } },

@@ -115,10 +115,11 @@ export const uploadGatePhotoApi = (photoBlob) => {
   });
 };
 
-export const getGateEntriesApi = (status, entry_type) => {
+export const getGateEntriesApi = (status, entry_type, limit) => {
   const params = {};
   if (status) params.status = status;
   if (entry_type) params.entry_type = entry_type;
+  if (limit) params.limit = limit;
   return axiosInstance.get("/gate", { params });
 };
 
@@ -229,9 +230,14 @@ export const deleteSalesOrderApi = (id) =>
   axiosInstance.delete(`/sales-orders/${id}`);
 
 export const addSalesOrderItemApi = (so_no, data) =>
-  axiosInstance.post(
+  axiosInstance.put(
     `/sales-orders/so/${encodeURIComponent(so_no)}/items`,
     data,
+  );
+
+export const removeSalesOrderItemApi = (so_no, material_id) =>
+  axiosInstance.delete(
+    `/sales-orders/so/${encodeURIComponent(so_no)}/items/${encodeURIComponent(material_id)}`,
   );
 
 export const updateSalesOrderHeaderApi = (so_no, data) =>

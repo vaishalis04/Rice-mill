@@ -7,6 +7,7 @@ import {
   updateSalesOrderBeforeApprovalApi,
   addSalesOrderItemApi,
   deleteSalesOrderApi,
+  removeSalesOrderItemApi,
   getCustomersApi,
   getMasterSettingsApi,
   createMasterSettingApi,
@@ -14,7 +15,7 @@ import {
 } from "../../api/api";
 
 import "../../components/DataTable.css";
-import "./Salesorderapprovalpage.css";
+import "./SalesOrderApprovalPage.css";
 
 // Human-readable labels for the approval_status enum coming from the API.
 const STATUS_LABELS = {
@@ -555,12 +556,17 @@ export default function SalesOrderApprovalPage() {
   // delete) already exists in the router — no new backend route needed.
 
   const handleRemoveRow = async (row) => {
-    if (!row?.id) return;
+    if (!row?.so_no || !row?.material_id) return;
 
-    const siblings = getSiblingRows(selectedSO);
+    const items = getSoItems(selectedSO);
 
-    if (siblings.length <= 1) {
+    if (items.length <= 1) {
       setError("A sales order must have at least one material line — add a replacement before removing the last one.");
+      return;
+    }
+
+    if (Number(row.dispatched_qty || 0) > 0) {
+      setError(`${row?.material?.name || "This material"} already has loaded quantity against it and can't be removed.`);
       return;
     }
 
@@ -572,12 +578,12 @@ export default function SalesOrderApprovalPage() {
       return;
     }
 
-    setRemovingId(row.id);
+    setRemovingId(row.material_id);
     setError("");
     setSuccess("");
 
     try {
-      await deleteSalesOrderApi(row.id);
+      await removeSalesOrderItemApi(row.so_no, row.material_id);
 
       setSuccess(`Removed ${row?.material?.name || "material"} from Sales Order ${row.so_no}.`);
 
@@ -917,12 +923,12 @@ export default function SalesOrderApprovalPage() {
               <div className="so-amount-list">
                 <div>
                   <span>Material Lines</span>
-                  <strong>{getSiblingRows(selectedSO).length || 1}</strong>
+                  <strong>{getSoItems(selectedSO).length || 1}</strong>
                 </div>
 
                 <div className="so-grand-total">
                   <span>Total Amount (all lines)</span>
-                  <strong>{getGroupTotal(selectedSO)}</strong>
+                  <strong>{getAmount(selectedSO)}</strong>
                 </div>
               </div>
             </div>
@@ -962,15 +968,15 @@ export default function SalesOrderApprovalPage() {
                         <div className="so-subtext">{row.material?.material_code || getMaterialCode(selectedSO)}</div>
                       </td>
                       <td>{row.qty !== null && row.qty !== undefined ? Number(row.qty).toLocaleString("en-IN") : "—"}</td>
-                      <td>{getDispatchedQty(selectedSO)}</td>
+                      <td>{row.dispatched_qty !== null && row.dispatched_qty !== undefined ? Number(row.dispatched_qty).toLocaleString("en-IN") : "0"}</td>
                       <td>{row.rate !== null && row.rate !== undefined ? `₹${Number(row.rate).toLocaleString("en-IN")}` : "—"}</td>
                       <td>{row.qty !== null && row.qty !== undefined && row.rate !== null && row.rate !== undefined ? `₹${(Number(row.qty) * Number(row.rate)).toLocaleString("en-IN", { maximumFractionDigits: 2 })}` : "—"}</td>
                       {selectedSO.approval_status === "pending_approval" && (
                         <td>
                           <button
                             className="so-entity-delete-btn"
-                            onClick={() => handleRemoveRow({ ...selectedSO, id: selectedSO.id, material: row.material, qty: row.qty, rate: row.rate })}
-                            disabled={removingId === selectedSO.id}
+                            onClick={() => handleRemoveRow({ so_no: selectedSO.so_no, material_id: row.material_id, material: row.material, qty: row.qty, rate: row.rate, dispatched_qty: row.dispatched_qty })}
+                            disabled={removingId === row.material_id}
                             title="Remove this material line"
                           >
                             {removingId === selectedSO.id ? "…" : "🗑"}
@@ -995,6 +1001,16 @@ export default function SalesOrderApprovalPage() {
                   </p>
                 </div>
               </div>
+
+              {/* The page-level error/success banner sits at the very top
+                  of this page — with Material Details + this section below
+                  it, a validation or API error here rendered completely
+                  off-screen, so clicking "Add Material to SO" with a
+                  missing field (or a rejected request) looked like it did
+                  nothing at all. Showing it right here too means the
+                  person sees why, without losing their scroll position. */}
+              {error && <div className="dt-error" style={{ marginBottom: 12 }}>{error}</div>}
+              {success && <div className="so-success" style={{ marginBottom: 12 }}>{success}</div>}
 
               <div className="so-additem-grid">
                 <MaterialPicker

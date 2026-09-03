@@ -6,7 +6,7 @@ class VarietyMaster extends Model {}
 VarietyMaster.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    variety_name: { type: DataTypes.STRING(100), allowNull: false, unique: true },
+    variety_name: { type: DataTypes.STRING(100), allowNull: false, unique: "variety_master_variety_name_unique" },
     grain_type: { type: DataTypes.ENUM("long", "medium", "short"), allowNull: false },
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },

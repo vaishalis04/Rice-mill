@@ -6,7 +6,7 @@ class ProductionBatch extends Model {}
 ProductionBatch.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    batch_no: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    batch_no: { type: DataTypes.STRING(30), allowNull: false, unique: "production_batch_batch_no_unique" },
     lot_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "lots", key: "id" } },
     process_type: { type: DataTypes.ENUM("dry", "wet"), allowNull: false }, // note #22
     input_qty: { type: DataTypes.DECIMAL(12, 2), allowNull: false },

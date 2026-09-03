@@ -6,7 +6,7 @@ class GateEntry extends Model {}
 GateEntry.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    token_no: { type: DataTypes.STRING(30), allowNull: false, unique: true }, // sequential
+    token_no: { type: DataTypes.STRING(30), allowNull: false, unique: "gate_entry_token_no_unique" }, // sequential
     vehicle_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "vehicles", key: "id" } },
     driver_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "drivers", key: "id" } },
     driver_photo_url: { type: DataTypes.STRING(255) },

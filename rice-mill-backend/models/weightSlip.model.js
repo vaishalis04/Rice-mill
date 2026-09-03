@@ -7,7 +7,7 @@ WeightSlip.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
     gate_entry_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "gate_entry", key: "id" } },
-    slip_no: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    slip_no: { type: DataTypes.STRING(30), allowNull: false, unique: "weight_slip_slip_no_unique" },
     gross_weight: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
     tare_weight: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
     net_weight: {

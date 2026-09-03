@@ -6,9 +6,9 @@ class Vendor extends Model {}
 Vendor.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    vendor_code: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    vendor_code: { type: DataTypes.STRING(30), allowNull: false, unique: "vendors_vendor_code_unique" },
     name: { type: DataTypes.STRING(150), allowNull: false },
-    gstin: { type: DataTypes.STRING(15), unique: true, validate: { len: [15, 15] } },
+    gstin: { type: DataTypes.STRING(15), unique: "vendors_gstin_unique", validate: { len: [15, 15] } },
     address: { type: DataTypes.TEXT },
     bank_details: { type: DataTypes.JSON },
     rating: { type: DataTypes.DECIMAL(3, 2), defaultValue: 0 },

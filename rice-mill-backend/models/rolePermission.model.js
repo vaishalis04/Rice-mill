@@ -20,7 +20,7 @@ RolePermission.init(
     underscored: true,
     paranoid: false, // using explicit is_deleted flag instead of Sequelize's own soft-delete timestamp
     indexes: [
-      { unique: true, fields: ["role_id", "permission_id"] },
+      { name: "role_permissions_role_id_permission_id_unique", unique: true, fields: ["role_id", "permission_id"] },
     ],
   }
 );

@@ -6,7 +6,7 @@ class MachineMaster extends Model {}
 MachineMaster.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    machine_code: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    machine_code: { type: DataTypes.STRING(30), allowNull: false, unique: "machine_master_machine_code_unique" },
     name: { type: DataTypes.STRING(100), allowNull: false },
     type: { type: DataTypes.ENUM("huller", "separator", "shiner", "color_sorter", "grader", "dryer", "other"), allowNull: false },
     capacity_per_hr: { type: DataTypes.DECIMAL(10, 2) },

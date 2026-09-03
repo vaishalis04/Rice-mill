@@ -6,7 +6,7 @@ class Invoice extends Model {}
 Invoice.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    invoice_no: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    invoice_no: { type: DataTypes.STRING(30), allowNull: false, unique: "invoices_invoice_no_unique" },
     dispatch_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "dispatch", key: "id" } },
     customer_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "customers", key: "id" } },
     amount: { type: DataTypes.DECIMAL(14, 2), allowNull: false },

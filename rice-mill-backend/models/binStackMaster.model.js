@@ -6,7 +6,7 @@ class BinStackMaster extends Model {}
 BinStackMaster.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    bin_code: { type: DataTypes.STRING(30), allowNull: false, unique: true },
+    bin_code: { type: DataTypes.STRING(30), allowNull: false, unique: "bin_stack_master_bin_code_unique" },
     warehouse_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "warehouse_master", key: "id" } },
     capacity: { type: DataTypes.DECIMAL(12, 2) },
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },

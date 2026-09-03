@@ -209,12 +209,23 @@ const handleAddSalesOrder = async (so_id) => {
 
   setSelectedSOs((prev) => [...prev, soWithDetails]);
 
-  // Initialize materials for this SO - ensure material_id is properly set
+  // Initialize materials for this SO — ensure material_id is properly set.
+  // Only pre-select materials that still have something left to load;
+  // a fully-dispatched material's checkbox is disabled in the UI, so if
+  // it were auto-selected here the user could never uncheck it, and it
+  // would sit in the selection forever with no valid quantity, blocking
+  // submission.
+  const selectableItems = finalItems.filter((m) => {
+    const ordered = Number(m.qty || 0);
+    const dispatched = Number(m.dispatched_qty || 0);
+    return ordered - dispatched > 0;
+  });
+
   setSelectedSalesMaterials((prev) => ({
     ...prev,
-    [soWithDetails.id]: finalItems.map((m) => ({
+    [soWithDetails.id]: selectableItems.map((m) => ({
       material_id: Number(m.material_id), // Ensure it's a number
-      qty: m.qty || "",
+      qty: "",
     })),
   }));
 
@@ -534,15 +545,6 @@ const handleSalesMaterialQtyChange = (soId, materialId, qty) => {
   };
 
   useEffect(() => load(), []);
-
-  // On the default "All" view (no explicit status tab picked), exited
-  // trucks are left out — a vehicle that's checked out no longer belongs
-  // in the working list; it's only meant to be found via the explicit
-  // "Exited" tab. Picking that tab (or any other specific status) shows
-  // exactly what was asked for, unfiltered.
-  const displayedEntries = statusFilter
-    ? entries
-    : entries.filter((e) => e.gate_status !== "exited");
 
   const handleStatusFilterChange = (status) => {
     setStatusFilter(status);
@@ -1287,7 +1289,7 @@ const handleSalesMaterialQtyChange = (soId, materialId, qty) => {
 
       <DataTable
         loading={loading}
-        rows={displayedEntries}
+        rows={entries}
         columns={[
           {
             key: "token_no",

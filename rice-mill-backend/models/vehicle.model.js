@@ -6,7 +6,7 @@ class Vehicle extends Model {}
 Vehicle.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    vehicle_no: { type: DataTypes.STRING(20), allowNull: false, unique: true },
+    vehicle_no: { type: DataTypes.STRING(20), allowNull: false, unique: "vehicles_vehicle_no_unique" },
     type: { type: DataTypes.ENUM("truck", "tractor_trolley"), allowNull: false },
     capacity: { type: DataTypes.DECIMAL(10, 2) },
     owner_vendor_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "vendors", key: "id" } },
