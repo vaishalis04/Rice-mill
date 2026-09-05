@@ -490,6 +490,11 @@ completeUnloading: async (req, res, next) => {
         rejected_bags: rejectedBagsNum,
         rejected_qty: rejectedQty,
         unloading_status: "completed",
+        // Unloading always goes straight into the warehouse now — no
+        // separate manual "route to warehouse/production" step. A lot can
+        // still be used to start a Production batch directly whenever
+        // needed; this field is just where it currently physically sits.
+        destination: "warehouse",
         updated_by: req.user
           ? req.user.id
           : null,

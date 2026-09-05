@@ -3,9 +3,9 @@ import {
   getLotsApi,
   startUnloadingApi,
   completeUnloadingApi,
-  routeLotApi,
   getWeightSlipsApi,
   getGateEntryApi,
+  getWarehouseSummaryApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import ModuleGuide from "../../components/ModuleGuide";
@@ -20,7 +20,7 @@ const startForm0 = {
 
 export default function UnloadingPage() {
   const [inProgressLots, setInProgressLots] = useState([]);
-  const [pendingRouteLots, setPendingRouteLots] = useState([]);
+  const [unloadedLots, setUnloadedLots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [weighbridgeGateEntryIds, setWeighbridgeGateEntryIds] = useState(new Set());
   const [startFormState, setStartFormState] = useState(startForm0);
@@ -31,6 +31,12 @@ export default function UnloadingPage() {
   const [isUnloadingFormOpen, setIsUnloadingFormOpen] = useState(false);
   const [currentGateEntryId, setCurrentGateEntryId] = useState(null);
   const [currentWarehouseId, setCurrentWarehouseId] = useState(null);
+
+  // Details for whichever warehouse is currently selected in the Start
+  // Unloading form — capacity, current stock, and what's already sitting
+  // in it, so you can see what you're unloading into before committing.
+  const [warehouseSummary, setWarehouseSummary] = useState(null);
+  const [loadingWarehouseSummary, setLoadingWarehouseSummary] = useState(false);
 
   const gateEntries = useEntityLookup("gate_entry");
   const materials = useEntityLookup("material");
@@ -44,8 +50,8 @@ export default function UnloadingPage() {
         const lotsRes = res[0].data.data ?? res[0].data;
         const slipsRes = res[1].data.data ?? res[1].data;
         setInProgressLots((lotsRes || []).filter((lot) => lot.unloading_status === "in_progress"));
-        setPendingRouteLots(
-          (lotsRes || []).filter((lot) => lot.unloading_status === "completed" && !lot.destination)
+        setUnloadedLots(
+          (lotsRes || []).filter((lot) => lot.unloading_status === "completed")
         );
         const ids = new Set((slipsRes || []).map((s) => Number(s.gate_entry_id)).filter(Boolean));
         setWeighbridgeGateEntryIds(ids);
@@ -219,17 +225,29 @@ export default function UnloadingPage() {
     }
   };
 
-  const handleRoute = async (id, destination) => {
-    setError("");
-    setInfo("");
-    try {
-      await routeLotApi(id, destination);
-      setInfo(`Accepted stock routed to ${destination}.`);
-      load();
-    } catch (err) {
-      setError(err.response?.data?.message || "Routing failed");
+  // Fetch capacity/stock details for whichever warehouse is currently
+  // selected in the Start Unloading form.
+  useEffect(() => {
+    if (!startFormState.warehouse_id) {
+      setWarehouseSummary(null);
+      return;
     }
-  };
+    let cancelled = false;
+    setLoadingWarehouseSummary(true);
+    getWarehouseSummaryApi(startFormState.warehouse_id)
+      .then((res) => {
+        if (!cancelled) setWarehouseSummary(res.data.data);
+      })
+      .catch(() => {
+        if (!cancelled) setWarehouseSummary(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingWarehouseSummary(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [startFormState.warehouse_id]);
 
   const addCustomUnloadingItem = () => {
     const newItem = {
@@ -409,6 +427,65 @@ export default function UnloadingPage() {
               required
               creatable
             />
+
+            {startFormState.warehouse_id && (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 6,
+                  fontSize: 13,
+                  marginTop: -4,
+                  marginBottom: 8,
+                }}
+              >
+                {loadingWarehouseSummary && <div style={{ color: "#64748b" }}>Loading warehouse details…</div>}
+                {!loadingWarehouseSummary && warehouseSummary && (
+                  <>
+                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: warehouseSummary.materials.length ? 8 : 0 }}>
+                      <span>
+                        <strong>Capacity:</strong>{" "}
+                        {warehouseSummary.capacity != null ? `${warehouseSummary.capacity} tons` : "Not set"}
+                      </span>
+                      <span>
+                        <strong>Current stock:</strong> {warehouseSummary.total_stock} tons
+                      </span>
+                      <span
+                        style={{
+                          color:
+                            warehouseSummary.remaining_capacity != null && warehouseSummary.remaining_capacity <= 0
+                              ? "#dc2626"
+                              : "#166534",
+                          fontWeight: 600,
+                        }}
+                      >
+                        Remaining:{" "}
+                        {warehouseSummary.remaining_capacity != null
+                          ? `${warehouseSummary.remaining_capacity} tons`
+                          : "Unlimited"}
+                      </span>
+                    </div>
+                    {warehouseSummary.materials.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        {warehouseSummary.materials.map((m) => (
+                          <span key={m.material_id} style={{ color: "#475569" }}>
+                            {m.material_name}: <strong>{m.qty} tons</strong>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {warehouseSummary.materials.length === 0 && (
+                      <span style={{ color: "#64748b" }}>No stock currently in this warehouse.</span>
+                    )}
+                  </>
+                )}
+                {!loadingWarehouseSummary && !warehouseSummary && (
+                  <span style={{ color: "#dc2626" }}>Could not load warehouse details.</span>
+                )}
+              </div>
+            )}
+
             <EntitySelect
               entity="bin"
               label="Bin"
@@ -478,14 +555,13 @@ export default function UnloadingPage() {
         ]}
       />
 
-      <h3 style={{ marginTop: 24 }}>Pending Routing</h3>
+      <h3 style={{ marginTop: 24 }}>Unloaded Stock</h3>
       <p className="field-hint" style={{ marginTop: -6 }}>
-        Unloading completed — accepted bags are counted and in stock. Route them to Warehouse
-        (stays as raw stock) or Production (goes straight into a batch).
+        Unloading completed — accepted bags are counted and saved straight into the warehouse.
       </p>
       <DataTable
         loading={loading}
-        rows={pendingRouteLots}
+        rows={unloadedLots}
         columns={[
           { key: "lot_no", label: "Lot No." },
           { key: "material", label: "Material", render: (row) => row.material?.name || "—" },
@@ -503,18 +579,26 @@ export default function UnloadingPage() {
           { key: "qty", label: "Accepted Qty (Tons)" },
           { key: "rejected_qty", label: "Rejected Qty (Tons)" },
           {
-            key: "route_actions",
-            label: "Route",
-            render: (row) => (
-              <div style={{ display: "flex", gap: 6 }}>
-                <button className="dt-btn" onClick={() => handleRoute(row.id, "warehouse")}>
-                  To Warehouse
-                </button>
-                <button className="dt-btn" onClick={() => handleRoute(row.id, "production")}>
-                  To Production
-                </button>
-              </div>
-            ),
+            key: "status",
+            label: "Status",
+            render: (row) => {
+              const warehouseName = row.stacks?.[0]?.warehouse?.name;
+              return (
+                <span
+                  style={{
+                    display: "inline-block",
+                    padding: "2px 8px",
+                    borderRadius: 10,
+                    background: "#dcfce7",
+                    color: "#166534",
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  ✅ Unloaded into {warehouseName || "warehouse"}
+                </span>
+              );
+            },
           },
         ]}
       />
@@ -523,12 +607,12 @@ export default function UnloadingPage() {
         title="Unloading"
         steps={[
           "Only gate entries at 'in_process' (already weighed) show up in Start Unloading.",
+          "Picking a warehouse shows its capacity, current stock, and what's already stored there.",
           "When you start unloading, the system automatically detects all materials from the gate entry.",
           "For each material, you'll enter the bag size and count of accepted/rejected bags.",
           "Quantities are calculated automatically based on bag size × number of bags.",
           "Rejected bags are recorded but never enter stock.",
-          "Once all materials are completed, the gate entry moves to 'unloaded'.",
-          "Route accepted stock to Warehouse or Production as needed."
+          "Once all materials are completed, the gate entry moves to 'unloaded' and the accepted stock is saved straight into the chosen warehouse — no separate routing step needed.",
         ]}
       />
     </div>

@@ -10,7 +10,7 @@ const users = [
   { email: "4@gmail.com",  password: "role4@4",   role_name: "lab",        username: "lab_user" },
   { email: "5@gmail.com",  password: "role5@5",   role_name: "warehouse",  username: "warehouse_user" },
   { email: "7@gmail.com",  password: "role7@7",   role_name: "sales",      username: "sales_user" },
-  { email: "8@gmail.com",  password: "role8@8",   role_name: "dispatch",   username: "dispatch_user" },
+  { email: "8@gmail.com",  password: "role8@8",   role_name: "weighbridge",   username: "weighbridge_user" },
   { email: "9@gmail.com",  password: "role9@9",   role_name: "admin",      username: "admin_user" },
   { email: "10@gmail.com", password: "role10@10", role_name: "production", username: "production_user" },
 ];

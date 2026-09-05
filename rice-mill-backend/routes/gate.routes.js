@@ -9,7 +9,10 @@ const { uploadImage } = require("../helpers/multer.helper");
 // entries at status 'waiting_sampling' to populate its picker.
 // "purchase" is included because Purchase Orders' gate-entry picker reads
 // from here too.
-router.use(verifyAccessToken, attachUser, authorize("gate","warehouse","production","lab","purchase","admin"));
+// "dispatch" is included because the Dispatch role's dashboard now shows
+// Weighbridge (see DispatchDashboard.jsx) — its gate-entry search picker
+// needs read access here just like Gate's own Weighbridge page does.
+router.use(verifyAccessToken, attachUser, authorize("gate","warehouse","production","lab","purchase","admin","dispatch"));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

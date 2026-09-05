@@ -8,6 +8,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 router.use(verifyAccessToken, attachUser, authorize("warehouse","gate","production"));
 
 router.get("/",     Controller.getAll);
+router.get("/:id/summary", Controller.getSummary);
 router.get("/:id",  Controller.getById);
 router.post("/",    Controller.create);
 router.put("/:id",  Controller.update);

@@ -6,6 +6,7 @@ import {
   gateCheckoutApi,
   gateSendToWarehouseApi,
   uploadGatePhotoApi,
+  getPurchaseOrderByIdApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
@@ -312,8 +313,8 @@ const handleSalesMaterialQtyChange = (soId, materialId, qty) => {
   const fetchPODetails = async (poId) => {
     try {
       setFetchingPODetails(true);
-      const response = await fetch(`/api/purchase-order/${poId}`);
-      const data = await response.json();
+      const response = await getPurchaseOrderByIdApi(poId);
+      const data = response.data;
       
       if (data.success && data.data) {
         // Parse items if they're stored as JSON string

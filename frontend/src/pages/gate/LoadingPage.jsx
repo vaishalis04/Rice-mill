@@ -6,6 +6,7 @@ import {
   deleteLoadingApi,
   updateSalesOrderApi,
   getGateEntryByIdApi,
+  getSalesOrderByIdApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
@@ -27,12 +28,16 @@ export default function LoadingPage() {
   const [completingSoId, setCompletingSoId] = useState(null);
   const [gateEntryMaterials, setGateEntryMaterials] = useState([]);
   const [loadingMaterials, setLoadingMaterials] = useState(false);
-  // The material-wise breakdown of the loading currently being edited, so
-  // the "remaining qty" shown for each material can add this loading's own
-  // already-applied amount back in (otherwise it looks smaller than it
-  // really is available for, since the SO's dispatched_qty already
-  // includes it).
-  const [editOriginalItems, setEditOriginalItems] = useState([]);
+  // When editing an existing loading, this holds its ORIGINAL per-material
+  // breakdown (material_id -> qty) so remaining capacity can be computed
+  // correctly — this load's own prior contribution should count back
+  // towards what's available to re-assign, not be treated as already gone.
+  const [editingOwnQuantities, setEditingOwnQuantities] = useState({});
+  // The Sales Order id this specific loading record belongs to (from
+  // row.so_id) — used so editing can pull materials straight from the SO
+  // itself instead of depending on the Gate Entry's own junction rows,
+  // which aren't always populated for older/manually-created entries.
+  const [editingSoId, setEditingSoId] = useState(null);
 
   const gateEntries = useEntityLookup("gate_entry");
   const vehicles = useEntityLookup("vehicle");
@@ -52,59 +57,79 @@ export default function LoadingPage() {
         setGateEntryMaterials([]);
         return;
       }
-      
+
       setLoadingMaterials(true);
       try {
-        const response = await getGateEntryByIdApi(form.gate_entry_id);
-        const gateEntry = response.data.data || response.data;
-        
-        console.log("=== Gate Entry Data ===");
-        console.log("Gate Entry:", gateEntry);
-        console.log("Sales Orders:", gateEntry.sales_orders);
-        
-        // Check if gateEntry has sales_orders
-        // In the useEffect that fetches gate entry details
-if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
-  const materialsWithDetails = gateEntry.sales_orders.map(so => {
-    const material = materials.rows.find(m => String(m.id) === String(so.material_id));
-    
-    // Use the fields from the formatted response
-    const orderedQty = Number(so.ordered_qty || so.qty || 0);
-    const dispatchedQty = Number(so.dispatched_qty || 0);
-    // If we're editing a loading, this material's SO dispatched_qty already
-    // includes what THIS loading contributed — add it back so "remaining"
-    // reflects what's actually available to enter here, not a value that's
-    // already short by our own prior contribution.
-    const originalContribution = editingId
-      ? Number(
-          editOriginalItems.find(
-            (it) =>
-              String(it.so_id) === String(so.so_id) &&
-              String(it.material_id) === String(so.material_id)
-          )?.qty || 0
-        )
-      : 0;
-    const remainingQty = orderedQty - dispatchedQty + originalContribution;
-    
-    const uniqueKey = `${so.so_id}-${so.material_id}`;
-    
-    return {
-      id: uniqueKey,
-      so_id: so.so_id,
-      material_id: so.material_id,
-      material_name: material?.name || `Material ${so.material_id}`,
-      so_no: so.sales_order?.so_no || `SO-${so.so_id}`,
-      ordered_qty: orderedQty,
-      dispatched_qty: dispatchedQty,
-      remaining_qty: Math.max(remainingQty, 0),
-      is_fully_loaded: !editingId && remainingQty <= 0,
-      so_status: so.sales_order?.so_status || 'pending'
-    };
-  });
-  setGateEntryMaterials(materialsWithDetails);
-} else {
-          setGateEntryMaterials([]);
+        let materialsWithDetails = [];
+
+        if (editingId && editingSoId) {
+          // EDIT MODE: source materials straight from the Sales Order
+          // itself, not the gate entry's junction rows — the loading
+          // record's own so_id + material_quantities are all we need,
+          // and this works even for gate entries whose junction data
+          // wasn't populated (older entries, manual test data, etc).
+          const soRes = await getSalesOrderByIdApi(editingSoId);
+          const so = soRes.data.data || soRes.data;
+          const items = Array.isArray(so.items) ? so.items : [];
+
+          materialsWithDetails = items.map((item) => {
+            const orderedQty = Number(item.qty || 0);
+            const dispatchedQty = Number(item.dispatched_qty || 0);
+            const ownQtyForThisMaterial = Number(
+              editingOwnQuantities[item.material_id] || 0
+            );
+            const remainingQty = orderedQty - dispatchedQty + ownQtyForThisMaterial;
+            const uniqueKey = `${so.id}-${item.material_id}`;
+
+            return {
+              id: uniqueKey,
+              so_id: so.id,
+              material_id: item.material_id,
+              material_name:
+                item.material?.name ||
+                materials.rows.find((m) => String(m.id) === String(item.material_id))?.name ||
+                `Material ${item.material_id}`,
+              so_no: so.so_no,
+              ordered_qty: orderedQty,
+              dispatched_qty: dispatchedQty,
+              remaining_qty: Math.max(remainingQty, 0),
+              is_fully_loaded: remainingQty <= 0,
+              so_status: so.so_status || "pending",
+            };
+          });
+        } else {
+          // CREATE MODE: source materials from the gate entry's own
+          // sales_orders junction, same as before.
+          const response = await getGateEntryByIdApi(form.gate_entry_id);
+          const gateEntry = response.data.data || response.data;
+
+          if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
+            materialsWithDetails = gateEntry.sales_orders.map((so) => {
+              const material = materials.rows.find((m) => String(m.id) === String(so.material_id));
+
+              const orderedQty = Number(so.ordered_qty || so.qty || 0);
+              const dispatchedQty = Number(so.dispatched_qty || 0);
+              const remainingQty = orderedQty - dispatchedQty;
+
+              const uniqueKey = `${so.so_id}-${so.material_id}`;
+
+              return {
+                id: uniqueKey,
+                so_id: so.so_id,
+                material_id: so.material_id,
+                material_name: material?.name || `Material ${so.material_id}`,
+                so_no: so.sales_order?.so_no || `SO-${so.so_id}`,
+                ordered_qty: orderedQty,
+                dispatched_qty: dispatchedQty,
+                remaining_qty: Math.max(remainingQty, 0),
+                is_fully_loaded: remainingQty <= 0,
+                so_status: so.sales_order?.so_status || "pending",
+              };
+            });
+          }
         }
+
+        setGateEntryMaterials(materialsWithDetails);
       } catch (err) {
         console.error("Failed to fetch gate entry details:", err);
         setGateEntryMaterials([]);
@@ -114,32 +139,13 @@ if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
     };
 
     fetchGateEntryDetails();
-  }, [form.gate_entry_id, salesOrders.rows, materials.rows, editingId, editOriginalItems]);
+  }, [form.gate_entry_id, salesOrders.rows, materials.rows, editingId, editingSoId, editingOwnQuantities]);
 
-  // While editing, only the materials that were actually part of THIS
-  // loading are shown/adjustable — editing doesn't let you add a brand new
-  // material to an already-recorded truckload, only correct the quantities
-  // already on it.
-  const availableMaterials = editingId
-    ? gateEntryMaterials.filter((m) =>
-        editOriginalItems.some(
-          (it) =>
-            String(it.so_id) === String(m.so_id) &&
-            String(it.material_id) === String(m.material_id)
-        )
-      )
-    // Create mode: a material that's already fully loaded (remaining <= 0)
-    // or whose SO is no longer open for loading has nothing left to enter
-    // — matching Unloading, it drops off the list entirely instead of
-    // sitting there disabled/greyed out.
-    : gateEntryMaterials.filter(
-        (m) =>
-          m.remaining_qty > 0 &&
-          !["dispatched", "closed", "cancelled"].includes(m.so_status)
-      );
+  const availableMaterials = gateEntryMaterials;
   const isAnyMaterialAvailable = availableMaterials.some(m => {
-    const available = editingId || (m.remaining_qty > 0 && !['dispatched', 'closed', 'cancelled'].includes(m.so_status));
-    console.log(`Material ${m.material_name}: remaining=${m.remaining_qty}, status=${m.so_status}, available=${available}`);
+    const available =
+      m.remaining_qty > 0 &&
+      (editingId || !['dispatched', 'closed', 'cancelled'].includes(m.so_status));
     return available;
   });
   
@@ -155,16 +161,6 @@ if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
   const totalLoadedQty = Object.values(materialQuantities).reduce((sum, val) => {
     return sum + (Number(val) || 0);
   }, 0);
-
-  // The total is derived from the per-material quantities, not typed in
-  // separately — this is what makes material-wise editing actually work:
-  // once you're editing individual materials there's no longer a way for
-  // the total to drift out of sync with them.
-  useEffect(() => {
-    if (selectedItems.length > 0) {
-      setForm((f) => ({ ...f, loaded_qty: totalLoadedQty }));
-    }
-  }, [totalLoadedQty, selectedItems.length]);
 
   const load = () => {
     setLoading(true);
@@ -224,6 +220,49 @@ if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
     setError("");
   };
 
+  // Shared by both create and edit: turn the current selectedItems +
+  // materialQuantities state into a validated material_quantities[]
+  // payload, and return it together with the computed total.
+  const buildMaterialQuantitiesPayload = () => {
+    if (selectedItems.length === 0) {
+      throw new Error("Please select at least one material to load");
+    }
+
+    const quantities = [];
+    let totalQty = 0;
+
+    for (const materialId of selectedItems) {
+      const qty = Number(materialQuantities[materialId] || 0);
+      const material = availableMaterials.find((m) => m.id === materialId);
+
+      if (qty <= 0) {
+        throw new Error(`Please enter quantity for ${material?.material_name || "material"}`);
+      }
+      if (!material) {
+        throw new Error(`Material not found`);
+      }
+      if (qty > material.remaining_qty) {
+        throw new Error(`Quantity for ${material.material_name} exceeds remaining (${material.remaining_qty})`);
+      }
+
+      quantities.push({
+        so_id: Number(material.so_id),
+        material_id: Number(material.material_id),
+        qty,
+      });
+      totalQty += qty;
+    }
+
+    if (Math.abs(totalQty - Number(form.loaded_qty || 0)) > 0.01) {
+      throw new Error(`Total material quantities (${totalQty}) must equal loaded_qty (${form.loaded_qty || 0})`);
+    }
+    if (totalQty === 0) {
+      throw new Error("Total loaded quantity must be greater than 0");
+    }
+
+    return { quantities, totalQty };
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -231,55 +270,21 @@ if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
     setLastResult(null);
     
     try {
-      if (selectedItems.length === 0) {
-        throw new Error("Please select at least one material");
-      }
-
-      // Build + validate the per-material quantities — shared by both
-      // create and edit, since editing now goes through the exact same
-      // material-wise shape instead of a single opaque total.
-      const quantities = [];
-      let totalQty = 0;
-
-      for (const materialId of selectedItems) {
-        const qty = Number(materialQuantities[materialId] || 0);
-        const material = availableMaterials.find(m => m.id === materialId);
-        if (!material) {
-          throw new Error(`Material not found`);
-        }
-
-        // In edit mode a material can be brought down to 0 (removed from
-        // this loading); in create mode every selected material needs a
-        // real quantity.
-        if (qty <= 0) {
-          if (editingId) continue;
-          throw new Error(`Please enter quantity for ${material.material_name}`);
-        }
-
-        if (qty > material.remaining_qty) {
-          throw new Error(`Quantity for ${material.material_name} exceeds remaining (${material.remaining_qty})`);
-        }
-
-        quantities.push({
-          so_id: Number(material.so_id),
-          material_id: Number(material.material_id),
-          qty: qty
-        });
-        totalQty += qty;
-      }
-
-      if (totalQty === 0) {
-        throw new Error("Total loaded quantity must be greater than 0");
-      }
-
       if (editingId) {
-        const payload = { material_quantities: quantities };
-        if (form.remarks !== undefined) payload.remarks = form.remarks;
+        const { quantities, totalQty } = buildMaterialQuantitiesPayload();
 
-        await updateLoadingApi(editingId, payload);
-        setInfo("Loading record updated.");
+        await updateLoadingApi(editingId, {
+          loaded_qty: totalQty,
+          remarks: form.remarks,
+          material_quantities: quantities,
+        });
+        setInfo("Loading record updated — material breakdown saved.");
+        gateEntries.refetch();
         salesOrders.refetch();
+        materials.refetch();
       } else {
+        const { quantities, totalQty } = buildMaterialQuantitiesPayload();
+
         const payload = {
           gate_entry_id: Number(form.gate_entry_id),
           loaded_qty: totalQty,
@@ -304,8 +309,9 @@ if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
       setForm(emptyForm);
       setSelectedItems([]);
       setMaterialQuantities({});
-      setEditOriginalItems([]);
+      setEditingOwnQuantities({});
       setEditingId(null);
+      setEditingSoId(null);
       load();
     } catch (err) {
       setError(
@@ -340,35 +346,46 @@ if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
 
   const handleEdit = (row) => {
     setEditingId(row.id);
+    setEditingSoId(row.so_id || null);
     setForm({
       gate_entry_id: row.gate_entry_id || "",
       loaded_qty: row.loaded_qty ?? "",
       remarks: row.remarks || "",
     });
 
-    // row.items is the material-wise breakdown recorded on this loading —
-    // [{ so_id, material_id, qty }, ...]. Pre-select each of those materials
-    // and pre-fill its current qty so the form opens showing exactly what
-    // was loaded, ready to adjust per material.
-    const items = Array.isArray(row.items) ? row.items : [];
-    const keys = [];
-    const qtys = {};
-    items.forEach((it) => {
-      const key = `${it.so_id}-${it.material_id}`;
-      keys.push(key);
-      qtys[key] = Number(it.qty) || 0;
-    });
-    setSelectedItems(keys);
-    setMaterialQuantities(qtys);
-    setEditOriginalItems(items);
+    const existingBreakdown = Array.isArray(row.material_quantities)
+      ? row.material_quantities
+      : [];
+
+    if (existingBreakdown.length > 0) {
+      const keys = [];
+      const quantities = {};
+      const ownByMaterial = {};
+
+      existingBreakdown.forEach((m) => {
+        const uniqueKey = `${m.so_id}-${m.material_id}`;
+        keys.push(uniqueKey);
+        quantities[uniqueKey] = Number(m.qty) || 0;
+        ownByMaterial[m.material_id] = Number(m.qty) || 0;
+      });
+
+      setSelectedItems(keys);
+      setMaterialQuantities(quantities);
+      setEditingOwnQuantities(ownByMaterial);
+    } else {
+      setSelectedItems([]);
+      setMaterialQuantities({});
+      setEditingOwnQuantities({});
+    }
   };
 
   const handleCancel = () => {
     setEditingId(null);
+    setEditingSoId(null);
     setForm(emptyForm);
     setSelectedItems([]);
     setMaterialQuantities({});
-    setEditOriginalItems([]);
+    setEditingOwnQuantities({});
   };
 
   const handleDelete = async (id) => {
@@ -419,7 +436,7 @@ if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
             
             {/* Materials Selection */}
             <div className="sf-field">
-              <label>{editingId ? "Materials (edit quantity per material)" : "Materials to Load"}</label>
+              <label>{editingId ? "Edit Materials in This Load" : "Materials to Load"}</label>
               <div
                 style={{
                   padding: "8px 10px",
@@ -443,11 +460,10 @@ if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
                   <>
                     {availableMaterials.map((material, idx) => {
                       const isSelected = selectedItems.includes(material.id);
-                      const isSelectable = editingId || (material.remaining_qty > 0 && 
-                        !['dispatched', 'closed', 'cancelled'].includes(material.so_status));
+                      const isSelectable =
+                        material.remaining_qty > 0 &&
+                        (editingId || !['dispatched', 'closed', 'cancelled'].includes(material.so_status));
                       const currentQty = materialQuantities[material.id] || '';
-                      
-                      console.log(`Rendering ${material.material_name}: isSelectable=${isSelectable}, remaining=${material.remaining_qty}, status=${material.so_status}`);
                       
                       return (
                         <div
@@ -478,12 +494,43 @@ if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
                               <span style={{ marginLeft: 8, color: "#64748b", fontSize: 12 }}>
                                 SO: {material.so_no}
                               </span>
-                              <span style={{ marginLeft: 8, color: "#64748b", fontSize: 12 }}>
-                                Remaining: {material.remaining_qty} kg
-                              </span>
+                              <div style={{ marginTop: 2, fontSize: 12, color: "#475569" }}>
+                                Ordered: <strong>{material.ordered_qty}</strong> kg
+                                {" · "}
+                                Dispatched so far: <strong>{material.dispatched_qty}</strong> kg
+                                {" · "}
+                                Remaining: <strong>{material.remaining_qty}</strong> kg
+                              </div>
                               {material.is_fully_loaded && (
-                                <span style={{ marginLeft: 8, color: "#22c55e", fontSize: 12 }}>
-                                  ✅ Fully Loaded
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    marginTop: 4,
+                                    padding: "1px 6px",
+                                    borderRadius: 10,
+                                    background: "#dcfce7",
+                                    color: "#166534",
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  ✅ Completed
+                                </span>
+                              )}
+                              {!material.is_fully_loaded && material.dispatched_qty > 0 && (
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    marginTop: 4,
+                                    padding: "1px 6px",
+                                    borderRadius: 10,
+                                    background: "#fef3c7",
+                                    color: "#92400e",
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  🔶 Partially loaded
                                 </span>
                               )}
                               {!isSelectable && material.remaining_qty <= 0 && (
@@ -583,14 +630,17 @@ if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
             value={form.loaded_qty}
             onChange={handleChange}
             required
-            readOnly={selectedItems.length > 0}
             placeholder="Enter total quantity"
-            style={selectedItems.length > 0 ? { background: "#f1f5f9" } : undefined}
           />
           {selectedItems.length > 0 && (
             <p className="field-hint">
-              Sum of the material quantities below — {totalLoadedQty} kg
-              {!editingId && ` (${totalRemainingQty} kg remaining across selected materials)`}
+              Total remaining across selected materials: {totalRemainingQty} kg
+              {totalLoadedQty > 0 && ` | Entered in materials: ${totalLoadedQty} kg`}
+              {Math.abs(totalLoadedQty - Number(form.loaded_qty || 0)) > 0.01 && totalLoadedQty > 0 && (
+                <span style={{ color: "#dc2626", display: "block" }}>
+                  ⚠️ Mismatch: {totalLoadedQty} kg entered in materials vs {form.loaded_qty || 0} kg total
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -681,6 +731,32 @@ if (gateEntry && gateEntry.sales_orders && gateEntry.sales_orders.length > 0) {
             key: "so_id",
             label: "Sales Order",
             render: (row) => salesOrders.getLabel(row.so_id),
+          },
+          {
+            key: "material_quantities",
+            label: "Materials Loaded",
+            render: (row) => {
+              const breakdown = Array.isArray(row.material_quantities)
+                ? row.material_quantities
+                : [];
+              if (breakdown.length === 0) {
+                return row.remarks || "—";
+              }
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  {breakdown.map((m, idx) => {
+                    const name =
+                      materials.rows.find((mat) => String(mat.id) === String(m.material_id))?.name ||
+                      `Material ${m.material_id}`;
+                    return (
+                      <span key={idx} style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                        <strong>{name}:</strong> {m.qty} kg
+                      </span>
+                    );
+                  })}
+                </div>
+              );
+            },
           },
           { key: "loaded_qty", label: "Loaded Qty (kg)" },
           {

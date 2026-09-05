@@ -338,14 +338,18 @@ export default function SalesOrderApprovalPage() {
   // ---- Field readers, matched exactly to the real API shape ----
 
   const getSoItems = (so) => {
-    if (Array.isArray(so?.items) && so.items.length) return so.items;
+    const enrich = (item) => ({
+      ...item,
+      material: item.material || materials.find((m) => String(m.id) === String(item.material_id)) || null,
+    });
+    if (Array.isArray(so?.items) && so.items.length) return so.items.map(enrich);
     if (so && (so.material_id || so.qty !== null || so.rate !== null)) {
-      return [{
+      return [enrich({
         material_id: so.material_id,
         qty: so.qty,
         rate: so.rate,
         material: so.material,
-      }];
+      })];
     }
     return [];
   };
@@ -445,6 +449,12 @@ export default function SalesOrderApprovalPage() {
         ? String(selectedSO.order_date).split("T")[0]
         : "",
       plant_id: selectedSO.plant_id ?? "",
+      items: getSoItems(selectedSO).map((item) => ({
+        material_id: item.material_id ?? "",
+        qty: item.qty ?? "",
+        rate: item.rate ?? "",
+        dispatched_qty: item.dispatched_qty ?? 0,
+      })),
     });
 
     setError("");
@@ -464,6 +474,23 @@ export default function SalesOrderApprovalPage() {
     }));
   };
 
+  const updateEditItem = (index, field, value) => {
+    setEditForm((prev) => ({
+      ...prev,
+      items: (prev.items || []).map((item, itemIndex) =>
+        itemIndex === index ? { ...item, [field]: value } : item,
+      ),
+    }));
+  };
+
+  const removeEditItem = (index) => {
+    setEditForm((prev) => {
+      const items = prev.items || [];
+      if (items.length <= 1) return prev;
+      return { ...prev, items: items.filter((_, itemIndex) => itemIndex !== index) };
+    });
+  };
+
   const handleSaveSO = async () => {
     if (!selectedSO || !editForm) return;
 
@@ -478,12 +505,22 @@ export default function SalesOrderApprovalPage() {
     setSuccess("");
 
     try {
+      const items = (editForm.items || []).map((item) => ({
+        material_id: Number(item.material_id),
+        qty: Number(item.qty),
+        rate: Number(item.rate),
+        dispatched_qty: Number(item.dispatched_qty || 0),
+      }));
+      if (!items.length) {
+        throw new Error("A sales order must contain at least one item.");
+      }
       // Matches PUT /so/:so_no/approval-edit — header-level fields only.
       await updateSalesOrderBeforeApprovalApi(soNo, {
         customer_id: editForm.customer_id || undefined,
         order_type: editForm.order_type || undefined,
         order_date: editForm.order_date || undefined,
         plant_id: editForm.plant_id || undefined,
+        items,
       });
 
       setSuccess(`Sales Order ${soNo} updated successfully.`);
@@ -825,6 +862,46 @@ export default function SalesOrderApprovalPage() {
                 onChange={(e) => handleEditChange("plant_id", e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="so-edit-items">
+            <h3>SO Items</h3>
+            {(editForm.items || []).map((item, index) => (
+              <div className="so-edit-item-row" key={`so-edit-item-${index}`}>
+                <select
+                  value={item.material_id}
+                  onChange={(e) => updateEditItem(index, "material_id", e.target.value)}
+                >
+                  <option value="">Select material</option>
+                  {materials.map((material) => <option key={material.id} value={material.id}>{material.name} ({material.material_code})</option>)}
+                </select>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={item.qty}
+                  onChange={(e) => updateEditItem(index, "qty", e.target.value)}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={item.rate}
+                  onChange={(e) => updateEditItem(index, "rate", e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="so-cancel-btn"
+                  disabled={(editForm.items || []).length <= 1}
+                  onClick={() => removeEditItem(index)}
+                >Remove</button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="so-approve-btn"
+              onClick={() => setEditForm((prev) => ({ ...prev, items: [...(prev.items || []), { material_id: "", qty: "", rate: "", dispatched_qty: 0 }] }))}
+            >+ Add Item</button>
           </div>
 
           <div className="so-edit-actions">

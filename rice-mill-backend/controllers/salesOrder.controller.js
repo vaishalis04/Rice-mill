@@ -28,18 +28,7 @@ const detailIncludes = [
 // loading.controller.js): a JSON column can round-trip as a raw string
 // instead of an already-parsed array.
 const parseItemsField = (value) => {
-  // Always return a fresh array, never the stored reference — Sequelize
-  // tracks whether a JSON attribute "changed" partly by identity/deep
-  // comparison against the value it already has internally. Returning
-  // the same array object let a caller (addItem) mutate it in place with
-  // .push() *before* calling .update({ items }) — by the time update ran,
-  // the "old" and "new" values were the literal same object, so Sequelize
-  // saw no change and silently skipped writing the column. The material
-  // just added would vanish, with no error, and even resolveCanonicalSoRow
-  // running first (self-healing a duplicate row) couldn't help, since the
-  // real bug was one line later. A defensive copy makes every caller's
-  // "new" value provably distinct from whatever Sequelize already has.
-  if (Array.isArray(value)) return [...value];
+  if (Array.isArray(value)) return value;
   if (typeof value === "string" && value.trim()) {
     try {
       const parsed = JSON.parse(value);
@@ -49,98 +38,6 @@ const parseItemsField = (value) => {
     }
   }
   return [];
-};
-
-// If old, already-corrupted duplicate rows still exist for a so_no (the
-// pre-fix updateBeforeApproval/addItem used to create a stray extra row
-// instead of appending to the existing one — see fixDuplicateSalesOrders.js),
-// a plain findOne({ where: { so_no } }) can silently land on the WRONG row:
-// it might return the empty duplicate while the row actually being viewed
-// in the UI is the other one, so an edit/add appears to do nothing even
-// though it really did write — just to a row nobody's looking at anymore.
-//
-// This is a stopgap for whatever duplicates already exist before the
-// so_no unique constraint (added in the model) is in place — it makes
-// every write self-healing instead of failing silently: resolve ALL
-// non-deleted rows for the so_no, merge their items into whichever row
-// has the richest data, soft-delete+rename any others, and return the
-// single surviving row. Once the unique constraint is actually applied,
-// `group.length` here can never exceed 1, so this becomes a no-op fast
-// path — safe to leave in permanently.
-const resolveCanonicalSoRow = async (so_no, transaction) => {
-  const group = await SalesOrder.findAll({
-    where: { so_no, is_deleted: false },
-    order: [["id", "ASC"]],
-    transaction,
-  });
-  if (group.length === 0) return null;
-  if (group.length === 1) return group[0];
-
-  const mergedByMaterial = new Map();
-  for (const row of group) {
-    for (const item of parseItemsField(row.items)) {
-      const key = String(item.material_id);
-      const existing = mergedByMaterial.get(key);
-      if (!existing || Number(item.qty || 0) > Number(existing.qty || 0)) {
-        mergedByMaterial.set(key, item);
-      }
-    }
-  }
-  const mergedItems = Array.from(mergedByMaterial.values());
-
-  const [survivor, ...rest] = group;
-  await survivor.update(
-    {
-      items: mergedItems,
-      dispatched_qty: mergedItems.reduce((s, it) => s + Number(it.dispatched_qty || 0), 0),
-    },
-    { transaction },
-  );
-  for (const row of rest) {
-    await row.update(
-      { is_deleted: true, so_no: `${row.so_no}__dup${row.id}` },
-      { transaction },
-    );
-  }
-
-  return survivor;
-};
-
-// Same duplicate-so_no problem as resolveCanonicalSoRow, but for read-only
-// listings (getPendingApprovals/getAllGrouped) — these shouldn't have
-// side effects on a plain page load, so this just merges duplicates for
-// display without writing anything, dropping the extra row(s) from what
-// gets shown. The next actual edit/add on that so_no will trigger
-// resolveCanonicalSoRow and persist the merge for good.
-const dedupeSoRowsForDisplay = (rows) => {
-  const bySoNo = new Map();
-  for (const row of rows) {
-    if (!bySoNo.has(row.so_no)) bySoNo.set(row.so_no, []);
-    bySoNo.get(row.so_no).push(row);
-  }
-
-  const result = [];
-  for (const group of bySoNo.values()) {
-    if (group.length === 1) {
-      result.push(group[0]);
-      continue;
-    }
-    group.sort((a, b) => a.id - b.id);
-    const mergedByMaterial = new Map();
-    for (const row of group) {
-      for (const item of parseItemsField(row.items)) {
-        const key = String(item.material_id);
-        const existing = mergedByMaterial.get(key);
-        if (!existing || Number(item.qty || 0) > Number(existing.qty || 0)) {
-          mergedByMaterial.set(key, item);
-        }
-      }
-    }
-    const survivor = group[0];
-    survivor.items = Array.from(mergedByMaterial.values());
-    result.push(survivor);
-  }
-  return result;
 };
 
 // Turns raw SalesOrder rows into the shape every consumer (SO Approval,
@@ -193,14 +90,14 @@ module.exports = {
  
  getAllGrouped: async (req, res, next) => {
   try {
-    const { search, customer_id, plant_id } = req.query;
+    const { search, customer_id, plant_id, so_status } = req.query;
 
     const where = {
       is_deleted: false,
     };
 
     // Non-admin users can only see approved SOs
-    if (req.user.role !== "admin") {
+    if (req.user.role?.role_name !== "admin") {
       where.approval_status = "approved";
     }
 
@@ -210,6 +107,10 @@ module.exports = {
 
     if (plant_id) {
       where.plant_id = plant_id;
+    }
+
+    if (so_status) {
+      where.so_status = so_status;
     }
 
     if (search) {
@@ -227,7 +128,7 @@ module.exports = {
       ],
     });
 
-    const result = await enrichSoRows(dedupeSoRowsForDisplay(rows));
+    const result = await enrichSoRows(rows);
 
     res.status(200).json({
       success: true,
@@ -244,7 +145,7 @@ module.exports = {
       is_deleted: false,
     };
 
-    if (req.user.role !== "admin") {
+    if (req.user.role?.role_name !== "admin") {
       where.approval_status = "approved";
     }
 
@@ -265,15 +166,8 @@ module.exports = {
 
   getById: async (req, res, next) => {
     try {
-      const anchor = await SalesOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
-      if (!anchor) throw createError(404, "Sales order not found");
-
-      // Resolve to the canonical row for this so_no — if the id clicked
-      // happens to be a stale duplicate, this merges and returns the
-      // real one instead of showing whichever partial copy was clicked.
-      const canonical = await resolveCanonicalSoRow(anchor.so_no);
-      const so = await SalesOrder.findOne({ where: { id: canonical.id }, include: detailIncludes });
-
+      const so = await SalesOrder.findOne({ where: { id: req.params.id, is_deleted: false }, include: detailIncludes });
+      if (!so) throw createError(404, "Sales order not found");
       const [enriched] = await enrichSoRows([so]);
       res.status(200).json({ success: true, data: enriched });
     } catch (err) {
@@ -579,7 +473,7 @@ bulkCreate: async (req, res, next) => {
       order: [["created_at", "DESC"]],
     });
 
-    const enriched = await enrichSoRows(dedupeSoRowsForDisplay(salesOrders));
+    const enriched = await enrichSoRows(salesOrders);
 
     res.status(200).json({
       success: true,
@@ -606,12 +500,12 @@ bulkCreate: async (req, res, next) => {
   updateBeforeApproval: async (req, res, next) => {
   try {
     const { so_no } = req.params;
-    const { customer_id, order_type, order_date, plant_id } = req.body;
+    const { customer_id, order_type, order_date, plant_id, items } = req.body;
 
-    const so = await resolveCanonicalSoRow(so_no);
-    if (!so || so.approval_status !== "pending_approval") {
-      throw createError(404, "Pending sales order not found");
-    }
+    const so = await SalesOrder.findOne({
+      where: { so_no, approval_status: "pending_approval", is_deleted: false },
+    });
+    if (!so) throw createError(404, "Pending sales order not found");
 
     if (customer_id) {
       const customer = await Customer.findOne({
@@ -626,9 +520,28 @@ bulkCreate: async (req, res, next) => {
 
     const updates = { customer_id, order_type, order_date, plant_id };
     Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
+    if (items !== undefined) {
+      if (!Array.isArray(items) || items.length === 0) {
+        throw createError(400, "items must contain at least one item");
+      }
+      const seen = new Set();
+      updates.items = items.map((item) => {
+        const materialId = Number(item.material_id);
+        const qty = Number(item.qty);
+        const rate = Number(item.rate);
+        if (!Number.isInteger(materialId) || materialId <= 0 || !(qty > 0) || !(rate >= 0)) {
+          throw createError(400, "Each SO item needs a valid material, quantity, and rate");
+        }
+        if (seen.has(materialId)) throw createError(400, "Duplicate material in SO items");
+        seen.add(materialId);
+        return { material_id: materialId, qty, rate, dispatched_qty: Number(item.dispatched_qty || 0) };
+      });
+    }
     updates.updated_by = req.user ? req.user.id : null;
 
     await so.update(updates);
+    if (items !== undefined) so.changed("items", true);
+    if (items !== undefined) await so.save();
 
     const fresh = await SalesOrder.findOne({ where: { id: so.id }, include: detailIncludes });
     const [enriched] = await enrichSoRows([fresh]);
@@ -739,53 +652,69 @@ bulkCreate: async (req, res, next) => {
   // (duplicate so_no rows) in a way Loading's per-material remaining-qty
   // lookup couldn't make sense of.
   addItem: async (req, res, next) => {
-    const t = await sequelize.transaction();
-    try {
-      const { so_no } = req.params;
-      const { material_id, qty, rate } = req.body;
+  const t = await sequelize.transaction();
+  try {
+    const { so_no } = req.params;
+    const { material_id, qty, rate } = req.body;
 
-      if (!material_id || !qty || !rate) {
-        throw createError(400, "material_id, qty and rate are required");
-      }
-      const qtyNum = Number(qty);
-      const rateNum = Number(rate);
-      if (!(qtyNum > 0)) throw createError(400, "qty must be greater than 0");
-      if (!(rateNum >= 0)) throw createError(400, "rate must be 0 or more");
-
-      const so = await resolveCanonicalSoRow(so_no, t);
-      if (!so) throw createError(404, "Sales order not found");
-
-      const material = await MaterialMaster.findOne({ where: { id: material_id, is_deleted: false }, transaction: t });
-      if (!material) throw createError(400, "Invalid material_id");
-
-      const items = parseItemsField(so.items);
-      if (items.some((it) => Number(it.material_id) === Number(material_id))) {
-        throw createError(409, "This material is already on this Sales Order");
-      }
-
-      items.push({
-        material_id: Number(material_id),
-        qty: qtyNum,
-        rate: rateNum,
-        dispatched_qty: 0,
-      });
-
-      await so.update(
-        { items, updated_by: req.user ? req.user.id : null },
-        { transaction: t },
-      );
-
-      await t.commit();
-
-      const fresh = await SalesOrder.findOne({ where: { id: so.id }, include: detailIncludes });
-      const [enriched] = await enrichSoRows([fresh]);
-
-      res.status(201).json({ success: true, msg: `Material added to SO ${so_no}`, data: enriched });
-    } catch (err) {
-      await t.rollback();
-      next(err);
+    if (!material_id || !qty || !rate) {
+      throw createError(400, "material_id, qty and rate are required");
     }
-  },
+
+    const so = await SalesOrder.findOne({
+      where: { so_no, is_deleted: false },
+      transaction: t,
+    });
+    if (!so) throw createError(404, "Sales order not found");
+
+    const material = await MaterialMaster.findOne({
+      where: { id: material_id, is_deleted: false },
+      transaction: t,
+    });
+    if (!material) throw createError(400, "Invalid material_id");
+
+    let existingItems = so.items || [];
+    if (typeof existingItems === "string") {
+      try { existingItems = JSON.parse(existingItems); } catch { existingItems = []; }
+    }
+    if (!Array.isArray(existingItems)) existingItems = [];
+
+    if (existingItems.length === 0 && so.material_id) {
+      existingItems = [{ material_id: so.material_id, qty: so.qty, rate: so.rate }];
+    }
+
+    const dup = existingItems.some(
+      (it) => Number(it.material_id) === Number(material_id)
+    );
+    if (dup) throw createError(409, "This material is already on this Sales Order");
+
+    // IMPORTANT: build a NEW array, don't push onto the existing reference
+    const newItems = [
+      ...existingItems,
+      { material_id: Number(material_id), qty: Number(qty), rate: Number(rate) },
+    ];
+
+    so.set("items", newItems);
+    so.changed("items", true); // force Sequelize to treat the JSON field as dirty
+    so.material_id = null;
+    so.qty = null;
+    so.rate = null;
+    so.updated_by = req.user ? req.user.id : null;
+
+    await so.save({ transaction: t });
+    await t.commit();
+
+    const updated = await SalesOrder.findByPk(so.id, { include: detailIncludes });
+    res.status(200).json({
+      success: true,
+      msg: `Material added to SO ${so_no}`,
+      data: updated,
+    });
+  } catch (err) {
+    if (!t.finished) await t.rollback();
+    next(err);
+  }
+},
 
   // DELETE /so/:so_no/items/:material_id — remove a single material line
   // from the `items` array. The Approval page's trash-can button used to
@@ -797,7 +726,7 @@ bulkCreate: async (req, res, next) => {
     try {
       const { so_no, material_id } = req.params;
 
-      const so = await resolveCanonicalSoRow(so_no, t);
+      const so = await SalesOrder.findOne({ where: { so_no, is_deleted: false, approval_status: "pending_approval" }, transaction: t });
       if (!so) throw createError(404, "Sales order not found");
 
       const items = parseItemsField(so.items);

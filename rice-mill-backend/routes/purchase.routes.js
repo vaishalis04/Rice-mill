@@ -32,6 +32,7 @@ router.patch("/po/:po_no/approve", authorize("admin"), Controller.approve);
 
 // Admin rejects entire PO
 router.patch("/po/:po_no/reject", authorize("admin"), Controller.reject);
+router.put("/po/:po_no/items", Controller.addItem);
 router.post("/po/:po_no/items", Controller.addItem);
 router.put("/po/:po_no/header", Controller.updateHeader);
 router.put("/:id", Controller.update);

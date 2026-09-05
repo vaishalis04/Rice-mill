@@ -25,29 +25,18 @@ const poIncludes = [
   { model: VarietyMaster, as: "variety", attributes: ["id", "variety_name"] },
 ];
 
-// The `items` column is a JSON column, but on MariaDB (and in some
-// mysql2/Sequelize version combos) it round-trips as a raw JSON
-// *string* instead of an already-parsed array/object. Every read of
-// row.items needs to tolerate both shapes, or a PO's line items
-// silently disappear (this was the root cause of the Approval page's
-// "Material Details" table showing blank).
-const parseItemsField = (value) => {
-  if (Array.isArray(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-};
-
 const normalizePoItems = (row) => {
   const list = [];
 
-  const jsonItems = parseItemsField(row?.items);
+  let jsonItems = Array.isArray(row?.items) ? row.items : [];
+  if (typeof row?.items === "string" && row.items.trim()) {
+    try {
+      const parsed = JSON.parse(row.items);
+      jsonItems = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      jsonItems = [];
+    }
+  }
   for (const item of jsonItems) {
     if (!item) continue;
     list.push({
@@ -118,21 +107,22 @@ const buildGroupedPurchaseOrder = (rows) => {
 
     const group = groups.get(key);
     const merged = normalizePoItems(row);
-    const existingKeys = new Set(
-      (group.items || []).map((item) => {
-        const materialId = item.material_id ?? "";
-        const varietyId = item.variety_id ?? "";
-        return `${String(materialId)}::${String(varietyId)}::${String(item.qty ?? "")}::${String(item.rate ?? "")}`;
-      }),
+    const itemsByKey = new Map(
+      (group.items || []).map((item) => [
+        `${String(item.material_id ?? "")}::${String(item.variety_id ?? "")}`,
+        item,
+      ]),
     );
 
     for (const item of merged) {
-      const itemKey = `${String(item.material_id ?? "")}::${String(item.variety_id ?? "")}::${String(item.qty ?? "")}::${String(item.rate ?? "")}`;
-      if (!existingKeys.has(itemKey)) {
-        group.items.push(item);
-        existingKeys.add(itemKey);
-      }
+      const itemKey = `${String(item.material_id ?? "")}::${String(item.variety_id ?? "")}`;
+      // Later rows win — this keeps the freshest data if a material's
+      // numbers ever diverge between a row's live flat columns and a
+      // stale cached items snapshot, instead of showing both as if they
+      // were separate materials.
+      itemsByKey.set(itemKey, item);
     }
+    group.items = Array.from(itemsByKey.values());
   }
 
   return Array.from(groups.values()).map((group) => ({
@@ -149,55 +139,13 @@ const buildGroupedPurchaseOrder = (rows) => {
   }));
 };
 
-// Shared by getAllGrouped / getPendingApprovals / getById so a PO's items
-// always come back the same shape: grouped by po_no, with each item's
-// material/variety looked up and attached (some items only carry the
-// material_id/variety_id inside the JSON items column, with no
-// association pre-loaded on them).
-const enrichGroupedPurchaseOrders = async (grouped) => {
-  const materialIds = new Set();
-  const varietyIds = new Set();
-  for (const group of grouped) {
-    for (const item of group.items || []) {
-      if (item.material_id) materialIds.add(item.material_id);
-      if (item.variety_id) varietyIds.add(item.variety_id);
-    }
-  }
-
-  const [materials, varieties] = await Promise.all([
-    materialIds.size
-      ? MaterialMaster.findAll({
-          where: { id: Array.from(materialIds) },
-          attributes: ["id", "material_code", "name"],
-        })
-      : [],
-    varietyIds.size
-      ? VarietyMaster.findAll({
-          where: { id: Array.from(varietyIds) },
-          attributes: ["id", "variety_name"],
-        })
-      : [],
-  ]);
-  const materialById = new Map(materials.map((m) => [String(m.id), m]));
-  const varietyById = new Map(varieties.map((v) => [String(v.id), v]));
-
-  return grouped.map((group) => ({
-    ...group,
-    items: (group.items || []).map((item) => ({
-      ...item,
-      material: item.material || materialById.get(String(item.material_id)) || null,
-      variety: item.variety || (item.variety_id ? varietyById.get(String(item.variety_id)) || null : null),
-    })),
-  }));
-};
-
 module.exports = {
   getAllGrouped: async (req, res, next) => {
     try {
       const { search, vendor_id, plant_id } = req.query;
 
       const where = { is_deleted: false };
-      if (req.user.role !== "admin") where.approval_status = "approved";
+      if (req.user.role?.role_name !== "admin") where.approval_status = "approved";
       if (vendor_id) where.vendor_id = vendor_id;
       if (plant_id) where.plant_id = plant_id;
       if (search) {
@@ -217,7 +165,41 @@ module.exports = {
       });
 
       const grouped = buildGroupedPurchaseOrder(rows);
-      const enriched = await enrichGroupedPurchaseOrders(grouped);
+
+      const materialIds = new Set();
+      const varietyIds = new Set();
+      for (const group of grouped) {
+        for (const item of group.items || []) {
+          if (item.material_id) materialIds.add(item.material_id);
+          if (item.variety_id) varietyIds.add(item.variety_id);
+        }
+      }
+
+      const [materials, varieties] = await Promise.all([
+        materialIds.size
+          ? MaterialMaster.findAll({
+              where: { id: Array.from(materialIds) },
+              attributes: ["id", "material_code", "name"],
+            })
+          : [],
+        varietyIds.size
+          ? VarietyMaster.findAll({
+              where: { id: Array.from(varietyIds) },
+              attributes: ["id", "variety_name"],
+            })
+          : [],
+      ]);
+      const materialById = new Map(materials.map((m) => [String(m.id), m]));
+      const varietyById = new Map(varieties.map((v) => [String(v.id), v]));
+
+      const enriched = grouped.map((group) => ({
+        ...group,
+        items: (group.items || []).map((item) => ({
+          ...item,
+          material: item.material || materialById.get(String(item.material_id)) || null,
+          variety: item.variety || (item.variety_id ? varietyById.get(String(item.variety_id)) || null : null),
+        })),
+      }));
 
       res.status(200).json({ success: true, data: enriched });
     } catch (err) {
@@ -275,30 +257,41 @@ module.exports = {
   },
 
   // GET /api/purchase/:id
-  // A PO can be made of several `purchase_order` rows sharing one po_no
-  // (multi-item POs from bulkCreate/addItem), plus items packed into the
-  // JSON `items` column. Fetching just the single row by id — as this
-  // used to do — showed a blank Material Details table on the Approval
-  // page whenever that particular row wasn't the one carrying the visible
-  // fields. Instead: resolve po_no from the requested id, then fetch and
-  // group every row for that po_no, same as the list endpoints do.
   getById: async (req, res, next) => {
     try {
-      const anchor = await PurchaseOrder.findOne({
+      const selected = await PurchaseOrder.findOne({
         where: { id: req.params.id, is_deleted: false },
+        include: poIncludes,
       });
-      if (!anchor) throw createError(404, "Purchase order not found");
+      if (!selected) throw createError(404, "Purchase order not found");
 
       const rows = await PurchaseOrder.findAll({
-        where: { po_no: anchor.po_no, is_deleted: false },
+        where: { po_no: selected.po_no, is_deleted: false },
         include: poIncludes,
         order: [["created_at", "ASC"]],
       });
+      const [group] = buildGroupedPurchaseOrder(rows);
+      if (!group) throw createError(404, "Purchase order items not found");
 
-      const grouped = buildGroupedPurchaseOrder(rows);
-      const [enriched] = await enrichGroupedPurchaseOrders(grouped);
+      const materialIds = new Set((group.items || []).map((item) => item.material_id).filter(Boolean));
+      const varietyIds = new Set((group.items || []).map((item) => item.variety_id).filter(Boolean));
+      const [materials, varieties] = await Promise.all([
+        materialIds.size
+          ? MaterialMaster.findAll({ where: { id: Array.from(materialIds), is_deleted: false }, attributes: ["id", "material_code", "name"] })
+          : [],
+        varietyIds.size
+          ? VarietyMaster.findAll({ where: { id: Array.from(varietyIds), is_deleted: false }, attributes: ["id", "variety_name"] })
+          : [],
+      ]);
+      const materialById = new Map(materials.map((material) => [String(material.id), material]));
+      const varietyById = new Map(varieties.map((variety) => [String(variety.id), variety]));
+      group.items = (group.items || []).map((item) => ({
+        ...item,
+        material: item.material || materialById.get(String(item.material_id)) || null,
+        variety: item.variety || (item.variety_id ? varietyById.get(String(item.variety_id)) || null : null),
+      }));
 
-      res.status(200).json({ success: true, data: enriched });
+      res.status(200).json({ success: true, data: group });
     } catch (err) {
       next(err);
     }
@@ -630,7 +623,41 @@ module.exports = {
       });
 
       const grouped = buildGroupedPurchaseOrder(purchaseOrders);
-      const enriched = await enrichGroupedPurchaseOrders(grouped);
+
+      const materialIds = new Set();
+      const varietyIds = new Set();
+      for (const group of grouped) {
+        for (const item of group.items || []) {
+          if (item.material_id) materialIds.add(item.material_id);
+          if (item.variety_id) varietyIds.add(item.variety_id);
+        }
+      }
+
+      const [materials, varieties] = await Promise.all([
+        materialIds.size
+          ? MaterialMaster.findAll({
+              where: { id: Array.from(materialIds) },
+              attributes: ["id", "material_code", "name"],
+            })
+          : [],
+        varietyIds.size
+          ? VarietyMaster.findAll({
+              where: { id: Array.from(varietyIds) },
+              attributes: ["id", "variety_name"],
+            })
+          : [],
+      ]);
+      const materialById = new Map(materials.map((m) => [String(m.id), m]));
+      const varietyById = new Map(varieties.map((v) => [String(v.id), v]));
+
+      const enriched = grouped.map((group) => ({
+        ...group,
+        items: (group.items || []).map((item) => ({
+          ...item,
+          material: item.material || materialById.get(String(item.material_id)) || null,
+          variety: item.variety || (item.variety_id ? varietyById.get(String(item.variety_id)) || null : null),
+        })),
+      }));
 
       res.status(200).json({
         success: true,
@@ -643,13 +670,14 @@ module.exports = {
 
   updateBeforeApproval: async (req, res, next) => {
     try {
-      const { id } = req.params;
+      const { po_no } = req.params;
 
       const { vendor_id, po_date, validity, do_no, plant_id, items } = req.body;
 
       const po = await PurchaseOrder.findOne({
         where: {
-          id,
+          po_no,
+          is_deleted: false,
           approval_status: "pending_approval",
         },
       });
@@ -664,6 +692,39 @@ module.exports = {
       if (validity !== undefined) po.validity = validity;
       if (do_no !== undefined) po.do_no = do_no;
       if (plant_id !== undefined) po.plant_id = plant_id;
+
+      if (items !== undefined) {
+        if (!Array.isArray(items) || items.length === 0) {
+          throw createError(400, "items must contain at least one item");
+        }
+        const seen = new Set();
+        const normalizedItems = [];
+        for (const item of items) {
+          const materialId = Number(item.material_id);
+          const varietyId = item.variety_id ? Number(item.variety_id) : null;
+          const qty = Number(item.qty);
+          const rate = Number(item.rate);
+          if (!Number.isInteger(materialId) || materialId <= 0 || !(qty > 0) || !(rate >= 0)) {
+            throw createError(400, "Each PO item needs a valid material, quantity, and rate");
+          }
+          const key = `${materialId}-${varietyId || "null"}`;
+          if (seen.has(key)) throw createError(400, "Duplicate material/variety in PO items");
+          seen.add(key);
+          const material = await MaterialMaster.findOne({ where: { id: materialId, is_deleted: false } });
+          if (!material) throw createError(400, `Invalid material_id: ${materialId}`);
+          if (varietyId) {
+            const variety = await VarietyMaster.findOne({ where: { id: varietyId, is_deleted: false } });
+            if (!variety) throw createError(400, `Invalid variety_id: ${varietyId}`);
+          }
+          normalizedItems.push({ material_id: materialId, variety_id: varietyId, qty, rate });
+        }
+        po.items = normalizedItems;
+        po.changed("items", true);
+        po.material_id = null;
+        po.variety_id = null;
+        po.qty = null;
+        po.rate = null;
+      }
 
       po.updated_by = req.user.id;
 
@@ -771,7 +832,7 @@ module.exports = {
       // Any existing row for this po_no carries the shared header fields
       // (vendor, po_date, validity, do_no) that the new line should inherit.
       const anyRow = await PurchaseOrder.findOne({
-        where: { po_no, is_deleted: false },
+        where: { po_no, is_deleted: false, approval_status: "pending_approval" },
       });
       if (!anyRow) throw createError(404, "Purchase order not found");
 
@@ -786,48 +847,39 @@ module.exports = {
         if (!variety) throw createError(400, "Invalid variety_id");
       }
 
-      const existingRows = await PurchaseOrder.findAll({
-        where: {
-          po_no,
-          is_deleted: false,
-        },
-      });
-
+      // Check against the PO's REAL current material list — not just each
+      // row's own flat columns. A bulk-created PO stores all its materials
+      // inside a single row's `items` JSON with flat columns left null, so
+      // checking flat columns alone is blind to every material added that
+      // way (which is the normal creation path).
+      const currentItems = normalizePoItems(anyRow);
       const duplicateKey = `${material_id}-${variety_id || "null"}`;
-      const alreadyExists = existingRows.some((row) => {
-        const materialKey = `${row.material_id ?? "null"}-${row.variety_id ?? "null"}`;
+      const alreadyExists = currentItems.some((item) => {
+        const materialKey = `${item.material_id ?? "null"}-${item.variety_id ?? "null"}`;
         return materialKey === duplicateKey;
       });
       if (alreadyExists) {
         throw createError(409, "This material/variety is already on this PO");
       }
 
-      const row = await PurchaseOrder.create({
-        po_no,
-        vendor_id: anyRow.vendor_id,
-        material_id,
-        variety_id: variety_id || null,
-        qty,
-        rate,
-        po_date: anyRow.po_date,
-        validity: anyRow.validity,
-        do_no: anyRow.do_no,
-        uploaded_by_vendor: anyRow.uploaded_by_vendor,
-        plant_id: anyRow.plant_id,
-        created_by: req.user ? req.user.id : null,
-      });
+      anyRow.items = [
+        ...currentItems.map((item) => ({
+          material_id: Number(item.material_id),
+          variety_id: item.variety_id ? Number(item.variety_id) : null,
+          qty: Number(item.qty),
+          rate: Number(item.rate),
+        })),
+        { material_id: Number(material_id), variety_id: variety_id ? Number(variety_id) : null, qty: Number(qty), rate: Number(rate) },
+      ];
+      anyRow.changed("items", true);
+      anyRow.material_id = null;
+      anyRow.variety_id = null;
+      anyRow.qty = null;
+      anyRow.rate = null;
+      anyRow.updated_by = req.user ? req.user.id : null;
+      await anyRow.save();
 
-      const allRows = await PurchaseOrder.findAll({
-        where: { po_no, is_deleted: false },
-      });
-      const mergedItems = buildGroupedPurchaseOrder(allRows).flatMap((group) => group.items || []);
-
-      await PurchaseOrder.update(
-        { items: mergedItems },
-        { where: { po_no, is_deleted: false } },
-      );
-
-      const created = await PurchaseOrder.findByPk(row.id, {
+      const created = await PurchaseOrder.findByPk(anyRow.id, {
         include: poIncludes,
       });
       res

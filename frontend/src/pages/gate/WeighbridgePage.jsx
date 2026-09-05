@@ -195,7 +195,7 @@ export default function WeighbridgePage() {
           />
         </div>
         <div className="sf-field">
-          <label>First Weight (truck + load)</label>
+          <label>First Weight</label>
           <input
             name="gross_weight"
             type="number"
@@ -205,7 +205,7 @@ export default function WeighbridgePage() {
           />
         </div>
         <div className="sf-field">
-          <label>Second Weight (empty truck — must be less than first)</label>
+          <label>Second Weight</label>
           <input
             name="tare_weight"
             type="number"
@@ -252,7 +252,7 @@ export default function WeighbridgePage() {
             </div>
             {!isOtherEntry && (
               <div className="sf-field">
-                <label>Final Rate (only if this entry has no PO)</label>
+                <label>Final Rate</label>
                 <input
                   name="final_rate"
                   type="number"
@@ -274,7 +274,7 @@ export default function WeighbridgePage() {
             {editingId
               ? "Update Weight Slip"
               : form.tare_weight === "" || form.tare_weight == null
-              ? "Start Unloading"
+              ? "Start Process"
               : "Generate Weight Slip"}
           </button>
           {editingId && (

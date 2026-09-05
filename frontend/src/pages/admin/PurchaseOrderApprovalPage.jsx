@@ -367,7 +367,12 @@ export default function PurchaseOrderApprovalPage() {
   };
 
   const getPoItems = (po) => {
-    if (Array.isArray(po?.items) && po.items.length) return po.items;
+    const enrich = (item) => ({
+      ...item,
+      material: item.material || materials.find((m) => String(m.id) === String(item.material_id)) || null,
+      variety: item.variety || varieties.find((v) => String(v.id) === String(item.variety_id)) || null,
+    });
+    if (Array.isArray(po?.items) && po.items.length) return po.items.map(enrich);
     // Fallback for any older/flat response shape. Using `!= null` (not
     // `!== null`) here matters: a genuinely absent field comes back as
     // `undefined`, and `undefined !== null` is true — that previously
@@ -377,14 +382,14 @@ export default function PurchaseOrderApprovalPage() {
       po &&
       (po.material_id != null || po.qty != null || po.rate != null)
     ) {
-      return [{
+      return [enrich({
         material_id: po.material_id,
         variety_id: po.variety_id,
         qty: po.qty,
         rate: po.rate,
         material: po.material,
         variety: po.variety,
-      }];
+      })];
     }
     return [];
   };
@@ -484,6 +489,12 @@ export default function PurchaseOrderApprovalPage() {
         : "",
       do_no: selectedPO.do_no || "",
       plant_id: selectedPO.plant_id ?? "",
+      items: getPoItems(selectedPO).map((item) => ({
+        material_id: item.material_id ?? "",
+        variety_id: item.variety_id ?? "",
+        qty: item.qty ?? "",
+        rate: item.rate ?? "",
+      })),
     });
 
     setError("");
@@ -503,6 +514,23 @@ export default function PurchaseOrderApprovalPage() {
     }));
   };
 
+  const updateEditItem = (index, field, value) => {
+    setEditForm((prev) => ({
+      ...prev,
+      items: (prev.items || []).map((item, itemIndex) =>
+        itemIndex === index ? { ...item, [field]: value } : item,
+      ),
+    }));
+  };
+
+  const removeEditItem = (index) => {
+    setEditForm((prev) => {
+      const items = prev.items || [];
+      if (items.length <= 1) return prev;
+      return { ...prev, items: items.filter((_, itemIndex) => itemIndex !== index) };
+    });
+  };
+
   const handleSavePO = async () => {
     if (!selectedPO || !editForm) return;
 
@@ -517,16 +545,22 @@ export default function PurchaseOrderApprovalPage() {
     setSuccess("");
 
     try {
+      const items = (editForm.items || []).map((item) => ({
+        material_id: Number(item.material_id),
+        variety_id: item.variety_id ? Number(item.variety_id) : null,
+        qty: Number(item.qty),
+        rate: Number(item.rate),
+      }));
+      if (!items.length) {
+        throw new Error("A purchase order must contain at least one item.");
+      }
       await updatePurchaseOrderBeforeApprovalApi(poNo, {
         vendor_id: editForm.vendor_id || undefined,
-        material_id: editForm.material_id || undefined,
-        variety_id: editForm.variety_id || undefined,
-        qty: editForm.qty !== "" ? Number(editForm.qty) : undefined,
-        rate: editForm.rate !== "" ? Number(editForm.rate) : undefined,
         po_date: editForm.po_date || undefined,
         validity: editForm.validity || undefined,
         do_no: editForm.do_no || undefined,
         plant_id: editForm.plant_id || undefined,
+        items,
       });
 
       setSuccess(`Purchase Order ${poNo} updated successfully.`);
@@ -552,11 +586,10 @@ export default function PurchaseOrderApprovalPage() {
 
     if (
       !addItemMaterialId ||
-      !addItemVarietyId ||
       addItemQty === "" ||
       addItemRate === ""
     ) {
-      setError("Select a material, variety, quantity and rate to add an item.");
+      setError("Select a material and enter quantity and rate to add an item.");
       return;
     }
 
@@ -582,6 +615,7 @@ export default function PurchaseOrderApprovalPage() {
 
       resetAddItemForm();
 
+      await handleViewPO({ id: selectedPO.id, po_no: poNo });
       await loadPendingOrders();
     } catch (err) {
       setError(
@@ -861,53 +895,6 @@ export default function PurchaseOrderApprovalPage() {
               </select>
             </div>
 
-            <MaterialPicker
-              materials={materials}
-              value={editForm.material_id}
-              onChange={(v) => handleEditChange("material_id", v)}
-              onAdd={async (name, code) => {
-                const id = await createMaterial(name, code);
-                if (id) handleEditChange("material_id", id);
-                return id;
-              }}
-              onDelete={deleteMaterial}
-              busy={masterActionLoading}
-            />
-
-            <VarietyPicker
-              varieties={varieties}
-              value={editForm.variety_id}
-              onChange={(v) => handleEditChange("variety_id", v)}
-              onAdd={async (name) => {
-                const id = await createVariety(name);
-                if (id) handleEditChange("variety_id", id);
-                return id;
-              }}
-              onDelete={deleteVariety}
-              busy={masterActionLoading}
-            />
-
-            <div className="sf-field">
-              <label>Quantity</label>
-              <input
-                type="number"
-                min="0"
-                value={editForm.qty}
-                onChange={(e) => handleEditChange("qty", e.target.value)}
-              />
-            </div>
-
-            <div className="sf-field">
-              <label>Rate</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={editForm.rate}
-                onChange={(e) => handleEditChange("rate", e.target.value)}
-              />
-            </div>
-
             <div className="sf-field">
               <label>PO Date</label>
               <input
@@ -943,6 +930,53 @@ export default function PurchaseOrderApprovalPage() {
                 onChange={(e) => handleEditChange("plant_id", e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="po-edit-items">
+            <h3>PO Items</h3>
+            {(editForm.items || []).map((item, index) => (
+              <div className="po-edit-item-row" key={`po-edit-item-${index}`}>
+                <select
+                  value={item.material_id}
+                  onChange={(e) => updateEditItem(index, "material_id", e.target.value)}
+                >
+                  <option value="">Select material</option>
+                  {materials.map((material) => <option key={material.id} value={material.id}>{material.name} ({material.material_code})</option>)}
+                </select>
+                <select
+                  value={item.variety_id || ""}
+                  onChange={(e) => updateEditItem(index, "variety_id", e.target.value || null)}
+                >
+                  <option value="">No variety</option>
+                  {varieties.map((variety) => <option key={variety.id} value={variety.id}>{variety.variety_name}</option>)}
+                </select>
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={item.qty}
+                  onChange={(e) => updateEditItem(index, "qty", e.target.value)}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={item.rate}
+                  onChange={(e) => updateEditItem(index, "rate", e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="po-cancel-btn"
+                  disabled={(editForm.items || []).length <= 1}
+                  onClick={() => removeEditItem(index)}
+                >Remove</button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="po-approve-btn"
+              onClick={() => setEditForm((prev) => ({ ...prev, items: [...(prev.items || []), { material_id: "", variety_id: "", qty: "", rate: "" }] }))}
+            >+ Add Item</button>
           </div>
 
           <div className="po-edit-actions">

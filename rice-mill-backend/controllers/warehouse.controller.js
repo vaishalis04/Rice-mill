@@ -130,6 +130,61 @@ module.exports = {
     }
   },
 
+  // GET /api/warehouse/:id/summary — capacity, current stock, remaining
+  // space, and a material-wise breakdown for one warehouse. Used by the
+  // Unloading page so picking a warehouse shows what's actually in it
+  // before you commit a truck's load to it.
+  getSummary: async (req, res, next) => {
+    try {
+      const warehouse = await WarehouseMaster.findOne({
+        where: { id: req.params.id, is_deleted: false },
+      });
+      if (!warehouse) throw createError(404, "Warehouse not found");
+
+      const inventoryRows = await Inventory.findAll({
+        where: { warehouse_id: warehouse.id, is_deleted: false },
+        include: [{ model: MaterialMaster, as: "material", attributes: ["id", "name", "material_code"] }],
+      });
+
+      const byMaterial = new Map();
+      for (const row of inventoryRows) {
+        const key = row.material_id;
+        const existing = byMaterial.get(key) || {
+          material_id: key,
+          material_name: row.material?.name || `Material ${key}`,
+          material_code: row.material?.material_code || null,
+          qty: 0,
+        };
+        existing.qty += Number(row.balance_qty || 0);
+        byMaterial.set(key, existing);
+      }
+
+      const materials = Array.from(byMaterial.values())
+        .filter((m) => m.qty > 0)
+        .sort((a, b) => b.qty - a.qty);
+
+      const totalStock = materials.reduce((sum, m) => sum + m.qty, 0);
+      const capacity = warehouse.capacity != null ? Number(warehouse.capacity) : null;
+      const remainingCapacity = capacity != null ? Math.max(capacity - totalStock, 0) : null;
+
+      res.status(200).json({
+        success: true,
+        data: {
+          warehouse_id: warehouse.id,
+          warehouse_code: warehouse.warehouse_code,
+          name: warehouse.name,
+          type: warehouse.type,
+          capacity,
+          total_stock: totalStock,
+          remaining_capacity: remainingCapacity,
+          materials,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
   // GET /api/warehouse/:id?type=warehouse|bin|stack
   getById: async (req, res, next) => {
     try {

@@ -10,6 +10,10 @@ export const ROLE_ID = {
 };
 
 // role_id -> readable name (lowercase as in DB)
+// dispatch shows as "weighbridge" here since that role's dashboard now
+// does weighbridge work instead of the old dispatch-weight-entry page
+// (see DispatchDashboard.jsx) — this is display text only, the actual
+// role value used for auth/routing everywhere else is still "dispatch".
 export const ROLE_NAME = {
   [ROLE_ID.admin]: "admin",
   [ROLE_ID.purchase]: "purchase",
@@ -18,7 +22,7 @@ export const ROLE_NAME = {
   [ROLE_ID.warehouse]: "warehouse",
   [ROLE_ID.production]: "production",
   [ROLE_ID.sales]: "sales",
-  [ROLE_ID.dispatch]: "dispatch",
+  [ROLE_ID.dispatch]: "weighbridge",
 };
 
 // role_id -> where to land right after login

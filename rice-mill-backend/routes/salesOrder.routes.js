@@ -35,6 +35,7 @@ router.get("/:id", Controller.getById);
 router.post("/", Controller.create);
 router.post("/bulk", Controller.bulkCreate);
 router.put("/so/:so_no/items", Controller.addItem);
+router.post("/so/:so_no/items", Controller.addItem);
 router.delete("/so/:so_no/items/:material_id", Controller.removeItem);
 router.put("/so/:so_no/header", Controller.updateHeader);
 router.put("/:id", Controller.update);

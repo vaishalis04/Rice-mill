@@ -72,7 +72,7 @@ export const getPurchaseOrderPdfApi = (po_no) =>
   axiosInstance.get(`/purchases/po/${po_no}/pdf`, { responseType: "blob" });
 
 export const addPurchaseOrderItemApi = (po_no, data) =>
-  axiosInstance.post(`/purchases/po/${encodeURIComponent(po_no)}/items`, data);
+  axiosInstance.put(`/purchases/po/${encodeURIComponent(po_no)}/items`, data);
 
 export const updatePurchaseOrderHeaderApi = (po_no, data) =>
   axiosInstance.put(`/purchases/po/${encodeURIComponent(po_no)}/header`, data);
@@ -115,11 +115,10 @@ export const uploadGatePhotoApi = (photoBlob) => {
   });
 };
 
-export const getGateEntriesApi = (status, entry_type, limit) => {
+export const getGateEntriesApi = (status, entry_type) => {
   const params = {};
   if (status) params.status = status;
   if (entry_type) params.entry_type = entry_type;
-  if (limit) params.limit = limit;
   return axiosInstance.get("/gate", { params });
 };
 
@@ -433,6 +432,9 @@ export const deleteWarehouseSettingApi = (id, type) =>
 
 export const getWarehouseStockApi = (params = {}) =>
   axiosInstance.get("/warehouse/stock", { params });
+
+export const getWarehouseSummaryApi = (id) =>
+  axiosInstance.get(`/warehouse/${id}/summary`);
 
 // ---------------- INVENTORY (read-only, role: warehouse) ----------------
 export const getInventoryApi = (params = {}) =>
