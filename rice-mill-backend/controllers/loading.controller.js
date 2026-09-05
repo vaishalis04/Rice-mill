@@ -291,7 +291,7 @@ create: async (req, res, next) => {
 
     // Update gate entry status to 'loaded'
     await gateEntry.update({ 
-      gate_status: "loaded", 
+      gate_status: "waiting_second_weighment", 
       updated_by: req.user ? req.user.id : null 
     });
 

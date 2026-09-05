@@ -569,7 +569,7 @@ completeUnloading: async (req, res, next) => {
 
         if (gateEntry) {
           await gateEntry.update({
-            gate_status: "unloaded",
+            gate_status: "waiting_second_weighment",
             updated_by: req.user
               ? req.user.id
               : null,

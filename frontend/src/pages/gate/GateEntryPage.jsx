@@ -40,7 +40,7 @@ const STATUS_FILTERS = [
   { key: "unloaded", label: "Unloaded" },
   { key: "waiting_loading", label: "Waiting Loading" },
   { key: "loaded", label: "Loaded" },
-  { key: "parked", label: "Parked" },
+  { key: "Parked", label: "Parked" },
   { key: "exited", label: "Exited" },
 ];
 
@@ -622,7 +622,7 @@ const handleSalesMaterialQtyChange = (soId, materialId, qty) => {
     setForm((prev) => ({ ...prev, driver_photo_url: "" }));
   };
 
- const handleGenerateToken = async (e) => {
+const handleGenerateToken = async (e) => {
   e.preventDefault();
   setError("");
   setInfo("");
@@ -634,8 +634,6 @@ const handleSalesMaterialQtyChange = (soId, materialId, qty) => {
     return;
   }
 
-  // ... existing validation for purchase and other entry types ...
-
   try {
     const payload = {
       entry_type: form.entry_type,
@@ -645,14 +643,59 @@ const handleSalesMaterialQtyChange = (soId, materialId, qty) => {
     };
 
     if (form.entry_type === "purchase") {
-      // ... existing purchase logic ...
+      // Validate selected POs
+      if (selectedPOs.length === 0) {
+        setError("Please select at least one Purchase Order.");
+        return;
+      }
+
+      // Check if all POs have at least one material selected
+      const allMaterialsSelected = selectedPOs.every((po) => {
+        const materials = selectedMaterials[po.id] || [];
+        return materials.length > 0;
+      });
+
+      if (!allMaterialsSelected) {
+        setError("Please select at least one material for each Purchase Order.");
+        return;
+      }
+
+      // Build purchase_orders array
+      const purchase_orders = selectedPOs.map((po) => {
+        const materials = selectedMaterials[po.id] || [];
+        return {
+          po_id: Number(po.id),
+          materials: materials.map((material) => ({
+            material_id: Number(material.material_id),
+            qty: material.qty ? Number(material.qty) : null,
+          })),
+        };
+      });
+
+      // Validate all materials have valid quantities
+      const invalidPO = purchase_orders.find(
+        (po) => po.materials.length === 0 || po.materials.some(m => !m.material_id || !m.qty || m.qty <= 0)
+      );
+
+      if (invalidPO) {
+        setError(
+          `Please ensure all materials have valid IDs and quantities for PO ${invalidPO.po_id}.`
+        );
+        return;
+      }
+
+      payload.vendor_id = Number(form.vendor_id);
+      payload.purchase_orders = purchase_orders;
+      payload.challan_no = form.challan_no;
+      payload.expected_qty = form.expected_qty ? Number(form.expected_qty) : undefined;
+      
     } else if (form.entry_type === "sales") {
+      // ... existing sales logic ...
       if (selectedSOs.length === 0) {
         setError("Please select at least one Sales Order.");
         return;
       }
 
-      // Check if all SOs have at least one material selected
       const allMaterialsSelected = selectedSOs.every((so) => {
         const materials = selectedSalesMaterials[so.id] || [];
         return materials.length > 0;
@@ -675,12 +718,12 @@ const handleSalesMaterialQtyChange = (soId, materialId, qty) => {
       });
 
       const invalidSO = sales_orders.find(
-        (so) => so.materials.length === 0 || so.materials.some(m => !m.material_id)
+        (so) => so.materials.length === 0 || so.materials.some(m => !m.material_id || !m.qty || m.qty <= 0)
       );
 
       if (invalidSO) {
         setError(
-          `Please ensure all materials have valid IDs for SO ${invalidSO.so_id}.`
+          `Please ensure all materials have valid IDs and quantities for SO ${invalidSO.so_id}.`
         );
         return;
       }
@@ -689,17 +732,24 @@ const handleSalesMaterialQtyChange = (soId, materialId, qty) => {
       payload.sales_orders = sales_orders;
       payload.challan_no = form.challan_no;
       payload.expected_qty = form.expected_qty ? Number(form.expected_qty) : undefined;
+      
     } else {
-      // ... existing other logic ...
+      // "other" entry type
+      payload.challan_no = form.challan_no;
+      payload.remarks = form.remarks;
     }
+
+    // Log the payload for debugging
+    console.log('Sending payload:', payload);
 
     const res = await generateGateTokenApi(payload);
     const generatedEntry = res.data.data;
     const tokenNo = res.data.token_no ?? generatedEntry?.token_no;
+    const vendorName = generatedEntry?.vendor?.name || selectedPOs[0]?.vendor?.name || "";
     const customerName = generatedEntry?.customer?.name || selectedSOs[0]?.customer?.name || "";
     
     setLastToken(tokenNo || "");
-    setLastVendor(customerName);
+    setLastVendor(form.entry_type === "purchase" ? vendorName : customerName);
     setInfo(
       tokenNo
         ? "Token generated — give this number to the driver."
@@ -718,6 +768,7 @@ const handleSalesMaterialQtyChange = (soId, materialId, qty) => {
     setPhotoUploadError("");
     load();
   } catch (err) {
+    console.error('Token generation error:', err.response?.data);
     setError(err.response?.data?.msg || err.response?.data?.message || "Failed to generate token");
   }
 };
@@ -1358,7 +1409,7 @@ const handleSalesMaterialQtyChange = (soId, materialId, qty) => {
                   </span>
                 )}
                 {row.entry_type === "sales"
-                  ? row.gate_status === "loaded" && (
+                  ? row.gate_status === "parked" && (
                       <button className="dt-btn" onClick={() => handleCheckout(row.id)}>
                         Check-out
                       </button>

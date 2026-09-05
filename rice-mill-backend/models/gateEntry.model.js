@@ -29,12 +29,13 @@ gate_status: {
     "accepted",
     "rejected",
     "waiting_weighment",
+    "waiting_second_weighment", // New status
     "in_process",
     "unloading",
     "unloaded",
     "waiting_loading",
     "loaded",
-    "parked",
+    "Parked",
     "exited"
   ),
   defaultValue: "waiting_token"

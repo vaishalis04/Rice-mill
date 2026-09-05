@@ -61,8 +61,6 @@ module.exports = {
       next(err);
     }
   },
-
-  // POST /api/weight-slips  { gate_entry_id, slip_no, gross_weight, tare_weight, weighed_at?, final_rate? }
 create: async (req, res, next) => {
   try {
     const {
@@ -75,55 +73,32 @@ create: async (req, res, next) => {
       plant_id,
     } = req.body;
 
+    // --- VALIDATION ---
     if (!gate_entry_id || !slip_no || gross_weight === undefined) {
-      throw createError(
-        400,
-        "gate_entry_id, slip_no and gross_weight are required"
-      );
+      throw createError(400, "gate_entry_id, slip_no and gross_weight are required");
     }
 
     const currentWeight = Number(gross_weight);
-
     if (isNaN(currentWeight) || currentWeight <= 0) {
       throw createError(400, "gross_weight must be a valid positive number");
     }
 
-    if (
-      tare_weight !== undefined &&
-      tare_weight !== null &&
-      Number(gross_weight) <= Number(tare_weight)
-    ) {
-      throw createError(
-        400,
-        "gross_weight must be greater than tare_weight"
-      );
-    }
+    // if (tare_weight !== undefined && tare_weight !== null && Number(gross_weight) <= Number(tare_weight)) {
+    //   throw createError(400, "gross_weight must be greater than tare_weight");
+    // }
 
-    // ---------------------------------------------------------
-    // GET GATE ENTRY
-    // ---------------------------------------------------------
-
+    // --- GET GATE ENTRY ---
     let gateEntry;
-
     try {
       gateEntry = await GateEntry.findOne({
-        where: {
-          id: gate_entry_id,
-          is_deleted: false,
-        },
+        where: { id: gate_entry_id, is_deleted: false },
         include: [
-          {
-            association: "purchase_orders",
-            required: false,
-          },
+          { association: "purchase_orders", required: false },
         ],
       });
     } catch (assocError) {
       gateEntry = await GateEntry.findOne({
-        where: {
-          id: gate_entry_id,
-          is_deleted: false,
-        },
+        where: { id: gate_entry_id, is_deleted: false },
       });
     }
 
@@ -132,493 +107,381 @@ create: async (req, res, next) => {
     }
 
     const entryType = gateEntry.entry_type;
-
     const isSalesEntry = entryType === "sales";
     const isPurchaseEntry = entryType === "purchase";
     const isOtherEntry = entryType === "other";
 
-    // ---------------------------------------------------------
-    // STATUS VALIDATION
-    // ---------------------------------------------------------
+    // --- CHECK FOR EXISTING SLIPS ---
+    const existingSlips = await WeightSlip.findAll({
+      where: { gate_entry_id, is_deleted: false },
+      order: [["id", "ASC"]],
+    });
 
-    let requiredStatus;
+    const hasFirstWeight = existingSlips.length > 0;
+    const isSecondWeight = hasFirstWeight && (tare_weight !== undefined && tare_weight !== null);
 
+    // --- STATUS VALIDATION ---
     if (isSalesEntry) {
-      // Sales has two stages:
-      // 1. waiting_weighment -> first weight
-      // 2. waiting_loading   -> second weight
-      if (
-        gateEntry.gate_status !== "waiting_weighment" &&
-        gateEntry.gate_status !== "waiting_loading"
-      ) {
+      if (!hasFirstWeight && gateEntry.gate_status !== "waiting_weighment") {
         throw createError(
           400,
-          `Sales gate entry cannot be weighed with status '${gateEntry.gate_status}'. Expected 'waiting_weighment' for first weight or 'waiting_loading' for second weight`
+          `Sales entry must be in 'waiting_weighment' for first weight. Current status: '${gateEntry.gate_status}'`
+        );
+      }
+      if (hasFirstWeight && gateEntry.gate_status !== "waiting_second_weighment") {
+        throw createError(
+          400,
+          `Sales entry must be in 'waiting_second_weighment' for second weight. Current status: '${gateEntry.gate_status}'`
+        );
+      }
+    } else if (isPurchaseEntry) {
+      if (!hasFirstWeight && gateEntry.gate_status !== "accepted") {
+        throw createError(
+          400,
+          `Purchase entry must be in 'accepted' for first weight. Current status: '${gateEntry.gate_status}'`
+        );
+      }
+      if (hasFirstWeight && gateEntry.gate_status !== "waiting_second_weighment") {
+        throw createError(
+          400,
+          `Purchase entry must be in 'waiting_second_weighment' for second weight. Current status: '${gateEntry.gate_status}'`
         );
       }
     } else if (isOtherEntry) {
-      requiredStatus = "waiting_weighment";
-
-      if (gateEntry.gate_status !== requiredStatus) {
+      if (!hasFirstWeight && gateEntry.gate_status !== "waiting_weighment") {
         throw createError(
           400,
-          `Cannot weigh a gate entry with status '${gateEntry.gate_status}'; it must be '${requiredStatus}'`
+          `Other entry must be in 'waiting_weighment' for first weight. Current status: '${gateEntry.gate_status}'`
         );
       }
-    } else {
-      // Purchase
-      requiredStatus = "accepted";
-
-      if (gateEntry.gate_status !== requiredStatus) {
+      if (hasFirstWeight && gateEntry.gate_status !== "waiting_second_weighment") {
         throw createError(
           400,
-          `Cannot weigh a purchase gate entry with status '${gateEntry.gate_status}'; it must be '${requiredStatus}'`
+          `Other entry must be in 'waiting_second_weighment' for second weight. Current status: '${gateEntry.gate_status}'`
         );
       }
     }
 
-    // ---------------------------------------------------------
-    // SALES FLOW
-    // ---------------------------------------------------------
+    // =========================================================
+    // SECOND WEIGHT FLOW - UPDATE EXISTING SLIP
+    // =========================================================
+    if (isSecondWeight) {
+      const firstSlip = existingSlips[0];
+      const firstWeight = Number(firstSlip.gross_weight);
 
-    if (isSalesEntry) {
-      // =======================================================
-      // FIRST WEIGHT
-      // waiting_weighment -> waiting_loading
-      // =======================================================
+      // Validate second weight > first weight
+      // if (currentWeight <= firstWeight) {
+      //   throw createError(
+      //     400,
+      //     `Second weight must be greater than first weight. First weight: ${firstWeight}, second weight: ${currentWeight}`
+      //   );
+      // }
 
-      if (gateEntry.gate_status === "waiting_weighment") {
-        const existingFirstSlip = await WeightSlip.findOne({
-          where: {
-            gate_entry_id,
-            is_deleted: false,
-          },
-          order: [["id", "ASC"]],
-        });
+      const netWeight = currentWeight - firstWeight;
 
-        if (existingFirstSlip) {
-          throw createError(
-            409,
-            "First weight already recorded. Gate entry is waiting for second weight."
-          );
-        }
-
-        // slip_no must still be unique
-        const dupSlipNo = await WeightSlip.findOne({
-          where: { slip_no },
-        });
-
-        if (dupSlipNo) {
-          throw createError(
-            409,
-            "A weight slip with this slip_no already exists"
-          );
-        }
-
-        const slip = await WeightSlip.create({
-          gate_entry_id,
-          slip_no,
-          gross_weight: currentWeight,
-          tare_weight: null,
-          weighed_at: weighed_at || new Date(),
-          weighbridge_operator_id: req.user ? req.user.id : null,
-          plant_id:
-            plant_id ||
-            gateEntry.plant_id ||
-            (req.user ? req.user.plant_id : null),
-          created_by: req.user ? req.user.id : null,
-        });
-
-        // First weight complete.
-        // Move sales entry to waiting_loading.
-        await gateEntry.update({
-          gate_status: "waiting_loading",
-          updated_by: req.user ? req.user.id : null,
-        });
-
-        const created = await WeightSlip.findByPk(slip.id, {
-          include: detailIncludes,
-        });
-
-        return res.status(201).json({
-          success: true,
-          msg: `First weight recorded for sales order. Weight: ${currentWeight}. Gate entry moved to waiting_loading.`,
-          data: {
-            weightSlip: created,
-            purchase: null,
-            first_weight: currentWeight,
-            second_weight: null,
-            net_weight: null,
-            gate_status: "waiting_loading",
-          },
-        });
-      }
-
-      // =======================================================
-      // SECOND WEIGHT
-      // waiting_loading -> accepted
-      // =======================================================
-
-      if (gateEntry.gate_status === "waiting_loading") {
-        const firstSlip = await WeightSlip.findOne({
-          where: {
-            gate_entry_id,
-            is_deleted: false,
-          },
-          order: [["id", "ASC"]],
-        });
-
-        if (!firstSlip) {
-          throw createError(
-            400,
-            "First weight is missing. Please record the first weight before second weight."
-          );
-        }
-
-        const firstWeight = Number(firstSlip.gross_weight);
-
-        // Sales:
-        // First weight = LOW
-        // Second weight = HIGH
-        if (currentWeight <= firstWeight) {
-          throw createError(
-            400,
-            `Second weight must be greater than first weight. First weight: ${firstWeight}, second weight: ${currentWeight}`
-          );
-        }
-
-        const netWeight = currentWeight - firstWeight;
-
-        // Check duplicate slip number
-        const dupSlipNo = await WeightSlip.findOne({
-          where: { slip_no },
-        });
-
-        if (dupSlipNo) {
-          throw createError(
-            409,
-            "A weight slip with this slip_no already exists"
-          );
-        }
-
-        // Create second weight slip
-        const secondSlip = await WeightSlip.create({
-          gate_entry_id,
-          slip_no,
-          gross_weight: currentWeight,
-          tare_weight: firstWeight,
-          weighed_at: weighed_at || new Date(),
-          weighbridge_operator_id: req.user ? req.user.id : null,
-          plant_id:
-            plant_id ||
-            gateEntry.plant_id ||
-            (req.user ? req.user.plant_id : null),
-          created_by: req.user ? req.user.id : null,
-        });
-
-        // -----------------------------------------------------
-        // SALES ORDER RATE
-        // -----------------------------------------------------
-
-        let salesOrder = null;
-
-        // If your GateEntry has so_id
-        if (gateEntry.so_id) {
-          salesOrder = await SalesOrder.findOne({
-            where: {
-              id: gateEntry.so_id,
-              is_deleted: false,
-            },
-          });
-        }
-
-        // If there is no direct SO, try junction table
-        if (!salesOrder) {
-          try {
-            const { GateEntrySalesOrder } = require("../models");
-
-            if (GateEntrySalesOrder) {
-              const soItem = await GateEntrySalesOrder.findOne({
-                where: {
-                  gate_entry_id: gateEntry.id,
-                  is_deleted: false,
-                },
-              });
-
-              if (soItem) {
-                salesOrder = await SalesOrder.findOne({
-                  where: {
-                    id: soItem.so_id,
-                    is_deleted: false,
-                  },
-                });
-              }
-            }
-          } catch (soError) {
-            // Ignore if junction model is not available
-          }
-        }
-
-        // -----------------------------------------------------
-        // RATE
-        // -----------------------------------------------------
-
-        let resolvedRate = null;
-
-        if (salesOrder && salesOrder.rate !== undefined) {
-          resolvedRate = Number(salesOrder.rate);
-        } else if (final_rate !== undefined) {
-          resolvedRate = Number(final_rate);
-        }
-
-        // -----------------------------------------------------
-        // ACCEPT SALES WEIGHT
-        // -----------------------------------------------------
-
-        await gateEntry.update({
-          gate_status: "accepted",
-          updated_by: req.user ? req.user.id : null,
-        });
-
-        const created = await WeightSlip.findByPk(secondSlip.id, {
-          include: detailIncludes,
-        });
-
-        return res.status(201).json({
-          success: true,
-          msg: `Second weight accepted. First: ${firstWeight}, Second: ${currentWeight}, Net: ${netWeight}`,
-          data: {
-            weightSlip: created,
-            salesOrder,
-            first_weight: firstWeight,
-            second_weight: currentWeight,
-            net_weight: netWeight,
-            final_rate: resolvedRate,
-            amount:
-              resolvedRate !== null ? netWeight * resolvedRate : null,
-            gate_status: "accepted",
-          },
-        });
-      }
-    }
-
-    // ---------------------------------------------------------
-    // PURCHASE / OTHER FLOW
-    // ---------------------------------------------------------
-
-    let existingSlip = null;
-
-    if (isPurchaseEntry || isOtherEntry) {
-      existingSlip = await WeightSlip.findOne({
-        where: {
-          gate_entry_id,
-          is_deleted: false,
-        },
+      // UPDATE THE EXISTING SLIP with second weight data
+      await firstSlip.update({
+        gross_weight: currentWeight,  // Update gross to second weight
+        tare_weight: firstWeight,      // Set tare as first weight
+        weighed_at: weighed_at || new Date(),
+        updated_by: req.user ? req.user.id : null,
+        updated_at: new Date(),
       });
 
-      if (existingSlip) {
-        throw createError(
-          409,
-          "A weight slip already exists for this gate entry"
-        );
-      }
-    }
+      // --- HANDLE PURCHASE OR SALES ---
+      let purchase = null;
+      let salesOrder = null;
+      let resolvedRate = null;
 
-    const dupSlipNo = await WeightSlip.findOne({
-      where: { slip_no },
-    });
+      if (isPurchaseEntry) {
+        // Get PO
+        let po = null;
+        let hasPO = false;
 
-    if (dupSlipNo) {
-      throw createError(
-        409,
-        "A weight slip with this slip_no already exists"
-      );
-    }
-
-    // ---------------------------------------------------------
-    // PURCHASE PO LOGIC
-    // ---------------------------------------------------------
-
-    let hasPO = false;
-    let po = null;
-
-    if (isPurchaseEntry) {
-      // Direct PO
-      if (gateEntry.po_id) {
-        hasPO = true;
-
-        po = await PurchaseOrder.findOne({
-          where: {
-            id: gateEntry.po_id,
-            is_deleted: false,
-          },
-        });
-
-        if (!po) {
-          throw createError(
-            400,
-            "The purchase order linked to this gate entry could not be found"
-          );
-        }
-      } else {
-        let purchaseOrders = gateEntry.purchase_orders;
-
-        // Junction table
-        if (!purchaseOrders) {
+        if (gateEntry.po_id) {
+          po = await PurchaseOrder.findOne({
+            where: { id: gateEntry.po_id, is_deleted: false },
+          });
+          if (po) hasPO = true;
+        } else {
           try {
             const { GateEntryPurchaseOrder } = require("../models");
-
             const poItems = await GateEntryPurchaseOrder.findAll({
-              where: {
-                gate_entry_id: gateEntry.id,
-                is_deleted: false,
-              },
+              where: { gate_entry_id: gateEntry.id, is_deleted: false },
             });
-
             if (poItems && poItems.length > 0) {
-              hasPO = true;
-
               const firstPO = await PurchaseOrder.findOne({
-                where: {
-                  id: poItems[0].po_id,
-                  is_deleted: false,
-                },
+                where: { id: poItems[0].po_id, is_deleted: false },
               });
-
               if (firstPO) {
                 po = firstPO;
+                hasPO = true;
               }
             }
           } catch (junctionError) {
-            // Fallback to Purchase
             const existingPurchase = await Purchase.findOne({
-              where: {
-                gate_entry_id: gateEntry.id,
-                is_deleted: false,
-              },
+              where: { gate_entry_id: gateEntry.id, is_deleted: false },
             });
-
             if (existingPurchase) {
-              hasPO = true;
-
               po = await PurchaseOrder.findOne({
-                where: {
-                  id: existingPurchase.po_id,
-                  is_deleted: false,
-                },
+                where: { id: existingPurchase.po_id, is_deleted: false },
               });
+              if (po) hasPO = true;
             }
           }
-        } else if (purchaseOrders.length > 0) {
-          hasPO = true;
+        }
 
-          const firstPO = await PurchaseOrder.findOne({
-            where: {
-              id: purchaseOrders[0].po_id,
-              is_deleted: false,
-            },
+        resolvedRate = po ? Number(po.rate) : (final_rate !== undefined ? Number(final_rate) : null);
+
+        if (resolvedRate == null) {
+          throw createError(400, "Rate is required for purchase entry. Please provide final_rate or ensure PO has rate.");
+        }
+
+        // Check if purchase already exists
+        const existingPurchase = await Purchase.findOne({
+          where: { weight_slip_id: firstSlip.id, is_deleted: false },
+        });
+
+        if (existingPurchase) {
+          // Update existing purchase
+          await existingPurchase.update({
+            final_rate: resolvedRate,
+            final_qty: netWeight,
+            amount: netWeight * resolvedRate,
+            updated_by: req.user ? req.user.id : null,
           });
+          purchase = existingPurchase;
+        } else {
+          // Create new purchase
+          purchase = await Purchase.create({
+            po_id: po ? po.id : null,
+            gate_entry_id,
+            weight_slip_id: firstSlip.id,
+            final_rate: resolvedRate,
+            final_qty: netWeight,
+            amount: netWeight * resolvedRate,
+            purchase_date: new Date().toISOString().slice(0, 10),
+            plant_id: firstSlip.plant_id,
+            created_by: req.user ? req.user.id : null,
+          });
+        }
+      }
 
-          if (firstPO) {
-            po = firstPO;
+      if (isSalesEntry) {
+        if (gateEntry.so_id) {
+          salesOrder = await SalesOrder.findOne({
+            where: { id: gateEntry.so_id, is_deleted: false },
+          });
+        }
+
+        if (!salesOrder) {
+          try {
+            const { GateEntrySalesOrder } = require("../models");
+            const soItem = await GateEntrySalesOrder.findOne({
+              where: { gate_entry_id: gateEntry.id, is_deleted: false },
+            });
+            if (soItem) {
+              salesOrder = await SalesOrder.findOne({
+                where: { id: soItem.so_id, is_deleted: false },
+              });
+            }
+          } catch (soError) {
+            // Ignore
           }
         }
 
-        if (!hasPO && final_rate === undefined) {
-          throw createError(
-            400,
-            "final_rate is required when the gate entry has no linked purchase order"
-          );
+        resolvedRate = salesOrder?.rate !== undefined ? Number(salesOrder.rate) : (final_rate !== undefined ? Number(final_rate) : null);
+      }
+
+      // --- UPDATE GATE ENTRY TO Parked ---
+      await gateEntry.update({
+        gate_status: "Parked",
+        updated_by: req.user ? req.user.id : null,
+      });
+
+      const updated = await WeightSlip.findByPk(firstSlip.id, {
+        include: detailIncludes,
+      });
+
+      let msg = `Second weight recorded. First: ${firstWeight}, Second: ${currentWeight}, Net: ${netWeight}`;
+      if (isPurchaseEntry) {
+        msg += ` Purchase finalized.`;
+      } else if (isSalesEntry) {
+        msg += ` Sales order completed.`;
+      } else {
+        msg += ` Gate entry Parked.`;
+      }
+
+      return res.status(200).json({
+        success: true,
+        msg,
+        data: {
+          weightSlip: updated,
+          purchase,
+          salesOrder,
+          first_weight: firstWeight,
+          second_weight: currentWeight,
+          net_weight: netWeight,
+          final_rate: resolvedRate,
+          amount: resolvedRate !== null ? netWeight * resolvedRate : null,
+          gate_status: "Parked",
+          isSecondWeight: true,
+          updated: true,
+        },
+      });
+    }
+
+    // --- CHECK DUPLICATE SLIP NO (only for first weight or bulk create) ---
+    if (!isSecondWeight) {
+      const dupSlipNo = await WeightSlip.findOne({
+        where: { slip_no, is_deleted: false },
+      });
+      if (dupSlipNo) {
+        throw createError(409, "A weight slip with this slip_no already exists");
+      }
+    }
+
+    // =========================================================
+    // FIRST WEIGHT FLOW (no tare_weight provided)
+    // =========================================================
+    if (!hasFirstWeight && (tare_weight === undefined || tare_weight === null)) {
+      // Create first weight slip
+      const slip = await WeightSlip.create({
+        gate_entry_id,
+        slip_no,
+        gross_weight: currentWeight,
+        tare_weight: null,
+        weighed_at: weighed_at || new Date(),
+        weighbridge_operator_id: req.user ? req.user.id : null,
+        plant_id: plant_id || gateEntry.plant_id || (req.user ? req.user.plant_id : null),
+        created_by: req.user ? req.user.id : null,
+      });
+
+      // Update gate entry status based on entry type
+      let newStatus = "waiting_second_weighment";
+      let statusMessage = "waiting_second_weighment";
+      
+      if (isPurchaseEntry) {
+        // For purchase entries, set to in_process after first weight
+        newStatus = "in_process";
+        statusMessage = "in_process";
+      } else if (isSalesEntry || isOtherEntry) {
+        // For sales and other entries, set to waiting_second_weighment
+        newStatus = "waiting_second_weighment";
+        statusMessage = "waiting_second_weighment";
+      }
+
+      await gateEntry.update({
+        gate_status: newStatus,
+        updated_by: req.user ? req.user.id : null,
+      });
+
+      const created = await WeightSlip.findByPk(slip.id, {
+        include: detailIncludes,
+      });
+
+      return res.status(201).json({
+        success: true,
+        msg: `First weight recorded. Weight: ${currentWeight}. Gate entry moved to ${statusMessage}.`,
+        data: {
+          weightSlip: created,
+          purchase: null,
+          first_weight: currentWeight,
+          second_weight: null,
+          net_weight: null,
+          gate_status: newStatus,
+          isFirstWeight: true,
+        },
+      });
+    }
+
+    // =========================================================
+    // BULK CREATE (both weights at once - fallback)
+    // =========================================================
+    if (!hasFirstWeight && tare_weight !== undefined && tare_weight !== null) {
+      const netWeight = currentWeight - Number(tare_weight);
+      if (netWeight <= 0) {
+        throw createError(400, "Net weight must be positive. gross_weight must be greater than tare_weight");
+      }
+
+      // Create single slip with both weights
+      const slip = await WeightSlip.create({
+        gate_entry_id,
+        slip_no,
+        gross_weight: currentWeight,
+        tare_weight: Number(tare_weight),
+        weighed_at: weighed_at || new Date(),
+        weighbridge_operator_id: req.user ? req.user.id : null,
+        plant_id: plant_id || gateEntry.plant_id || (req.user ? req.user.plant_id : null),
+        created_by: req.user ? req.user.id : null,
+      });
+
+      let purchase = null;
+      let resolvedRate = null;
+
+      if (isPurchaseEntry) {
+        let po = null;
+        if (gateEntry.po_id) {
+          po = await PurchaseOrder.findOne({
+            where: { id: gateEntry.po_id, is_deleted: false },
+          });
+        }
+        resolvedRate = po ? Number(po.rate) : (final_rate !== undefined ? Number(final_rate) : null);
+        
+        if (resolvedRate != null && netWeight > 0) {
+          purchase = await Purchase.create({
+            po_id: po ? po.id : null,
+            gate_entry_id,
+            weight_slip_id: slip.id,
+            final_rate: resolvedRate,
+            final_qty: netWeight,
+            amount: netWeight * resolvedRate,
+            purchase_date: new Date().toISOString().slice(0, 10),
+            plant_id: slip.plant_id,
+            created_by: req.user ? req.user.id : null,
+          });
         }
       }
-    }
 
-    // ---------------------------------------------------------
-    // CREATE WEIGHT SLIP
-    // ---------------------------------------------------------
-
-    const slip = await WeightSlip.create({
-      gate_entry_id,
-      slip_no,
-      gross_weight: currentWeight,
-      tare_weight:
-        tare_weight === undefined || tare_weight === null
-          ? null
-          : tare_weight,
-      weighed_at: weighed_at || new Date(),
-      weighbridge_operator_id: req.user ? req.user.id : null,
-      plant_id:
-        plant_id ||
-        gateEntry.plant_id ||
-        (req.user ? req.user.plant_id : null),
-      created_by: req.user ? req.user.id : null,
-    });
-
-    // ---------------------------------------------------------
-    // PURCHASE CREATION
-    // ---------------------------------------------------------
-
-    let purchase = null;
-
-    if (isPurchaseEntry) {
-      const resolvedRate =
-        po
-          ? Number(po.rate)
-          : final_rate !== undefined
-          ? Number(final_rate)
-          : null;
-
-      const netWeight =
-        tare_weight !== undefined && tare_weight !== null
-          ? currentWeight - Number(tare_weight)
-          : 0;
-
-      if (resolvedRate != null && netWeight > 0) {
-        purchase = await Purchase.create({
-          po_id: po ? po.id : null,
-          gate_entry_id,
-          weight_slip_id: slip.id,
-          final_rate: resolvedRate,
-          final_qty: netWeight,
-          amount: netWeight * resolvedRate,
-          purchase_date: new Date().toISOString().slice(0, 10),
-          plant_id: slip.plant_id,
-          created_by: req.user ? req.user.id : null,
-        });
+      if (isSalesEntry) {
+        if (gateEntry.so_id) {
+          const salesOrder = await SalesOrder.findOne({
+            where: { id: gateEntry.so_id, is_deleted: false },
+          });
+          resolvedRate = salesOrder?.rate !== undefined ? Number(salesOrder.rate) : (final_rate !== undefined ? Number(final_rate) : null);
+        }
       }
+
+      // Update gate entry to Parked (both weights done)
+      await gateEntry.update({
+        gate_status: "Parked",
+        updated_by: req.user ? req.user.id : null,
+      });
+
+      const created = await WeightSlip.findByPk(slip.id, {
+        include: detailIncludes,
+      });
+
+      return res.status(201).json({
+        success: true,
+        msg: isOtherEntry
+          ? `Weight slip generated (net ${netWeight}); gate entry Parked.`
+          : `Weight slip generated (net ${netWeight}); purchase finalized and gate entry Parked.`,
+        data: {
+          weightSlip: created,
+          purchase,
+          first_weight: Number(tare_weight),
+          second_weight: currentWeight,
+          net_weight: netWeight,
+          final_rate: resolvedRate,
+          amount: resolvedRate !== null ? netWeight * resolvedRate : null,
+          gate_status: "Parked",
+        },
+      });
     }
 
-    // ---------------------------------------------------------
-    // PURCHASE / OTHER STATUS
-    // ---------------------------------------------------------
+    throw createError(400, "Invalid request. Please provide proper weight data.");
 
-    await gateEntry.update({
-      gate_status: "in_process",
-      updated_by: req.user ? req.user.id : null,
-    });
-
-    const created = await WeightSlip.findByPk(slip.id, {
-      include: detailIncludes,
-    });
-
-    res.status(201).json({
-      success: true,
-      msg:
-        tare_weight === undefined
-          ? `First weight recorded for ${slip.slip_no}; ready for unloading.`
-          : isOtherEntry
-          ? `Weight slip ${slip.slip_no} generated (net ${
-              currentWeight - Number(tare_weight)
-            }); ready for warehouse`
-          : `Weight slip ${slip.slip_no} generated (net ${
-              currentWeight - Number(tare_weight)
-            }); purchase finalized`,
-      data: {
-        weightSlip: created,
-        purchase,
-        gate_status: "in_process",
-      },
-    });
   } catch (err) {
     next(err);
   }
@@ -636,9 +499,9 @@ create: async (req, res, next) => {
 
       const nextGross = gross_weight !== undefined ? Number(gross_weight) : Number(slip.gross_weight);
       const nextTare = tare_weight !== undefined ? Number(tare_weight) : (slip.tare_weight !== null ? Number(slip.tare_weight) : undefined);
-      if (nextTare !== undefined && nextGross <= nextTare) {
-        throw createError(400, "gross_weight must be greater than tare_weight");
-      }
+      // if (nextTare !== undefined && nextGross <= nextTare) {
+      //   throw createError(400, "gross_weight must be greater than tare_weight");
+      // }
 
       if (slip_no) {
         const dup = await WeightSlip.findOne({ where: { slip_no, id: { [Op.ne]: slip.id } } });
