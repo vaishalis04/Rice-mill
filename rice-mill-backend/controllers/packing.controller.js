@@ -171,205 +171,112 @@
       } catch (err) { next(err); }
     },
 
-    // POST /api/packing/complete
-    // { batch_id, destination_warehouse_id, materials: [{material_id, pack_size, bag_count, qty_override?}],
-    //   rack_id?, pallet_id?, production_date?, shelf_life_days?, plant_id? }
-    //
-    // Single action that finishes a batch: deducts everything the batch
-    // reserved from its source warehouse, packs the given materials, and
-    // adds the packed output to the destination warehouse.
-   completeAndPack: async (req, res, next) => {
-  try {
-    const {
-      batch_id, destination_warehouse_id, materials,
-      rack_id, pallet_id, production_date, shelf_life_days, plant_id,
-    } = req.body;
+  completeAndPack: async (req, res, next) => {
+    try {
+      const {
+        batch_id, destination_warehouse_id, materials,
+        rack_id, pallet_id, production_date, shelf_life_days, plant_id,
+      } = req.body;
 
-    if (!batch_id) throw createError(400, "batch_id is required");
-    if (!destination_warehouse_id) throw createError(400, "destination_warehouse_id is required");
-    if (!Array.isArray(materials) || materials.length === 0) {
-      throw createError(400, "materials (with pack_size and bag_count) is required");
-    }
-
-    const batch = await ProductionBatch.findOne({ 
-      where: { id: batch_id, is_deleted: false } 
-    });
-    if (!batch) throw createError(400, "Invalid batch_id");
-    if (batch.batch_status === "completed") throw createError(400, "This batch is already completed");
-    if (!batch.materials_data || batch.materials_data.length === 0) {
-      throw createError(400, "This batch has no reserved materials to pack");
-    }
-
-    // Create a map of reserved materials for quick lookup
-    const reservedMaterialsMap = {};
-    batch.materials_data.forEach(reserved => {
-      reservedMaterialsMap[Number(reserved.material_id)] = {
-        ...reserved,
-        input_qty: Number(reserved.input_qty),
-        packed_qty: 0 // Track how much has been packed for this material
-      };
-    });
-
-    // Validate each material in the packing request
-    for (const item of materials) {
-      const materialId = Number(item.material_id);
-      
-      if (!materialId) throw createError(400, "Each material must have a material_id");
-      
-      // Check if this material was reserved in the batch
-      if (!reservedMaterialsMap[materialId]) {
-        const material = await MaterialMaster.findByPk(materialId);
-        throw createError(400, `Material "${material?.name || materialId}" was not reserved in this batch. Available materials: ${Object.keys(reservedMaterialsMap).join(', ')}`);
+      if (!batch_id) throw createError(400, "batch_id is required");
+      if (!destination_warehouse_id) throw createError(400, "destination_warehouse_id is required");
+      if (!Array.isArray(materials) || materials.length === 0) {
+        throw createError(400, "materials (with pack_size and bag_count) is required");
       }
 
-      // Validate pack size and bag count
-      if (!(Number(item.pack_size) > 0)) {
-        throw createError(400, `pack_size for material ${materialId} must be a positive number`);
+      const batch = await ProductionBatch.findOne({
+        where: { id: batch_id, is_deleted: false }
+      });
+      if (!batch) throw createError(400, "Invalid batch_id");
+      if (batch.batch_status === "completed") throw createError(400, "This batch is already completed");
+      if (!batch.materials_data || batch.materials_data.length === 0) {
+        throw createError(400, "This batch has no reserved materials to pack");
       }
-      if (!(Number(item.bag_count) > 0)) {
-        throw createError(400, `bag_count for material ${materialId} must be greater than 0`);
+
+      // Map of reserved INPUT materials (e.g. paddy) -> { input_qty, lot_id }
+      const reservedMaterialsMap = {};
+      batch.materials_data.forEach((reserved) => {
+        reservedMaterialsMap[Number(reserved.material_id)] = {
+          ...reserved,
+          input_qty: Number(reserved.input_qty),
+        };
+      });
+      const fallbackReserved = batch.materials_data[0];
+
+      // Validate output items — material_id here is whatever OUTPUT
+      // material is being packed, and is NOT required to match a
+      // reserved input material.
+      for (const item of materials) {
+        const materialId = Number(item.material_id);
+        if (!materialId) throw createError(400, "Each material must have a material_id");
+        if (!(Number(item.pack_size) > 0)) {
+          throw createError(400, `pack_size for material ${materialId} must be a positive number`);
+        }
+        if (!(Number(item.bag_count) > 0)) {
+          throw createError(400, `bag_count for material ${materialId} must be greater than 0`);
+        }
+        if (item.source_material_id && !reservedMaterialsMap[Number(item.source_material_id)]) {
+          throw createError(400, `source_material_id ${item.source_material_id} was not reserved in this batch`);
+        }
       }
 
-      // Calculate the total quantity being packed for this material
-      const packSize = Number(item.pack_size);
-      const bagCount = Number(item.bag_count);
-      const qtyOverride = item.qty_override ? Number(item.qty_override) : null;
-      const packedQtyKg = qtyOverride || (packSize * bagCount);
-      const packedQtyTons = packedQtyKg / 1000;
+      // 1) Deduct the RESERVED INPUT quantity from the source warehouse —
+      // once per reserved material, regardless of what gets packed as output.
+      for (const reserved of batch.materials_data) {
+        await consumeFromWarehouse({
+          warehouse_id: batch.warehouse_id,
+          material_id: Number(reserved.material_id),
+          qty: Number(reserved.input_qty),
+          lot_id: reserved.lot_id,
+          userId: req.user ? req.user.id : null,
+        });
+      }
 
-      const reservedQty = reservedMaterialsMap[materialId].input_qty;
-      const tolerance = 0.001;
+      // 2) Create packing records for each OUTPUT material
+      const results = [];
+      for (const item of materials) {
+        const sourceReserved = item.source_material_id
+          ? reservedMaterialsMap[Number(item.source_material_id)]
+          : fallbackReserved;
 
-      // ✅ FIX: Allow packed quantity to be LESS THAN OR EQUAL to reserved quantity
-      // (production loss is expected - input raw material > output finished goods)
-      if (packedQtyTons > reservedQty + tolerance) {
-        const material = await MaterialMaster.findByPk(materialId);
-        throw createError(400, 
-          `Packing quantity for "${material?.name || materialId}" (${packedQtyTons.toFixed(3)} tons) exceeds reserved quantity (${reservedQty.toFixed(3)} tons)`
+        results.push(
+          await createPackingRecord({
+            batch,
+            materialId: Number(item.material_id),
+            lotId: sourceReserved.lot_id,
+            packSize: Number(item.pack_size),
+            bagCount: Number(item.bag_count),
+            qtyOverride: item.qty_override,
+            destinationWarehouseId: Number(destination_warehouse_id),
+            rackId: rack_id,
+            palletId: pallet_id,
+            productionDate: production_date,
+            shelfLifeDays: shelf_life_days,
+            plantId: plant_id || batch.plant_id,
+            userId: req.user ? req.user.id : null,
+          })
         );
       }
 
-      // Track packed quantity for this material
-      reservedMaterialsMap[materialId].packed_qty += packedQtyTons;
-    }
-
-    // ✅ FIX: Remove the strict check that requires ALL materials to be packed
-    // Instead, just warn or track what remains unpacked
-    const unpackedMaterials = [];
-    for (const [materialId, reserved] of Object.entries(reservedMaterialsMap)) {
-      const tolerance = 0.001;
-      if (reserved.packed_qty < reserved.input_qty - tolerance) {
-        const material = await MaterialMaster.findByPk(materialId);
-        unpackedMaterials.push({
-          material_id: materialId,
-          material_name: material?.name || materialId,
-          reserved: reserved.input_qty,
-          packed: reserved.packed_qty,
-          remaining: reserved.input_qty - reserved.packed_qty
-        });
-      }
-    }
-
-    // Log warning but allow completion
-    if (unpackedMaterials.length > 0) {
-      console.warn('⚠️ Some materials were not fully packed:', unpackedMaterials);
-      // You could store this info in the batch for reference
-    }
-
-    // 1) Deduct the PACKED quantity from the source warehouse
-    // (not the full reserved quantity)
-    for (const item of materials) {
-      const materialId = Number(item.material_id);
-      const reserved = reservedMaterialsMap[materialId];
-      const packSize = Number(item.pack_size);
-      const bagCount = Number(item.bag_count);
-      const qtyOverride = item.qty_override ? Number(item.qty_override) : null;
-      const packedQtyKg = qtyOverride || (packSize * bagCount);
-      const packedQtyTons = packedQtyKg / 1000;
-
-      // Only deduct what was actually packed
-      await consumeFromWarehouse({
-        warehouse_id: batch.warehouse_id,
-        material_id: materialId,
-        qty: packedQtyTons, // ← Changed from reserved.input_qty to packedQtyTons
-        lot_id: reserved.lot_id,
-        userId: req.user ? req.user.id : null,
-      });
-    }
-
-    // 2) Create packing records for each material
-    const results = [];
-    for (const item of materials) {
-      const materialId = Number(item.material_id);
-      const reserved = reservedMaterialsMap[materialId];
-      
-      results.push(
-        await createPackingRecord({
-          batch,
-          materialId: materialId,
-          lotId: reserved.lot_id,
-          packSize: Number(item.pack_size),
-          bagCount: Number(item.bag_count),
-          qtyOverride: item.qty_override,
-          destinationWarehouseId: Number(destination_warehouse_id),
-          rackId: rack_id,
-          palletId: pallet_id,
-          productionDate: production_date,
-          shelfLifeDays: shelf_life_days,
-          plantId: plant_id || batch.plant_id,
-          userId: req.user ? req.user.id : null,
-        })
-      );
-    }
-
-    // 3) Update batch status
-    // If there's remaining material, mark as "partial" instead of "completed"
-    let newStatus = "completed";
-    let newStage = "completed";
-    
-    if (unpackedMaterials.length > 0) {
-      newStatus = "partial";
-      newStage = "partially_packed";
-      
-      // Store unpacked info in the batch for reference
-      await batch.update({ 
-        batch_status: newStatus,
-        current_stage: newStage,
+      // 3) Batch is fully consumed/packed in one shot
+      await batch.update({
+        batch_status: "completed",
+        current_stage: "completed",
         updated_by: req.user ? req.user.id : null,
-        // You might want to add a column to store this info, or use notes
       });
-    } else {
-      await batch.update({ 
-        batch_status: newStatus,
-        current_stage: newStage,
-        updated_by: req.user ? req.user.id : null 
+
+      const totalKg = results.reduce((sum, r) => sum + r.qty_in_kg, 0);
+      const totalTons = totalKg / 1000;
+
+      res.status(201).json({
+        success: true,
+        msg: `Batch ${batch.batch_no} completed. ${results.length} output material(s) packed — ${totalKg} kg (${totalTons.toFixed(3)} tons) added to destination warehouse.`,
+        data: { results, total_qty_kg: totalKg, total_qty_tons: totalTons, batch_status: "completed" },
       });
+    } catch (err) {
+      next(err);
     }
-
-    const totalKg = results.reduce((sum, r) => sum + r.qty_in_kg, 0);
-    const totalTons = totalKg / 1000;
-
-    let message = `Batch ${batch.batch_no} processed. ${results.length} material(s) packed — ${totalKg} kg (${totalTons.toFixed(3)} tons) added to destination warehouse.`;
-    
-    if (unpackedMaterials.length > 0) {
-      message += ` ⚠️ ${unpackedMaterials.length} material(s) have remaining stock that wasn't packed. Batch marked as "partial".`;
-    }
-
-    res.status(201).json({
-      success: true,
-      msg: message,
-      data: { 
-        results, 
-        total_qty_kg: totalKg, 
-        total_qty_tons: totalTons,
-        unpacked_materials: unpackedMaterials,
-        batch_status: newStatus
-      },
-    });
-  } catch (err) {
-    next(err);
-  }
-},
+  },
 
     update: async (req, res, next) => {
       try {

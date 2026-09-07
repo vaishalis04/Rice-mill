@@ -23,6 +23,22 @@ const emptyPackingForm = {
 const PACK_SIZE_PRESETS = ["5", "10", "25", "50"];
 const CUSTOM_SENTINEL = "__custom__";
 
+// One blank output-packing row. `source_material_id` defaults to the given
+// reserved input material (or the batch's first reserved material) but can
+// be changed by the user when a batch reserved more than one input.
+// `material_id` is the OUTPUT material being packed and is independent of
+// the reserved input — e.g. paddy in, rice/bran/husk out.
+const makePackingRow = (defaultSourceId = "", defaultSourceName = "", reservedQty = 0) => ({
+  source_material_id: defaultSourceId ? String(defaultSourceId) : "",
+  source_material_name: defaultSourceName || "",
+  reserved_qty: Number(reservedQty) || 0,
+  material_id: "",
+  pack_size: "25",
+  custom_pack_size: "",
+  bag_count: "",
+  qty_override: "",
+});
+
 export default function ProductionBatchPage() {
   const [batches, setBatches] = useState([]);
   const [createForm, setCreateForm] = useState(emptyCreateForm);
@@ -216,24 +232,23 @@ export default function ProductionBatchPage() {
       const totalQty = validMaterials.reduce((sum, m) => sum + Number(m.qty), 0);
 
       setInfo(
-        `✅ Batch ${created.batch_no} created (${materialCount} material${
+        `✅ Batch ${created.batch_no} created (${materialCount} input material${
           materialCount > 1 ? "s" : ""
-        }, ${totalQty.toFixed(2)} tons total). Now complete packing.`
+        }, ${totalQty.toFixed(2)} tons reserved). Now select the output material(s) to pack.`
       );
 
       setSelectedBatch(created);
       setShowPacking(true);
 
-      // Packing rows are fixed to the materials reserved by this batch.
-      const packingMaterials = validMaterials.map((m) => ({
-        material_id: String(m.material_id),
-        material_name: materials.getLabel(m.material_id) || "",
-        reserved_qty: Number(m.qty), // tons reserved for this material
-        pack_size: "25",
-        custom_pack_size: "",
-        bag_count: "",
-        qty_override: "",
-      }));
+      // Packing starts with ONE row per reserved input material, but the
+      // output material on each row is left blank — the user picks
+      // whatever the production actually yielded (can differ from input,
+      // e.g. paddy in -> rice out). More output rows can be added freely,
+      // and each row can be traced back to whichever reserved input it
+      // came from via source_material_id.
+      const packingMaterials = validMaterials.map((m) =>
+        makePackingRow(m.material_id, materials.getLabel(m.material_id), m.qty)
+      );
 
       setPackingForm({
         destination_warehouse_id: "",
@@ -261,6 +276,30 @@ export default function ProductionBatchPage() {
     });
   };
 
+  const handleAddPackingRow = () => {
+    setPackingForm((prev) => {
+      const first = prev.materials[0];
+      return {
+        ...prev,
+        materials: [
+          ...prev.materials,
+          makePackingRow(
+            first?.source_material_id,
+            first?.source_material_name,
+            first?.reserved_qty
+          ),
+        ],
+      };
+    });
+  };
+
+  const handleRemovePackingRow = (index) => {
+    setPackingForm((prev) => ({
+      ...prev,
+      materials: prev.materials.filter((_, i) => i !== index),
+    }));
+  };
+
   const handleCompletePacking = async (event) => {
     event.preventDefault();
     setError("");
@@ -279,9 +318,21 @@ export default function ProductionBatchPage() {
       );
 
       if (validPackingMaterials.length === 0) {
-        setError("Please enter bag count and pack size for at least one material");
+        setError("Please select an output material and enter bag count for at least one row");
         setPackingLoading(false);
         return;
+      }
+
+      // If the batch reserved more than one input material, every output
+      // row must know which reserved input it's being traced back to.
+      const needsSource = (selectedBatch?.materials || selectedBatch?.materials_data || []).length > 1;
+      if (needsSource) {
+        const missingSource = validPackingMaterials.some((m) => !m.source_material_id);
+        if (missingSource) {
+          setError("Please select which reserved input material each output was produced from");
+          setPackingLoading(false);
+          return;
+        }
       }
 
       const payload = {
@@ -291,7 +342,8 @@ export default function ProductionBatchPage() {
           const packSize =
             m.pack_size === CUSTOM_SENTINEL ? Number(m.custom_pack_size) : Number(m.pack_size);
           return {
-            material_id: Number(m.material_id),
+            material_id: Number(m.material_id), // output material
+            source_material_id: m.source_material_id ? Number(m.source_material_id) : undefined,
             pack_size: packSize,
             bag_count: Number(m.bag_count),
             qty_override: m.qty_override ? Number(m.qty_override) : undefined,
@@ -301,11 +353,12 @@ export default function ProductionBatchPage() {
 
       const res = await completePackingApi(payload);
       const totalKg = res.data.data?.total_qty_kg || 0;
-    const totalTons = totalKg / 1000; // ✅ Correct conversion
+      const totalTons = totalKg / 1000;
 
       setInfo(
-        `✅ Batch completed and packed! ${validPackingMaterials.length} material(s) packed. ` +
-          `Total: ${totalKg} kg (${totalTons.toFixed(3)}tons) added to warehouse.`
+        `✅ Batch completed and packed! ${validPackingMaterials.length} output material(s) packed. ` +
+          `Total: ${totalKg} kg (${totalTons.toFixed(3)} tons) added to warehouse. ` +
+          `Reserved input has been fully deducted from the source warehouse.`
       );
 
       setSelectedBatch(null);
@@ -327,6 +380,10 @@ export default function ProductionBatchPage() {
     setPackingForm(emptyPackingForm);
   };
 
+  // The reserved input materials for the currently-selected batch, used to
+  // populate the "produced from" dropdown on each output row.
+  const reservedInputs = selectedBatch?.materials || selectedBatch?.materials_data || [];
+
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>Production Batches</h2>
@@ -338,7 +395,9 @@ export default function ProductionBatchPage() {
           <h3>Create Batch</h3>
           <p className="field-hint">
             Select a warehouse to view available stock, then select materials and quantities for
-            production. After creating the batch, you'll be prompted to enter packing details.
+            production. After creating the batch, you'll be prompted to enter packing details —
+            the output material(s) you pack can be different from what you reserved here (e.g.
+            paddy in, rice/bran/husk out).
           </p>
           <form className="sf-form" onSubmit={handleCreate}>
             <EntitySelect
@@ -375,7 +434,7 @@ export default function ProductionBatchPage() {
                       {warehouseSummary.remaining_capacity != null && (
                         <span>
                           <strong>Remaining Capacity:</strong>{" "}
-                          {(warehouseSummary.remaining_capacity ).toFixed(2)} tons
+                          {(warehouseSummary.remaining_capacity).toFixed(2)} tons
                         </span>
                       )}
                     </div>
@@ -400,7 +459,7 @@ export default function ProductionBatchPage() {
                             }}
                           >
                             <span>{m.material_name}</span>
-                            <strong>{(m.qty ).toFixed(2)} tons</strong>
+                            <strong>{(m.qty).toFixed(2)} tons</strong>
                           </div>
                         ))}
                       </div>
@@ -425,7 +484,7 @@ export default function ProductionBatchPage() {
                   marginBottom: 12,
                 }}
               >
-                <label style={{ fontWeight: 600, fontSize: 14 }}>Materials for Production</label>
+                <label style={{ fontWeight: 600, fontSize: 14 }}>Input Materials (Raw)</label>
                 <button
                   type="button"
                   className="dt-btn"
@@ -502,7 +561,7 @@ export default function ProductionBatchPage() {
                         <option value="">Select Material</option>
                         {allAvailableMaterials.map((m) => (
                           <option key={m.material_id} value={m.material_id}>
-                            {m.material_name} ({(m.qty ).toFixed(2)} tons)
+                            {m.material_name} ({(m.qty).toFixed(2)} tons)
                           </option>
                         ))}
                       </select>
@@ -594,10 +653,35 @@ export default function ProductionBatchPage() {
           </h3>
 
           <p className="field-hint">
-            Choose the destination warehouse for the packed goods, then set pack size and bag count
-            for each reserved material. Submitting will deduct the reserved qty from the source
-            warehouse and add the packed qty to the destination warehouse.
+            Choose the destination warehouse for the packed goods, then choose the output
+            material, pack size, and bag count for each item you produced. The output material
+            does not have to match the reserved input — e.g. paddy in, rice out. Submitting will
+            deduct the full reserved input qty from the source warehouse and add the packed
+            output(s) to the destination warehouse.
           </p>
+
+          {reservedInputs.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                gap: 16,
+                flexWrap: "wrap",
+                padding: "10px 14px",
+                background: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                borderRadius: 6,
+                marginBottom: 16,
+                fontSize: 13,
+              }}
+            >
+              <strong style={{ color: "#1e40af" }}>Reserved Input:</strong>
+              {reservedInputs.map((m) => (
+                <span key={m.material_id}>
+                  {materials.getLabel(m.material_id)} — {Number(m.input_qty ?? m.qty ?? 0).toFixed(3)} tons
+                </span>
+              ))}
+            </div>
+          )}
 
           <form className="sf-form" onSubmit={handleCompletePacking}>
             <EntitySelect
@@ -610,112 +694,159 @@ export default function ProductionBatchPage() {
             />
 
             <div style={{ gridColumn: "1 / -1", borderTop: "1px solid #e2e8f0", paddingTop: 16, marginTop: 8 }}>
-              <label style={{ fontWeight: 600, fontSize: 14, display: "block", marginBottom: 12 }}>
-                Packing Details
-              </label>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 12,
+                }}
+              >
+                <label style={{ fontWeight: 600, fontSize: 14 }}>Output Materials (Packed)</label>
+                <button type="button" className="dt-btn" onClick={handleAddPackingRow}>
+                  + Add Output
+                </button>
+              </div>
 
               {packingForm.materials.map((item, index) => {
-  const resolvedPackSize = getResolvedPackSize(item);
-  const totalKg = resolvedPackSize && item.bag_count ? Number(resolvedPackSize) * Number(item.bag_count) : 0;
-  const totalTons = totalKg / 1000; // ✅ Fixed: convert kg to tons
+                const resolvedPackSize = getResolvedPackSize(item);
+                const totalKg =
+                  resolvedPackSize && item.bag_count ? Number(resolvedPackSize) * Number(item.bag_count) : 0;
+                const totalTons = totalKg / 1000;
 
-  return (
-    <div
-      key={index}
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr 1fr",
-        gap: 12,
-        padding: "12px",
-        background: "#f8fafc",
-        borderRadius: 6,
-        marginBottom: 8,
-        alignItems: "end",
-        border: "1px solid #e2e8f0",
-      }}
-    >
-      <div className="sf-field" style={{ marginBottom: 0 }}>
-        <label>Material</label>
-        <div
-          style={{
-            padding: "8px 12px",
-            borderRadius: 4,
-            border: "1px solid #d1d5db",
-            fontSize: 14,
-            background: "white",
-          }}
-        >
-          {item.material_name || `Material ${item.material_id}`}
-          <div style={{ fontSize: 12, color: "#64748b" }}>
-            Reserved: {item.reserved_qty.toFixed(3)} tons
-          </div>
-        </div>
-      </div>
+                return (
+                  <div
+                    key={index}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1.3fr 1fr 1fr auto",
+                      gap: 12,
+                      padding: "12px",
+                      background: "#f8fafc",
+                      borderRadius: 6,
+                      marginBottom: 8,
+                      alignItems: "end",
+                      border: "1px solid #e2e8f0",
+                    }}
+                  >
+                    <div className="sf-field" style={{ marginBottom: 0 }}>
+                      <EntitySelect
+                        entity="material"
+                        label="Output Material"
+                        value={item.material_id}
+                        onChange={(id) => handlePackingFieldChange(index, "material_id", id)}
+                        required
+                      />
 
-      <div className="sf-field" style={{ marginBottom: 0 }}>
-        <label>Pack Size (kg)</label>
-        <select
-          value={item.pack_size}
-          onChange={(e) => handlePackingFieldChange(index, "pack_size", e.target.value)}
-          style={{
-            width: "100%",
-            padding: "8px 12px",
-            borderRadius: 4,
-            border: "1px solid #d1d5db",
-            fontSize: 14,
-            backgroundColor: "white",
-          }}
-        >
-          {PACK_SIZE_PRESETS.map((s) => (
-            <option key={s} value={s}>{`${s} kg`}</option>
-          ))}
-          <option value={CUSTOM_SENTINEL}>Custom…</option>
-        </select>
-        {item.pack_size === CUSTOM_SENTINEL && (
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            placeholder="Custom kg"
-            value={item.custom_pack_size}
-            onChange={(e) => handlePackingFieldChange(index, "custom_pack_size", e.target.value)}
-            style={{
-              width: "100%",
-              padding: "8px 12px",
-              borderRadius: 4,
-              border: "1px solid #d1d5db",
-              fontSize: 14,
-              marginTop: 4,
-            }}
-          />
-        )}
-      </div>
+                      {reservedInputs.length > 1 && (
+                        <>
+                          <label style={{ fontSize: 12, color: "#64748b", marginTop: 6, display: "block" }}>
+                            Produced from
+                          </label>
+                          <select
+                            value={item.source_material_id}
+                            onChange={(e) =>
+                              handlePackingFieldChange(index, "source_material_id", e.target.value)
+                            }
+                            required
+                            style={{
+                              width: "100%",
+                              padding: "6px 10px",
+                              borderRadius: 4,
+                              border: "1px solid #d1d5db",
+                              fontSize: 12,
+                            }}
+                          >
+                            <option value="">Select source input</option>
+                            {reservedInputs.map((m) => (
+                              <option key={m.material_id} value={m.material_id}>
+                                {materials.getLabel(m.material_id)}
+                              </option>
+                            ))}
+                          </select>
+                        </>
+                      )}
+                      {reservedInputs.length === 1 && (
+                        <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                          From: {materials.getLabel(reservedInputs[0].material_id)}
+                        </div>
+                      )}
+                    </div>
 
-      <div className="sf-field" style={{ marginBottom: 0 }}>
-        <label>Bag Count</label>
-        <input
-          type="number"
-          min="1"
-          value={item.bag_count}
-          onChange={(e) => handlePackingFieldChange(index, "bag_count", e.target.value)}
-          required
-          style={{
-            width: "100%",
-            padding: "8px 12px",
-            borderRadius: 4,
-            border: "1px solid #d1d5db",
-            fontSize: 14,
-          }}
-        />
-        {resolvedPackSize && item.bag_count && (
-          <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
-            Total: {totalKg} kg ({totalTons.toFixed(3)} tons)
-          </div>
-        )}
-      </div>
-    </div>
-  );
-})}
+                    <div className="sf-field" style={{ marginBottom: 0 }}>
+                      <label>Pack Size (kg)</label>
+                      <select
+                        value={item.pack_size}
+                        onChange={(e) => handlePackingFieldChange(index, "pack_size", e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          borderRadius: 4,
+                          border: "1px solid #d1d5db",
+                          fontSize: 14,
+                          backgroundColor: "white",
+                        }}
+                      >
+                        {PACK_SIZE_PRESETS.map((s) => (
+                          <option key={s} value={s}>{`${s} kg`}</option>
+                        ))}
+                        <option value={CUSTOM_SENTINEL}>Custom…</option>
+                      </select>
+                      {item.pack_size === CUSTOM_SENTINEL && (
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          placeholder="Custom kg"
+                          value={item.custom_pack_size}
+                          onChange={(e) => handlePackingFieldChange(index, "custom_pack_size", e.target.value)}
+                          style={{
+                            width: "100%",
+                            padding: "8px 12px",
+                            borderRadius: 4,
+                            border: "1px solid #d1d5db",
+                            fontSize: 14,
+                            marginTop: 4,
+                          }}
+                        />
+                      )}
+                    </div>
+
+                    <div className="sf-field" style={{ marginBottom: 0 }}>
+                      <label>Bag Count</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={item.bag_count}
+                        onChange={(e) => handlePackingFieldChange(index, "bag_count", e.target.value)}
+                        required
+                        style={{
+                          width: "100%",
+                          padding: "8px 12px",
+                          borderRadius: 4,
+                          border: "1px solid #d1d5db",
+                          fontSize: 14,
+                        }}
+                      />
+                      {resolvedPackSize && item.bag_count && (
+                        <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                          Total: {totalKg} kg ({totalTons.toFixed(3)} tons)
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      className="sf-cancel"
+                      onClick={() => handleRemovePackingRow(index)}
+                      disabled={packingForm.materials.length === 1}
+                      style={{ marginBottom: 1 }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
             </div>
 
             <button className="sf-submit" type="submit" disabled={packingLoading} style={{ gridColumn: "1 / -1" }}>
@@ -733,7 +864,7 @@ export default function ProductionBatchPage() {
           { key: "batch_no", label: "Batch No." },
           {
             key: "material",
-            label: "Material(s)",
+            label: "Input Material(s)",
             render: (row) => {
               if (row.is_multi_material && row.materials_data) {
                 return row.materials_data
@@ -758,11 +889,12 @@ export default function ProductionBatchPage() {
         title="Production"
         steps={[
           "Step 1: Select a warehouse to view its total stock and materials available.",
-          "Step 2: Add one or more materials from the warehouse with quantities in tons.",
+          "Step 2: Add one or more input materials from the warehouse with quantities in tons.",
           "Step 3: Click 'Create Batch' — this reserves the stock and opens the packing form.",
           "Step 4: Select the destination warehouse for the packed goods.",
-          "Step 5: For each material, choose the pack size and bag count.",
-          "Step 6: Click 'Finalize & Pack' — this removes the reserved qty from the source warehouse and adds the packed qty (converted to tons) to the destination warehouse.",
+          "Step 5: Select the output material(s) actually produced — these can differ from the input (e.g. paddy in, rice/bran/husk out) — and set pack size and bag count for each.",
+          "Step 6: If more than one input material was reserved, tell us which input each output was produced from.",
+          "Step 7: Click 'Finalize & Pack' — this removes the full reserved qty from the source warehouse and adds the packed output(s) (converted to tons) to the destination warehouse.",
         ]}
       />
     </div>
