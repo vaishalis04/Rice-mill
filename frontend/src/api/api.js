@@ -290,12 +290,13 @@ export const getMaterialFlowReportApi = (params = {}) =>
     params,
     responseType: params.format === "csv" ? "blob" : "json",
   });
-
+export const completePackingApi = (data) =>
+  axiosInstance.post("/packing/complete", data);
 // ---------------- PACKING (role: production) ----------------
 export const getGradedOutputsApi = (batch_id) =>
   axiosInstance.get(`/packing/graded-outputs/${batch_id}`);
 
-export const createPackingApi = (data) => axiosInstance.post("/packing", data);
+// export const createPackingApi = (data) => axiosInstance.post("/packing", data);
 
 export const getPackingsApi = (params = {}) =>
   axiosInstance.get("/packing", { params });
@@ -342,8 +343,15 @@ export const deleteMachineApi = (id, type) =>
   axiosInstance.delete(`/machines/${id}`, { params: { type } });
 
 // ---------------- PRODUCTION BATCHES (role: production) ----------------
+// api.js - Add new API function
+export const createProductionBatchWithPackingApi = (data) =>
+  axiosInstance.post("/production/batches/with-packing", data);
+// api.js - Update the createPackingApi
+export const createPackingApi = (data) =>
+  axiosInstance.post("/packing", data);
+
 export const createProductionBatchApi = (data) =>
-  axiosInstance.post("/production/batches", data);
+  axiosInstance.post("/production", data);
 
 export const getProductionBatchesApi = (params = {}) =>
   axiosInstance.get("/production/batches", { params });

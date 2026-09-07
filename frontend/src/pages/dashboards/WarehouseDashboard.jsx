@@ -10,7 +10,7 @@ import LoadingPage from "../gate/LoadingPage";
 const TABS = [
   { key: "unloading", label: "Unloading" },
   { key: "lots", label: "Lots" },
-  { key: "warehouse", label: "Warehouse / Bin / Stack" },
+  { key: "warehouse", label: "Warehouse / Stock" },
   { key: "inventory", label: "Inventory" },
   { key: "finished_goods", label: "Finished Goods" },
   // Moved here from the Gate dashboard — this is where an outbound Sales

@@ -1,16 +1,11 @@
-const router = require("express").Router();
-const Controller = require("../controllers/packing.controller");
-const { attachUser, authorize } = require("../middlewares/auth.middleware");
-const { verifyAccessToken } = require("../helpers/jwt.helper");
+const express = require("express");
+const router = express.Router();
+const packingController = require("../controllers/packing.controller");
 
-// Batch/Lot/Barcode/QR generation (Module 16)
-router.use(verifyAccessToken, attachUser, authorize("production", "warehouse", "admin", "sales", "gate")); // Protected routes
-
-router.get("/",     Controller.getAll);
-router.get("/graded-outputs/:batch_id", Controller.getGradedOutputs);
-router.get("/:id",  Controller.getById);
-router.post("/",    Controller.create);
-router.put("/:id",  Controller.update);
-router.delete("/:id", Controller.delete);
+router.get("/", packingController.getAll);
+router.get("/:id", packingController.getById);
+router.post("/complete", packingController.completeAndPack);
+router.put("/:id", packingController.update);
+router.delete("/:id", packingController.delete);
 
 module.exports = router;

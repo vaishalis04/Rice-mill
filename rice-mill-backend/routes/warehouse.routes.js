@@ -11,6 +11,7 @@ router.get("/",     Controller.getAll);
 router.get("/:id/summary", Controller.getSummary);
 router.get("/:id",  Controller.getById);
 router.post("/",    Controller.create);
+router.get("/stock", Controller.getStock);
 router.put("/:id",  Controller.update);
 router.delete("/:id", Controller.delete);
 

@@ -258,7 +258,6 @@ module.exports = {
   },
 
   // GET /api/warehouse/stock?warehouse_id=&material_id=&page=&limit=
-  // Live inventory balance per warehouse/material/lot — backs the Warehouse page's stock table.
   getStock: async (req, res, next) => {
     try {
       const { warehouse_id, material_id, plant_id, page = 1, limit = 20 } = req.query;
@@ -273,7 +272,7 @@ module.exports = {
       const { rows, count } = await Inventory.findAndCountAll({
         where,
         include: [
-          { model: Lot, as: "lot", attributes: ["id", "lot_no", "destination"] },
+          // { model: Lot, as: "lot", attributes: ["id", "lot_no", "destination"] },
           { model: MaterialMaster, as: "material", attributes: ["id", "material_code", "name"] },
           { model: WarehouseMaster, as: "warehouse", attributes: ["id", "warehouse_code", "name"] },
         ],
