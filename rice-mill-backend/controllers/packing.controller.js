@@ -135,6 +135,7 @@
       qty_out: 0,
       balance_qty: qtyInTons,
       as_of: new Date(),
+      material_id: materialId,
       plant_id: resolvedPlantId,
       created_by: userId,
     });

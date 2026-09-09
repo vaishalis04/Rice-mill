@@ -468,16 +468,18 @@ completeUnloading: async (req, res, next) => {
       // ==========================================================
       // 4. CALCULATE QUANTITIES
       // ==========================================================
+      // bag_size is kg-per-bag, but every other table in this app
+      // (Inventory.balance_qty, Lot.qty elsewhere, Stack.qty, Production's
+      // availability math, etc.) treats quantities as TONS. bag_size *
+      // bag_count is a quantity in KG, so it must be divided by 1000
+      // before being stored anywhere as "qty" — this was previously
+      // missing, which inflated every downstream figure by 1000x.
 
-      const acceptedQty =
-        Math.round(
-          bagSizeNum * acceptedBagsNum * 100
-        ) / 100;
+      const acceptedQtyKg = bagSizeNum * acceptedBagsNum;
+      const acceptedQty = Math.round((acceptedQtyKg / 1000) * 1000) / 1000;
 
-      const rejectedQty =
-        Math.round(
-          bagSizeNum * rejectedBagsNum * 100
-        ) / 100;
+      const rejectedQtyKg = bagSizeNum * rejectedBagsNum;
+      const rejectedQty = Math.round((rejectedQtyKg / 1000) * 1000) / 1000;
 
       // ==========================================================
       // 5. UPDATE LOT

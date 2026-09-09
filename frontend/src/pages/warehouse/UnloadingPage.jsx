@@ -11,6 +11,7 @@ import DataTable from "../../components/DataTable";
 import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
+import { kgToTons } from "../../utils/units";
 
 const startForm0 = {
   gate_entry_id: "",
@@ -446,10 +447,10 @@ export default function UnloadingPage() {
                     <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: warehouseSummary.materials.length ? 8 : 0 }}>
                       <span>
                         <strong>Capacity:</strong>{" "}
-                        {warehouseSummary.capacity != null ? `${warehouseSummary.capacity} tons` : "Not set"}
+                        {warehouseSummary.capacity != null ? `${kgToTons(warehouseSummary.capacity)} tons` : "Not set"}
                       </span>
                       <span>
-                        <strong>Current stock:</strong> {warehouseSummary.total_stock} tons
+                        <strong>Current stock:</strong> {kgToTons(warehouseSummary.total_stock)} tons
                       </span>
                       <span
                         style={{
@@ -462,7 +463,7 @@ export default function UnloadingPage() {
                       >
                         Remaining:{" "}
                         {warehouseSummary.remaining_capacity != null
-                          ? `${warehouseSummary.remaining_capacity} tons`
+                          ? `${kgToTons(warehouseSummary.remaining_capacity)} tons`
                           : "Unlimited"}
                       </span>
                     </div>
@@ -470,7 +471,7 @@ export default function UnloadingPage() {
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                         {warehouseSummary.materials.map((m) => (
                           <span key={m.material_id} style={{ color: "#475569" }}>
-                            {m.material_name}: <strong>{m.qty} tons</strong>
+                            {m.material_name}: <strong>{kgToTons(m.qty)} tons</strong>
                           </span>
                         ))}
                       </div>
@@ -485,15 +486,6 @@ export default function UnloadingPage() {
                 )}
               </div>
             )}
-
-            <EntitySelect
-              entity="bin"
-              label="Bin"
-              value={startFormState.bin_id}
-              onChange={(id) => setStartFormState({ ...startFormState, bin_id: id })}
-              creatable
-              context={{ warehouse_id: startFormState.warehouse_id }}
-            />
 
             <div style={{ display: "flex", gap: 8 }}>
               <button className="sf-submit" type="submit">
@@ -533,7 +525,6 @@ export default function UnloadingPage() {
                 ? `${row.targetWarehouse.name} (${row.targetWarehouse.warehouse_code})`
                 : "—",
           },
-          { key: "bin_id", label: "Bin", render: (row) => row.targetBin?.bin_code || "—" },
           {
             key: "lab_comment",
             label: "Lab Comment",
@@ -573,11 +564,10 @@ export default function UnloadingPage() {
                 ? `${row.stacks[0].warehouse.name} (${row.stacks[0].warehouse.warehouse_code})`
                 : "—",
           },
-          { key: "bin_id", label: "Bin", render: (row) => row.stacks?.[0]?.bin?.bin_code || "—" },
           { key: "accepted_bags", label: "Accepted Bags" },
           { key: "rejected_bags", label: "Rejected Bags" },
-          { key: "qty", label: "Accepted Qty (Tons)" },
-          { key: "rejected_qty", label: "Rejected Qty (Tons)" },
+          { key: "qty", label: "Accepted Qty (Tons)", render: (row) => kgToTons(row.qty) },
+          { key: "rejected_qty", label: "Rejected Qty (Tons)", render: (row) => kgToTons(row.rejected_qty) },
           {
             key: "status",
             label: "Status",

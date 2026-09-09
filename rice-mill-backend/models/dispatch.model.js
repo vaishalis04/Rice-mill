@@ -8,7 +8,7 @@ Dispatch.init(
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
     so_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "sales_order", key: "id" } },
     challan_no: { type: DataTypes.STRING(30), allowNull: false, unique: "dispatch_challan_no_unique" },
-    invoice_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "invoices", key: "id" } },
+    invoice_id: { type: DataTypes.BIGINT, allowNull: true }, // back-reference, populated after the Invoice is created — no FK constraint here to avoid a circular dependency with Invoice.dispatch_id (see models/index.js)
     vehicle_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "vehicles", key: "id" } },
     driver_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "drivers", key: "id" } },
     dispatch_weight: { type: DataTypes.DECIMAL(12, 2) },

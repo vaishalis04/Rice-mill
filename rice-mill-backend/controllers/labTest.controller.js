@@ -1,6 +1,26 @@
 const createError = require("http-errors");
 const { Sampling, LabTest, GateEntry, VarietyMaster, User, Negotiation, PurchaseOrder } = require("../models/index");
 
+// Same MariaDB/Sequelize JSON-column quirk fixed elsewhere in this codebase
+// (purchase.controller.js, loading.controller.js, salesOrder.controller.js):
+// a JSON column can round-trip as a raw string instead of an already-parsed
+// array. Sampling.material_id/LabTest.material_id are both JSON arrays, and
+// without this, `Array.isArray(sampling.material_id)` was silently false —
+// so the "does this material belong to the sampling" check always saw an
+// empty list and rejected every material, meaning no lab test could ever
+// actually be created against a sampling.
+const parseIdArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
 
 const detailIncludes = [
   {
@@ -138,14 +158,27 @@ create: async (req, res, next) => {
       );
     }
 
-    // material_id must be an array
-    if (!Array.isArray(material_id) || material_id.length === 0) {
-      throw createError(400, "material_id must be a non-empty array");
+    // A lab test is now always for exactly one material — a sampling that
+    // covers 3 materials gets 3 separate LabTest rows, each with its own
+    // independent moisture/broken/fm/color/etc measurements, since two
+    // different materials from the same truck can easily test differently.
+    // The column is still a JSON array under the hood (unchanged, to avoid
+    // another risky migration) — every row's array is just always exactly
+    // one element now.
+    const materialIdList = Array.isArray(material_id) ? material_id : [material_id];
+    if (materialIdList.length === 0 || materialIdList[0] === undefined || materialIdList[0] === null) {
+      throw createError(400, "material_id is required");
+    }
+    if (materialIdList.length > 1) {
+      throw createError(
+        400,
+        "A lab test can only cover one material — submit a separate test for each material instead of several at once.",
+      );
     }
 
     // Convert to numbers and remove duplicates
     const uniqueMaterialIds = [
-      ...new Set(material_id.map((id) => Number(id))),
+      ...new Set(materialIdList.map((id) => Number(id))),
     ];
 
     // Validate IDs
@@ -166,9 +199,7 @@ create: async (req, res, next) => {
     }
 
     // Get materials assigned to this sampling
-    const samplingMaterialIds = Array.isArray(sampling.material_id)
-      ? sampling.material_id.map(Number)
-      : [];
+    const samplingMaterialIds = parseIdArray(sampling.material_id).map(Number);
 
     // Check submitted materials belong to sampling
     const invalidMaterials = uniqueMaterialIds.filter(
@@ -219,13 +250,9 @@ create: async (req, res, next) => {
      * Result:
      * alreadyTestedMaterialIds = [1, 2, 3]
      */
-    const alreadyTestedMaterialIds = existingTests.flatMap((test) => {
-      if (Array.isArray(test.material_id)) {
-        return test.material_id.map(Number);
-      }
-
-      return [];
-    });
+    const alreadyTestedMaterialIds = existingTests.flatMap((test) =>
+      parseIdArray(test.material_id).map(Number)
+    );
 
     // Check whether submitted materials were already tested
     const duplicates = uniqueMaterialIds.filter((id) =>

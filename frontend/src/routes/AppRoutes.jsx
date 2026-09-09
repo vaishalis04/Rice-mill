@@ -79,7 +79,7 @@ export default function AppRoutes() {
       <Route
         path="/weighbridge/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.gate]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.gate, ROLE_ID.weighbridge, ROLE_ID.weighbridgeLegacy]}>
             <WeighbridgeDashboard />
           </ProtectedRoute>
         }

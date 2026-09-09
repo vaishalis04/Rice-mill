@@ -742,6 +742,7 @@ CREATE TABLE `packing` (
   `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `batch_id` BIGINT NOT NULL,
   `lot_id` BIGINT NULL,  -- output lot
+  `material_id` BIGINT NULL,
   `pack_size` DECIMAL(10,2) NOT NULL, -- kg per bag; any positive number (common: 5/10/25/50, or a custom size)
   `bag_count` INT NOT NULL,
   `batch_no` VARCHAR(30) NULL,

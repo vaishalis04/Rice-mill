@@ -40,7 +40,7 @@ const STATUS_FILTERS = [
   { key: "unloaded", label: "Unloaded" },
   { key: "waiting_loading", label: "Waiting Loading" },
   { key: "loaded", label: "Loaded" },
-  { key: "Parked", label: "Parked" },
+  { key: "parked", label: "parked" },
   { key: "exited", label: "Exited" },
 ];
 

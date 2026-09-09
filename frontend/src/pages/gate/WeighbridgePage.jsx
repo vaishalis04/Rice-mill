@@ -304,15 +304,15 @@ export default function WeighbridgePage() {
       } else if (response.data?.data?.isSecondWeight) {
         setInfo(
           isOtherEntry
-            ? "✅ Second weight recorded! Gate entry moved to Parked."
-            : "✅ Second weight recorded! Purchase finalized and gate entry moved to Parked."
+            ? "✅ Second weight recorded! Gate entry moved to parked."
+            : "✅ Second weight recorded! Purchase finalized and gate entry moved to parked."
         );
       } else {
         // Bulk create
         setInfo(
           isOtherEntry
-            ? "✅ Weight slip created! Net weight computed, gate entry moved to Parked."
-            : "✅ Weight slip created! Net weight computed, purchase finalized, gate entry moved to Parked."
+            ? "✅ Weight slip created! Net weight computed, gate entry moved to parked."
+            : "✅ Weight slip created! Net weight computed, purchase finalized, gate entry moved to parked."
         );
       }
       
@@ -371,7 +371,7 @@ export default function WeighbridgePage() {
     const colors = {
       'waiting_weighment': '#f59e0b',
       'waiting_second_weighment': '#3b82f6',
-      'Parked': '#10b981',
+      'parked': '#10b981',
       'accepted': '#8b5cf6',
       'in_process': '#6b7280',
     };
@@ -383,7 +383,7 @@ export default function WeighbridgePage() {
     const labels = {
       'waiting_weighment': 'Awaiting First Weigh',
       'waiting_second_weighment': 'Awaiting Second Weigh',
-      'Parked': 'Parked',
+      'parked': 'parked',
       'accepted': 'Accepted',
       'in_process': 'In Process',
     };
@@ -929,14 +929,14 @@ export default function WeighbridgePage() {
           "Step 2: Enter the slip number and first weight (gross weight) from the weighbridge.",
           "Step 3: If you have both weights, enter the second weight (tare) as well. Otherwise, submit first weight only.",
           "Step 4: For first weight only, the gate entry moves to 'waiting_second_weighment'. Come back later to complete the second weight.",
-          "Step 5: For second weight, enter the first weight as tare. The system calculates net weight and moves the gate entry to 'Parked'.",
+          "Step 5: For second weight, enter the first weight as tare. The system calculates net weight and moves the gate entry to 'parked'.",
           "Step 6: For purchase entries, the system automatically creates a Purchase record with the final rate and quantity.",
         ]}
         tips={[
           "💡 The tare weight auto-fills from the same vehicle's previous weighing to save time.",
           "💡 Net weight is calculated live as you type - no manual calculation needed.",
           "💡 Purchase entries require a rate (from PO or manual entry) to create the Purchase record.",
-          "💡 Empty/Misc entries skip purchase creation and go directly to Parked.",
+          "💡 Empty/Misc entries skip purchase creation and go directly to parked.",
           "💡 You can edit a weight slip to correct weights, but purchase records may need manual adjustment.",
         ]}
       />

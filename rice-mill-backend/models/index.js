@@ -262,7 +262,7 @@ SalesOrder.belongsTo(MaterialMaster, {
   as: "material",
 });
 Dispatch.belongsTo(SalesOrder, { foreignKey: "so_id", as: "salesOrder" });
-Dispatch.belongsTo(Invoice, { foreignKey: "invoice_id", as: "invoice" });
+Dispatch.belongsTo(Invoice, { foreignKey: "invoice_id", as: "invoice", constraints: false });
 Dispatch.belongsTo(Vehicle, { foreignKey: "vehicle_id", as: "vehicle" });
 Dispatch.belongsTo(Driver, { foreignKey: "driver_id", as: "driver" });
 Dispatch.hasMany(FinishedGoods, {

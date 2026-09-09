@@ -1070,10 +1070,10 @@ getById: async (req, res, next) => {
           "Vehicle has not been checked in yet; cannot check out",
         );
       }
-      if (entry.entry_type === "sales" && entry.gate_status !== "Parked") {
+      if (entry.entry_type === "sales" && entry.gate_status !== "parked") {
         throw createError(
           400,
-          `Cannot check out a sales truck with status '${entry.gate_status}'; it must be 'Parked' first (see the Loading module)`,
+          `Cannot check out a sales truck with status '${entry.gate_status}'; it must be 'parked' first (see the Loading module)`,
         );
       }
 

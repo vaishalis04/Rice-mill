@@ -129,23 +129,46 @@ sequelize.authenticate()
       console.error("⚠️ Schema alignment warning (pass 1):", syncErr.message);
       console.log("↻ Retrying remaining tables individually...");
 
-      const models = Object.values(sequelize.models);
-      let failed = 0;
-      for (const model of models) {
-        try {
-          await model.sync({ alter: true });
-        } catch (modelErr) {
-          failed += 1;
-          console.error(
-            `⚠️ Schema alignment warning [${model.getTableName()}]:`,
-            modelErr.message,
-          );
+      let pending = Object.values(sequelize.models);
+      let lastErrors = new Map();
+      let pass = 0;
+
+      // Keep looping over whatever still fails until a full pass makes no
+      // further progress. This is what actually resolves ordering issues
+      // like "material_master before uom_master exists" — a single pass
+      // has no way to know uom_master will succeed later in that same
+      // pass, so material_master would be stuck failing forever without
+      // this. Only genuine circular dependencies (two tables that need
+      // each other to exist first) survive every pass — those need an
+      // actual model fix, not more retries.
+      while (pending.length > 0) {
+        pass += 1;
+        const stillFailing = [];
+        lastErrors = new Map();
+
+        for (const model of pending) {
+          try {
+            await model.sync({ alter: true });
+          } catch (modelErr) {
+            stillFailing.push(model);
+            lastErrors.set(model.getTableName(), modelErr.message);
+          }
         }
+
+        if (stillFailing.length === pending.length) break; // no progress this pass — stop
+        pending = stillFailing;
       }
+
+      for (const [table, message] of lastErrors) {
+        console.error(`⚠️ Schema alignment warning [${table}]:`, message);
+      }
+
+      const totalModels = Object.values(sequelize.models).length;
+      const failed = pending.length;
       console.log(
         failed
-          ? `✅ Database schema aligned (${models.length - failed}/${models.length} tables — see warnings above for the rest)`
-          : "✅ Database schema aligned on retry",
+          ? `✅ Database schema aligned (${totalModels - failed}/${totalModels} tables after ${pass} pass(es) — see warnings above for the rest)`
+          : `✅ Database schema aligned on retry (${pass} pass(es))`,
       );
     }
 

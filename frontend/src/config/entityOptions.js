@@ -291,11 +291,60 @@ export const ENTITY_OPTIONS = {
       }`,
   },
   sampling: {
-    fetch: () => getSamplingsApi().then(unwrap),
-    getLabel: (row) =>
-      `${row.sample_code}${
-        row.gate_entry_id ? ` — Gate Entry #${row.gate_entry_id}` : ""
-      }`,
+    // Combines samplings with vendors/materials/POs so the label can show
+    // "SAMP0002 — Vendor Name — PO-XXXX — Paddy, Brown Rice" instead of
+    // just "SAMP0002 — Gate Entry #4", which told the tester nothing about
+    // who the delivery was from or what was actually in it.
+    fetch: async () => {
+      const [samplingRows, vendorRows, materialRows, poRows] = await Promise.all([
+        getSamplingsApi().then(unwrap),
+        getVendorsApi().then(unwrap),
+        getMasterSettingsApi("material").then(unwrap),
+        getPurchaseOrdersGroupedApi().then(unwrap),
+      ]);
+
+      const vendorById = new Map((vendorRows || []).map((v) => [String(v.id), v.name]));
+      const materialById = new Map((materialRows || []).map((m) => [String(m.id), m.name]));
+      const poById = new Map((poRows || []).map((po) => [String(po.id), po.po_no]));
+
+      // Sampling.material_id/po_id are JSON array columns that can come
+      // back from the API as a raw JSON string instead of an
+      // already-parsed array (a MariaDB/Sequelize quirk hit repeatedly
+      // elsewhere in this codebase) — this tolerates either shape.
+      const parseIdArray = (value) => {
+        if (Array.isArray(value)) return value;
+        if (typeof value === "string" && value.trim()) {
+          try {
+            const parsed = JSON.parse(value);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        }
+        return value ? [value] : [];
+      };
+
+      return (samplingRows || []).map((row) => {
+        const vendorId = row.gateEntry?.vendor_id;
+        const materialIds = parseIdArray(row.material_id);
+        const poIds = parseIdArray(row.po_id);
+
+        return {
+          ...row,
+          _vendorName: vendorId ? vendorById.get(String(vendorId)) : null,
+          _materialNames: materialIds.map((id) => materialById.get(String(id)) || `Material ${id}`),
+          _poNos: [...new Set(poIds.map((id) => poById.get(String(id))).filter(Boolean))],
+        };
+      });
+    },
+    getLabel: (row) => {
+      const parts = [row.sample_code];
+      if (row._vendorName) parts.push(row._vendorName);
+      if (row._poNos && row._poNos.length) parts.push(row._poNos.join(", "));
+      if (row._materialNames && row._materialNames.length) parts.push(row._materialNames.join(", "));
+      if (parts.length === 1 && row.gate_entry_id) parts.push(`Gate Entry #${row.gate_entry_id}`);
+      return parts.join(" — ");
+    },
   },
   lab_test: {
     fetch: () => getLabTestsApi().then(unwrap),

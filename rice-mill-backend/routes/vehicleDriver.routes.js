@@ -5,7 +5,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Vehicle / driver master & history (Module 20)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorize("admin","gate","warehouse","dispatch","production","lab")); // Protected routes
+router.use(verifyAccessToken, attachUser, authorize("admin","gate","warehouse","dispatch","production","lab","weighbridge")); // Protected routes
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

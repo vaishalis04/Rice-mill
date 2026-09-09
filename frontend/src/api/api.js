@@ -362,6 +362,20 @@ export const getProductionBatchByIdApi = (id) =>
 export const updateProductionBatchApi = (id, data) =>
   axiosInstance.put(`/production/batches/${id}`, data);
 
+export const addProductionBatchMaterialApi = (id, data) =>
+  axiosInstance.post(`/production/batches/${id}/materials`, data);
+
+export const updateProductionBatchMaterialApi = (id, materialId, data) =>
+  axiosInstance.put(`/production/batches/${id}/materials/${materialId}`, data);
+
+export const removeProductionBatchMaterialApi = (id, materialId) =>
+  axiosInstance.delete(`/production/batches/${id}/materials/${materialId}`);
+
+export const swapProductionBatchMaterialApi = (id, materialId, newMaterialId) =>
+  axiosInstance.put(`/production/batches/${id}/materials/${materialId}/swap`, {
+    new_material_id: newMaterialId,
+  });
+
 export const deleteProductionBatchApi = (id) =>
   axiosInstance.delete(`/production/batches/${id}`);
 
@@ -444,12 +458,21 @@ export const getWarehouseStockApi = (params = {}) =>
 export const getWarehouseSummaryApi = (id) =>
   axiosInstance.get(`/warehouse/${id}/summary`);
 
+// warehouse_id omitted (or null) -> combined view across all warehouses
+export const getWarehouseStockDetailApi = (warehouse_id) =>
+  axiosInstance.get("/warehouse/stock-detail", {
+    params: warehouse_id ? { warehouse_id } : {},
+  });
+
 // ---------------- INVENTORY (read-only, role: warehouse) ----------------
 export const getInventoryApi = (params = {}) =>
   axiosInstance.get("/inventory", { params });
 
 export const getInventoryByIdApi = (id) =>
   axiosInstance.get(`/inventory/${id}`);
+
+export const getInventoryStockSummaryApi = () =>
+  axiosInstance.get("/inventory/stock-summary");
 
 // ---------------- USERS (role: admin) ----------------
 export const getUsersApi = (params = {}) =>

@@ -12,6 +12,25 @@ import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
+// Same MariaDB/Sequelize JSON-column quirk fixed elsewhere in this codebase:
+// LabTest.material_id is a JSON array column that comes back from
+// /api/lab-tests as a raw JSON string instead of an already-parsed array —
+// without this, every existing test row showed "—" for its material (the
+// Array.isArray check silently failed) and Edit couldn't pre-fill its
+// material selection.
+const parseIdArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return value ? [value] : [];
+};
+
 const emptyForm = {
   sampling_id: "",
   material_ids: [],
@@ -69,7 +88,10 @@ export default function LabTestPage() {
       });
   }, []);
 
-  // When sampling changes, fetch its materials
+  // When sampling changes, fetch its materials — excluding any that
+  // already have a lab test for this sampling (each material only ever
+  // gets one test now, so once tested it drops off this list instead of
+  // being re-selectable).
   useEffect(() => {
     if (form.sampling_id) {
       const selectedSampling = samplings.rows.find(
@@ -78,24 +100,30 @@ export default function LabTestPage() {
       
       if (selectedSampling) {
         // Get materials from the sampling
-        const samplingMaterialIds = Array.isArray(selectedSampling.material_id) 
-          ? selectedSampling.material_id 
-          : (selectedSampling.material_id ? [selectedSampling.material_id] : []);
-        
-        const materials = samplingMaterialIds.map(id => ({
-          id: id,
-          name: allMaterials[id] || `Material ${id}`
-        }));
+        const samplingMaterialIds = parseIdArray(selectedSampling.material_id);
+
+        const alreadyTestedIds = new Set(
+          tests
+            .filter((t) => String(t.sampling_id) === String(form.sampling_id))
+            .flatMap((t) => (Array.isArray(t.material_id) ? t.material_id : t.material_id ? [t.material_id] : []))
+            .map(Number)
+        );
+
+        const materials = samplingMaterialIds
+          .filter((id) => !alreadyTestedIds.has(Number(id)))
+          .map(id => ({
+            id: id,
+            name: allMaterials[id] || `Material ${id}`
+          }));
         
         setAvailableMaterials(materials);
-        
-        // Auto-select all materials by default
-        if (materials.length > 0) {
-          setForm(prev => ({
-            ...prev,
-            material_ids: materials.map(m => m.id)
-          }));
-        }
+
+        // Auto-select the first still-untested material by default —
+        // only one can be selected now, not "all of them".
+        setForm(prev => ({
+          ...prev,
+          material_ids: materials.length > 0 ? [materials[0].id] : []
+        }));
       }
     } else {
       setAvailableMaterials([]);
@@ -104,7 +132,7 @@ export default function LabTestPage() {
         material_ids: []
       }));
     }
-  }, [form.sampling_id, samplings.rows, allMaterials]);
+  }, [form.sampling_id, samplings.rows, allMaterials, tests]);
 
   const load = (verdict = verdictFilter) => {
     setLoading(true);
@@ -126,35 +154,12 @@ export default function LabTestPage() {
     setForm({ ...form, [name]: value });
   };
 
-  const handleMaterialToggle = (materialId) => {
-    setForm(prev => {
-      const currentIds = prev.material_ids || [];
-      if (currentIds.includes(materialId)) {
-        return {
-          ...prev,
-          material_ids: currentIds.filter(id => id !== materialId)
-        };
-      } else {
-        return {
-          ...prev,
-          material_ids: [...currentIds, materialId]
-        };
-      }
-    });
-  };
-
-  const handleSelectAll = () => {
-    const allIds = availableMaterials.map(m => m.id);
+  // Only one material can be selected per test now — picking a different
+  // one replaces the selection instead of adding to it.
+  const handleMaterialSelect = (materialId) => {
     setForm(prev => ({
       ...prev,
-      material_ids: allIds
-    }));
-  };
-
-  const handleDeselectAll = () => {
-    setForm(prev => ({
-      ...prev,
-      material_ids: []
+      material_ids: [materialId]
     }));
   };
 
@@ -167,14 +172,14 @@ export default function LabTestPage() {
     try {
       // Validate material selection
       if (!form.material_ids || form.material_ids.length === 0) {
-        setError("Please select at least one material for testing");
+        setError("Please select a material for testing");
         setIsSubmitting(false);
         return;
       }
 
       const payload = {
         sampling_id: Number(form.sampling_id),
-        material_id: form.material_ids.map(Number), // Send as array
+        material_id: form.material_ids.map(Number), // single-element array — one material per test
         moisture_pct: form.moisture_pct ? Number(form.moisture_pct) : null,
         broken_pct: form.broken_pct ? Number(form.broken_pct) : null,
         fm_pct: form.fm_pct ? Number(form.fm_pct) : null,
@@ -192,7 +197,8 @@ export default function LabTestPage() {
         setInfo("Lab test updated successfully!");
       } else {
         await createLabTestApi(payload);
-        setInfo(`Test submitted — verdict "${form.verdict}" applied to the gate entry for ${form.material_ids.length} material(s).`);
+        const testedMaterialName = allMaterials[form.material_ids[0]] || `Material ${form.material_ids[0]}`;
+        setInfo(`Test submitted — verdict "${form.verdict}" applied for ${testedMaterialName}.`);
       }
 
       setForm(emptyForm);
@@ -208,9 +214,7 @@ export default function LabTestPage() {
 
   const handleEdit = (row) => {
     setEditingId(row.id);
-    const materialIds = Array.isArray(row.material_id) 
-      ? row.material_id 
-      : (row.material_id ? [row.material_id] : []);
+    const materialIds = parseIdArray(row.material_id);
       
     setForm({
       sampling_id: row.sampling_id || "",
@@ -260,9 +264,7 @@ export default function LabTestPage() {
   };
 
   const getMaterialNames = (row) => {
-    const materialIds = Array.isArray(row.material_id) 
-      ? row.material_id 
-      : (row.material_id ? [row.material_id] : []);
+    const materialIds = parseIdArray(row.material_id);
     
     if (materialIds.length === 0) return '—';
     
@@ -712,38 +714,14 @@ export default function LabTestPage() {
             {form.sampling_id && availableMaterials.length > 0 && (
               <div style={styles.formGroupFull}>
                 <label style={styles.formLabel}>
-                  Materials to Test
+                  Material to Test
                   <span style={styles.required}>*</span>
                   <span style={styles.materialCountBadge}>
-                    {availableMaterials.length} available
+                    {availableMaterials.length} remaining
                   </span>
                 </label>
-                
+
                 <div style={styles.materialListContainer}>
-                  <div style={styles.materialListHeader}>
-                    <div className="material-list-actions" style={styles.materialListActions}>
-                      <button 
-                        type="button" 
-                        className="btn-action"
-                        style={styles.btnAction}
-                        onClick={handleSelectAll}
-                      >
-                        Select All
-                      </button>
-                      <button 
-                        type="button" 
-                        className="btn-action"
-                        style={styles.btnAction}
-                        onClick={handleDeselectAll}
-                      >
-                        Deselect All
-                      </button>
-                      <span className="selected-count" style={styles.selectedCount}>
-                        Selected: {(form.material_ids || []).length}
-                      </span>
-                    </div>
-                  </div>
-                  
                   <div style={styles.materialList}>
                     {availableMaterials.map((material) => (
                       <label 
@@ -755,9 +733,10 @@ export default function LabTestPage() {
                         }}
                       >
                         <input
-                          type="checkbox"
+                          type="radio"
+                          name="material_to_test"
                           checked={(form.material_ids || []).includes(material.id)}
-                          onChange={() => handleMaterialToggle(material.id)}
+                          onChange={() => handleMaterialSelect(material.id)}
                           style={styles.materialCheckbox}
                           disabled={!!editingId}
                         />
@@ -766,10 +745,10 @@ export default function LabTestPage() {
                     ))}
                   </div>
                 </div>
-                
+
                 {(form.material_ids || []).length === 0 && (
                   <div style={styles.formHint}>
-                    Please select at least one material for testing
+                    Please select a material for testing
                   </div>
                 )}
               </div>
@@ -779,7 +758,7 @@ export default function LabTestPage() {
               <div style={styles.formGroupFull}>
                 <div style={styles.emptyState}>
                   <span style={styles.emptyIcon}>🔬</span>
-                  <p>No materials found for this sampling</p>
+                  <p>Every material on this sampling already has a lab test</p>
                 </div>
               </div>
             )}

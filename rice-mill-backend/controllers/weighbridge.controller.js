@@ -293,9 +293,9 @@ create: async (req, res, next) => {
         resolvedRate = salesOrder?.rate !== undefined ? Number(salesOrder.rate) : (final_rate !== undefined ? Number(final_rate) : null);
       }
 
-      // --- UPDATE GATE ENTRY TO Parked ---
+      // --- UPDATE GATE ENTRY TO parked ---
       await gateEntry.update({
-        gate_status: "Parked",
+        gate_status: "parked",
         updated_by: req.user ? req.user.id : null,
       });
 
@@ -309,7 +309,7 @@ create: async (req, res, next) => {
       } else if (isSalesEntry) {
         msg += ` Sales order completed.`;
       } else {
-        msg += ` Gate entry Parked.`;
+        msg += ` Gate entry parked.`;
       }
 
       return res.status(200).json({
@@ -324,7 +324,7 @@ create: async (req, res, next) => {
           net_weight: netWeight,
           final_rate: resolvedRate,
           amount: resolvedRate !== null ? netWeight * resolvedRate : null,
-          gate_status: "Parked",
+          gate_status: "parked",
           isSecondWeight: true,
           updated: true,
         },
@@ -452,9 +452,9 @@ create: async (req, res, next) => {
         }
       }
 
-      // Update gate entry to Parked (both weights done)
+      // Update gate entry to parked (both weights done)
       await gateEntry.update({
-        gate_status: "Parked",
+        gate_status: "parked",
         updated_by: req.user ? req.user.id : null,
       });
 
@@ -465,8 +465,8 @@ create: async (req, res, next) => {
       return res.status(201).json({
         success: true,
         msg: isOtherEntry
-          ? `Weight slip generated (net ${netWeight}); gate entry Parked.`
-          : `Weight slip generated (net ${netWeight}); purchase finalized and gate entry Parked.`,
+          ? `Weight slip generated (net ${netWeight}); gate entry parked.`
+          : `Weight slip generated (net ${netWeight}); purchase finalized and gate entry parked.`,
         data: {
           weightSlip: created,
           purchase,
@@ -475,7 +475,7 @@ create: async (req, res, next) => {
           net_weight: netWeight,
           final_rate: resolvedRate,
           amount: resolvedRate !== null ? netWeight * resolvedRate : null,
-          gate_status: "Parked",
+          gate_status: "parked",
         },
       });
     }

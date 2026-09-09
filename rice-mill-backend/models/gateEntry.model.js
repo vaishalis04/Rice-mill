@@ -35,7 +35,7 @@ gate_status: {
     "unloaded",
     "waiting_loading",
     "loaded",
-    "Parked",
+    "parked",
     "exited"
   ),
   defaultValue: "waiting_token"

@@ -13,6 +13,7 @@ Packing.init(
     // just a literal string with no numeric value attached. Now it's a plain decimal, so
     // the common sizes (5/10/25/50) AND any custom size the mill packs in are all stored
     // as the real number, uniformly.
+    material_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "material_master", key: "id" } },
     pack_size: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
     bag_count: { type: DataTypes.INTEGER, allowNull: false },
     batch_no: { type: DataTypes.STRING(30) },
