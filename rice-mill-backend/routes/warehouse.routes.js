@@ -14,6 +14,14 @@ router.use(verifyAccessToken, attachUser, authorize("warehouse", "gate", "produc
 router.get("/", Controller.getAll);
 router.get("/stock", Controller.getStock);
 router.get("/stock-detail", Controller.getStockDetail);
+// Own authorize() here (not the group-wide one above) — this is a data-
+// migration tool, squarely an admin task, and the group above doesn't
+// include "admin" at all.
+router.post(
+  "/opening-stock/bulk-import",
+  authorize("admin", "warehouse"),
+  Controller.bulkImportOpeningStock
+);
 router.get("/:id/summary", Controller.getSummary);
 router.get("/:id", Controller.getById);
 router.post("/", Controller.create);

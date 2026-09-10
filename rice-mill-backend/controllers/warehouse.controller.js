@@ -1,6 +1,7 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
-const { WarehouseMaster, BinStackMaster, Stack, Lot, Inventory, MaterialMaster, ProductionBatch, FinishedGoods, Packing } = require("../models/index");
+const sequelize = require("../config/db");
+const { WarehouseMaster, BinStackMaster, Stack, Lot, Inventory, MaterialMaster, VarietyMaster, ProductionBatch, FinishedGoods, Packing } = require("../models/index");
 const { generateCode } = require("../helpers/helperFunction");
 
 // Warehouse / Bin / Stack, raw material storage (Module 9)
@@ -148,29 +149,16 @@ module.exports = {
       });
       if (!warehouse) throw createError(404, "Warehouse not found");
 
+      // Only "raw" (pre-production) stock counts as material actually
+      // available to feed into a new batch — "fg" stage rows exist purely
+      // for Production's own internal bookkeeping (see getStockDetail's
+      // comment below) and were being counted in here too, which is why
+      // this used to show phantom quantities/materials that don't match
+      // what the warehouse's Stock tab (physical reality) shows at all.
       const inventoryRows = await Inventory.findAll({
-        where: { warehouse_id: warehouse.id, is_deleted: false },
-        include: [
-          { model: MaterialMaster, as: "material", attributes: ["id", "name", "material_code"] },
-          { model: Lot, as: "lot", attributes: ["id", "bag_size"] },
-        ],
+        where: { warehouse_id: warehouse.id, is_deleted: false, stage: "raw" },
+        include: [{ model: MaterialMaster, as: "material", attributes: ["id", "name", "material_code"] }],
       });
-
-      // Bag-size breakdown per material, shown alongside the reservation
-      // total below purely as a "what's actually in bags" reference for
-      // whoever is creating the batch — it does NOT feed the qty/available
-      // math, which stays exactly as it was (raw+fg Inventory balance,
-      // minus pending-batch reservations).
-      const bagsByMaterial = new Map(); // material_id -> Map(sizeKey -> {bag_size, bag_count, qty})
-      const addBagLine = (materialId, bagSize, bagCount, qty) => {
-        if (!bagsByMaterial.has(materialId)) bagsByMaterial.set(materialId, new Map());
-        const m = bagsByMaterial.get(materialId);
-        const key = bagSize == null ? "bulk" : String(bagSize);
-        const existing = m.get(key) || { bag_size: bagSize, bag_count: bagSize != null ? 0 : null, qty: 0 };
-        existing.qty += qty;
-        if (bagSize != null && bagCount != null) existing.bag_count += bagCount;
-        m.set(key, existing);
-      };
 
       const byMaterial = new Map();
       for (const row of inventoryRows) {
@@ -181,45 +169,8 @@ module.exports = {
           material_code: row.material?.material_code || null,
           qty: 0,
         };
-        const balance = Number(row.balance_qty || 0);
-        existing.qty += balance;
+        existing.qty += Number(row.balance_qty || 0);
         byMaterial.set(key, existing);
-
-        // Inventory is the stock ledger of record. Use its balance for the
-        // displayed bag quantity so bag lines and total tons cannot diverge.
-        if (row.stage === "raw") {
-          const bagSize = row.lot?.bag_size != null ? Number(row.lot.bag_size) : null;
-          const wholeBags = bagSize ? Math.floor((balance * 1000) / bagSize + 0.0001) : null;
-          const bagQty = bagSize && wholeBags != null ? (wholeBags * bagSize) / 1000 : balance;
-          addBagLine(key, bagSize, wholeBags, bagQty);
-        }
-      }
-
-      // Packed stock is already represented by FG Inventory rows above.
-      // Read pack size only as a label; use the Inventory balance for both
-      // the displayed tons and the derived bag count.
-      const fgInventoryRows = inventoryRows.filter(
-        (row) => row.stage === "fg" && Number(row.balance_qty || 0) > 0,
-      );
-      const fgLotIds = [...new Set(fgInventoryRows.map((row) => row.lot_id).filter(Boolean))];
-      const packingRows = fgLotIds.length
-        ? await Packing.findAll({
-            where: { lot_id: { [Op.in]: fgLotIds }, is_deleted: false },
-            attributes: ["id", "lot_id", "material_id", "pack_size"],
-          })
-        : [];
-
-      for (const row of fgInventoryRows) {
-        const packing = packingRows.find(
-          (candidate) =>
-            Number(candidate.lot_id) === Number(row.lot_id) &&
-            (!candidate.material_id || Number(candidate.material_id) === Number(row.material_id)),
-        );
-        const packSize = packing?.pack_size != null ? Number(packing.pack_size) : null;
-        const balance = Number(row.balance_qty);
-        const wholeBags = packSize ? Math.floor((balance * 1000) / packSize + 0.0001) : null;
-        const bagQty = packSize && wholeBags != null ? (wholeBags * packSize) / 1000 : balance;
-        addBagLine(Number(row.material_id), packSize, wholeBags, bagQty);
       }
 
       // Subtract what pending production batches have already reserved.
@@ -241,27 +192,7 @@ module.exports = {
       }
 
       const materials = Array.from(byMaterial.values())
-        .map((m) => {
-          const bagMap = bagsByMaterial.get(m.material_id);
-          const bagQtyTotal = bagMap
-            ? Array.from(bagMap.values()).reduce((sum, bag) => sum + Number(bag.qty || 0), 0)
-            : null;
-          const bags = bagMap
-            ? Array.from(bagMap.values())
-                .map((b) => ({
-                  ...b,
-                  qty: Math.round(b.qty * 1000) / 1000,
-                  // One decimal, not a whole number — see note above the
-                  // raw-stock loop: a partially-consumed lot doesn't divide
-                  // evenly into whole bags.
-                  bag_count: b.bag_count != null ? Math.floor(b.bag_count) : null,
-                }))
-                .filter((b) => b.qty > 0.001)
-                .sort((a, b) => (a.bag_size ?? -1) - (b.bag_size ?? -1))
-            : [];
-          const usableQty = bagQtyTotal != null ? Math.min(m.qty, bagQtyTotal) : m.qty;
-          return { ...m, qty: Math.round(usableQty * 1000) / 1000, bags };
-        })
+        .map((m) => ({ ...m, qty: Math.round(m.qty * 1000) / 1000 }))
         .filter((m) => m.qty > 0.001)
         .sort((a, b) => b.qty - a.qty);
 
@@ -344,19 +275,17 @@ module.exports = {
           qty: 0,
         };
         existing.qty += balance;
-        if (bagSize) existing.bag_count += (balance * 1000) / bagSize;
+        if (bagSize) existing.bag_count += Math.round(balance / bagSize);
         rawByKey.set(key, existing);
       }
       const rawStock = Array.from(rawByKey.values())
-        .map((m) => ({
-          ...m,
-          qty: Math.round(m.qty * 1000) / 1000,
-          // One decimal, not a whole number — a partially-consumed lot
-          // doesn't divide evenly into whole bags (consumption is tracked
-          // in tons, not bag units), so rounding to a whole number here
-          // would make the bag count and tons not multiply back correctly.
-          bag_count: m.bag_count != null ? Math.round(m.bag_count * 10) / 10 : null,
-        }))
+        // Inventory.balance_qty is stored in kg (same as everything else —
+        // FinishedGoods.qty, Packing totals, etc.) — this was missing the
+        // ÷1000 conversion to tons that the packed-stock block below already
+        // does correctly, so raw stock was showing its kg figure labelled
+        // as tons (e.g. 500kg displayed as "500.00 tons" instead of the
+        // correct "0.500 tons").
+        .map((m) => ({ ...m, qty: Math.round((m.qty / 1000) * 1000) / 1000 }))
         .filter((m) => m.qty > 0.001)
         .sort((a, b) => b.qty - a.qty);
 
@@ -534,9 +463,271 @@ module.exports = {
     }
   },
 
-  // GET /api/warehouse/stock?warehouse_id=&material_id=&page=&limit=
-  getStock: async (req, res, next) => {
+  // POST /api/warehouse/opening-stock/bulk-import
+  // { rows: [{ warehouse_name, material_name, variety_name?, bag_size, bag_count }, ...], dry_run? }
+  //
+  // One-off bulk loader for opening raw stock — e.g. migrating an existing
+  // physical stock count (from a spreadsheet) into the system as a
+  // starting point. Each row becomes one completed Lot (bag_size/
+  // accepted_bags set directly, no gate entry/purchase behind it —
+  // purchase_id stays null, same as a production-generated lot) plus a
+  // matching raw-stage Inventory row, so it shows up immediately in
+  // Warehouse Stock and Production's "available materials" exactly like
+  // any normally-unloaded lot would.
+  //
+  // Warehouses must already exist (matched by name, case-insensitive/
+  // trimmed) — this deliberately does NOT auto-create warehouses, since a
+  // warehouse needs a deliberate code/type/capacity set up first. Materials
+  // (and varieties, if given) ARE auto-created when a name isn't found,
+  // since those are just name+code catalogs with no similar setup step.
+  //
+  // The whole import is one transaction: if any row fails validation (an
+  // unmatched warehouse, a bad bag_size/bag_count), NOTHING is committed —
+  // you get the full list of problems back to fix in the sheet, then
+  // re-run the import once, rather than getting half your stock in.
+  bulkImportOpeningStock: async (req, res, next) => {
+    const t = await sequelize.transaction();
     try {
+      const { rows, dry_run } = req.body;
+      if (!Array.isArray(rows) || rows.length === 0) {
+        throw createError(
+          400,
+          "rows must be a non-empty array of { warehouse_name, material_name, bag_size, bag_count }"
+        );
+      }
+
+      const allWarehouses = await WarehouseMaster.findAll({ where: { is_deleted: false }, transaction: t });
+      const allMaterials = await MaterialMaster.findAll({ where: { is_deleted: false }, transaction: t });
+      const allVarieties = await VarietyMaster.findAll({ where: { is_deleted: false }, transaction: t });
+
+      // generateCode()/generateLotNo() are NOT transaction-aware — they
+      // query via a plain (non-transactional) connection, which can't see
+      // this transaction's own uncommitted inserts. Calling them
+      // repeatedly inside this one open transaction would hand out the
+      // SAME "next" code/lot_no to every new material and every lot,
+      // failing on the 2nd one with a uniqueness violation. Instead, seed
+      // a starting sequence once (via a transaction-aware query) and
+      // increment locally in memory as we go.
+      const lastMaterial = await MaterialMaster.findOne({
+        where: { material_code: { [Op.like]: "MAT%" } },
+        order: [["id", "DESC"]],
+        transaction: t,
+      });
+      let nextMaterialSeq = 1;
+      if (lastMaterial && lastMaterial.material_code) {
+        const match = String(lastMaterial.material_code).match(/^MAT(\d+)$/);
+        if (match) nextMaterialSeq = parseInt(match[1], 10) + 1;
+      }
+
+      const today = new Date();
+      const lotPrefix = `LOT-${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}-`;
+      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+      const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+      const lastLotToday = await Lot.findOne({
+        where: { lot_no: { [Op.like]: `${lotPrefix}%` }, created_at: { [Op.between]: [startOfDay, endOfDay] } },
+        order: [["id", "DESC"]],
+        transaction: t,
+      });
+      let nextLotSeq = 1;
+      if (lastLotToday) {
+        const lastSeq = parseInt(lastLotToday.lot_no.split("-").pop(), 10);
+        if (!Number.isNaN(lastSeq)) nextLotSeq = lastSeq + 1;
+      }
+
+      const findByName = (list, nameField, needle) =>
+        list.find((row) => row[nameField].trim().toLowerCase() === needle) || null;
+
+      const materialCache = new Map(); // lowercased name -> MaterialMaster row (created ones added as we go)
+      const varietyCache = new Map();
+
+      const errors = []; // blocks the whole import
+      const notices = []; // informational only (e.g. "material X will be created")
+      const resolved = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const rowNum = i + 2; // +2: header row + 1-indexed, matches spreadsheet row numbers
+        const row = rows[i] || {};
+        const warehouseName = String(row.warehouse_name || "").trim();
+        const materialName = String(row.material_name || "").trim();
+        const varietyName = row.variety_name ? String(row.variety_name).trim() : "";
+        const bagSize = Number(row.bag_size);
+        const bagCount = Number(row.bag_count);
+
+        if (!warehouseName) { errors.push(`Row ${rowNum}: warehouse_name is required`); continue; }
+        if (!materialName) { errors.push(`Row ${rowNum}: material_name is required`); continue; }
+        if (!(bagSize > 0)) { errors.push(`Row ${rowNum}: bag_size must be a positive number (kg)`); continue; }
+        if (!(bagCount > 0)) { errors.push(`Row ${rowNum}: bag_count must be a positive number`); continue; }
+
+        const warehouse = findByName(allWarehouses, "name", warehouseName.toLowerCase());
+        if (!warehouse) {
+          errors.push(
+            `Row ${rowNum}: no warehouse named "${warehouseName}" exists — create it first (Warehouse Management), or fix the name in the sheet`
+          );
+          continue;
+        }
+
+        const matKey = materialName.toLowerCase();
+        let material = materialCache.get(matKey) || findByName(allMaterials, "name", matKey);
+        if (!material) {
+          if (dry_run) {
+            notices.push(`Row ${rowNum}: material "${materialName}" doesn't exist yet — would be auto-created`);
+          } else {
+            const material_code = `MAT${String(nextMaterialSeq).padStart(4, "0")}`;
+            nextMaterialSeq += 1;
+            material = await MaterialMaster.create(
+              { material_code, name: materialName, category: "raw", created_by: req.user ? req.user.id : null },
+              { transaction: t }
+            );
+            allMaterials.push(material);
+            notices.push(`Row ${rowNum}: created new material "${materialName}" (${material_code})`);
+          }
+          materialCache.set(matKey, material);
+        }
+
+        let variety = null;
+        if (varietyName) {
+          const varKey = varietyName.toLowerCase();
+          variety = varietyCache.get(varKey) || findByName(allVarieties, "variety_name", varKey);
+          if (!variety) {
+            if (dry_run) {
+              notices.push(`Row ${rowNum}: variety "${varietyName}" doesn't exist yet — would be auto-created`);
+            } else {
+              variety = await VarietyMaster.create(
+                { variety_name: varietyName, grain_type: "medium", created_by: req.user ? req.user.id : null },
+                { transaction: t }
+              );
+              allVarieties.push(variety);
+              notices.push(`Row ${rowNum}: created new variety "${varietyName}"`);
+            }
+            varietyCache.set(varKey, variety);
+          }
+        }
+
+        resolved.push({
+          rowNum,
+          warehouse,
+          material,
+          materialName,
+          variety,
+          varietyName,
+          bagSize,
+          bagCount,
+          qty: bagSize * bagCount, // kg
+        });
+      }
+
+      if (errors.length > 0) {
+        await t.rollback();
+        return res.status(400).json({
+          success: false,
+          message: "Import cancelled — fix the problems below and re-run. Nothing was saved.",
+          errors,
+        });
+      }
+
+      if (dry_run) {
+        await t.rollback();
+        return res.status(200).json({
+          success: true,
+          msg: `Dry run only — nothing saved. ${resolved.length} row(s) would import cleanly.`,
+          preview: resolved.map((r) => ({
+            warehouse: r.warehouse.name,
+            material: r.materialName,
+            variety: r.varietyName || null,
+            bag_size: r.bagSize,
+            bag_count: r.bagCount,
+            qty_kg: r.qty,
+            qty_tons: Math.round((r.qty / 1000) * 1000) / 1000,
+          })),
+          notices,
+        });
+      }
+
+      const created = [];
+      for (const r of resolved) {
+        const lot_no = `${lotPrefix}${String(nextLotSeq).padStart(3, "0")}`;
+        nextLotSeq += 1;
+        const lot = await Lot.create(
+          {
+            lot_no,
+            purchase_id: null,
+            material_id: r.material.id,
+            variety_id: r.variety ? r.variety.id : null,
+            qty: r.qty,
+            destination: "warehouse",
+            warehouse_id: r.warehouse.id,
+            bin_id: null,
+            unloading_status: "completed",
+            bag_size: r.bagSize,
+            accepted_bags: r.bagCount,
+            rejected_bags: 0,
+            rejected_qty: 0,
+            created_by: req.user ? req.user.id : null,
+            plant_id: r.warehouse.plant_id || (req.user ? req.user.plant_id : null),
+          },
+          { transaction: t }
+        );
+
+        await Inventory.create(
+          {
+            lot_id: lot.id,
+            material_id: r.material.id,
+            warehouse_id: r.warehouse.id,
+            stage: "raw",
+            qty_in: r.qty,
+            qty_out: 0,
+            balance_qty: r.qty,
+            as_of: new Date(),
+            created_by: req.user ? req.user.id : null,
+            plant_id: r.warehouse.plant_id || (req.user ? req.user.plant_id : null),
+          },
+          { transaction: t }
+        );
+
+        created.push({
+          lot_no,
+          warehouse: r.warehouse.name,
+          material: r.materialName,
+          bag_size: r.bagSize,
+          bag_count: r.bagCount,
+          qty_kg: r.qty,
+        });
+      }
+
+      await t.commit();
+      res.status(201).json({
+        success: true,
+        msg: `Imported ${created.length} opening-stock lot(s) across ${new Set(created.map((c) => c.warehouse)).size} warehouse(s).`,
+        data: created,
+        notices,
+      });
+    } catch (err) {
+      if (!t.finished) await t.rollback();
+
+      // Surface exactly which field tripped a Sequelize-level validator or
+      // DB constraint, instead of the generic "Validation error" the
+      // default handler shows — same approach as purchase.controller.js's
+      // bulkCreate, needed here because this endpoint writes to three
+      // different models (MaterialMaster/VarietyMaster/Lot/Inventory) and
+      // any one of them could be the actual culprit.
+      if (err.name === "SequelizeValidationError" && Array.isArray(err.errors)) {
+        const detail = err.errors.map((e) => `${e.path}: ${e.message} (got: ${JSON.stringify(e.value)})`).join("; ");
+        return next(createError(400, `Validation failed — ${detail}`));
+      }
+      if (err.name === "SequelizeUniqueConstraintError") {
+        const fields = err.fields ? Object.keys(err.fields).join(", ") : "unknown field(s)";
+        return next(createError(409, `Duplicate value on: ${fields} — ${err.errors?.[0]?.message || ""}`));
+      }
+      if (err.name === "SequelizeForeignKeyConstraintError") {
+        return next(createError(400, `Invalid reference — ${err.parent?.sqlMessage || err.message}`));
+      }
+
+      next(err);
+    }
+  },
+
+  // GET /api/warehouse/stock?warehouse_id=&material_id=&page=&limit=
+  getStock: async (req, res, next) => {    try {
       const { warehouse_id, material_id, plant_id, page = 1, limit = 20 } = req.query;
 
       const where = { is_deleted: false };
