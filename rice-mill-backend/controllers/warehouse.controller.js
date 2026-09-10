@@ -4,12 +4,6 @@ const sequelize = require("../config/db");
 const { WarehouseMaster, BinStackMaster, Stack, Lot, Inventory, MaterialMaster, VarietyMaster, ProductionBatch, FinishedGoods, Packing } = require("../models/index");
 const { generateCode } = require("../helpers/helperFunction");
 
-// Warehouse / Bin / Stack, raw material storage (Module 9)
-// Fronts three related tables via `type` = "warehouse" | "bin" | "stack"
-// (query param for GET/DELETE, body field for POST/PUT). Stack rows are
-// normally created automatically by Lot creation (see lot.controller.js);
-// this module also exposes direct CRUD for corrections.
-
 const registry = {
   warehouse: { model: WarehouseMaster, label: "Warehouse" },
   bin: { model: BinStackMaster, label: "Bin" },

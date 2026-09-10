@@ -188,17 +188,25 @@ export default function ProductionBatchPage() {
   };
 
   const handleMaterialChange = (index, field, value) => {
-    setCreateForm((prev) => {
-      const updated = [...prev.materials];
-      updated[index][field] = value;
-      return { ...prev, materials: updated };
-    });
-    if (fieldErrors[index]) {
-      const newErrors = { ...fieldErrors };
-      delete newErrors[index];
-      setFieldErrors(newErrors);
+  setCreateForm((prev) => {
+    const updated = [...prev.materials];
+    updated[index][field] = value;
+
+    if (field === "material_id") {
+      const validSizes = getCreatePackSizeOptions(value);
+      updated[index].pack_size = validSizes.length ? validSizes[0] : CUSTOM_SENTINEL;
+      updated[index].custom_pack_size = "";
+      updated[index].bag_count = "";
     }
-  };
+
+    return { ...prev, materials: updated };
+  });
+  if (fieldErrors[index]) {
+    const newErrors = { ...fieldErrors };
+    delete newErrors[index];
+    setFieldErrors(newErrors);
+  }
+};
 
   const getMaterialAvailableQty = (materialId) => {
     if (!warehouseSummary?.materials) return 0;
@@ -258,7 +266,8 @@ export default function ProductionBatchPage() {
     });
     if (hasError) {
       setFieldErrors(errors);
-      setError("Please fix the errors below before submitting");
+      setError(errors);
+      console.error("Validation errors:", errors);
       return;
     }
 

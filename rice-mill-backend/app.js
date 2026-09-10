@@ -5,7 +5,7 @@ dotenv.config();
 const cors = require("cors");
 const path = require("path");
 const { sequelize } = require("./models/index");
-const { scheduleAgingJob } = require("./jobs/agingJob");
+const { scheduleAgingJob } = require("./Jobs/agingJob");
 
 // ── Route Imports (grouped per ERP module — see Rice-Mill-ERP-Design.html Section 5) ──
 const authRoutes           = require("./routes/auth.routes");
@@ -105,77 +105,19 @@ sequelize.authenticate()
   .then(async () => {
     console.log("✅ MySQL connected");
 
-    // Phase 1 — sequelize.sync({ alter: true }) as one coordinated pass.
-    // This is what actually respects foreign-key dependency order (it
-    // topologically sorts models so a table is never created/altered
-    // before the tables it references), which per-model syncing cannot
-    // do on its own — attempting that on an empty DB makes every table
-    // fail with "foreign key constraint is incorrectly formed" simply
-    // because referenced tables don't exist yet.
-    try {
-      await sequelize.sync({ alter: true });
-      console.log("✅ Database schema verified/aligned");
-    } catch (syncErr) {
-      // Phase 2 — this only runs if phase 1 hit a genuine per-table issue
-      // partway through (a bad FK, a stray/duplicate index, etc.). Phase 1
-      // already got every table up to that point into a mostly-correct
-      // state and correctly ordered, so re-attempting each model
-      // individually here just mops up the tables that phase 1 couldn't
-      // reach — one bad table can no longer silently block every table
-      // after it, which is what let earlier, unrelated schema issues mask
-      // real fixes to completely different tables (e.g. Stack/Loading
-      // never actually getting their column changes applied because
-      // something alphabetically/structurally earlier threw first).
-      console.error("⚠️ Schema alignment warning (pass 1):", syncErr.message);
-      console.log("↻ Retrying remaining tables individually...");
+    console.log("STEP 1: MySQL authentication complete");
 
-      let pending = Object.values(sequelize.models);
-      let lastErrors = new Map();
-      let pass = 0;
-
-      // Keep looping over whatever still fails until a full pass makes no
-      // further progress. This is what actually resolves ordering issues
-      // like "material_master before uom_master exists" — a single pass
-      // has no way to know uom_master will succeed later in that same
-      // pass, so material_master would be stuck failing forever without
-      // this. Only genuine circular dependencies (two tables that need
-      // each other to exist first) survive every pass — those need an
-      // actual model fix, not more retries.
-      while (pending.length > 0) {
-        pass += 1;
-        const stillFailing = [];
-        lastErrors = new Map();
-
-        for (const model of pending) {
-          try {
-            await model.sync({ alter: true });
-          } catch (modelErr) {
-            stillFailing.push(model);
-            lastErrors.set(model.getTableName(), modelErr.message);
-          }
-        }
-
-        if (stillFailing.length === pending.length) break; // no progress this pass — stop
-        pending = stillFailing;
-      }
-
-      for (const [table, message] of lastErrors) {
-        console.error(`⚠️ Schema alignment warning [${table}]:`, message);
-      }
-
-      const totalModels = Object.values(sequelize.models).length;
-      const failed = pending.length;
-      console.log(
-        failed
-          ? `✅ Database schema aligned (${totalModels - failed}/${totalModels} tables after ${pass} pass(es) — see warnings above for the rest)`
-          : `✅ Database schema aligned on retry (${pass} pass(es))`,
-      );
-    }
-
+    console.log("STEP 2: Starting aging job...");
     scheduleAgingJob();
-    app.listen(PORT, "0.0.0.0", () => console.log(`🚀 Rice Mill ERP running on port ${PORT}`));
+    console.log("STEP 3: Aging job started");
+
+    console.log("STEP 4: Starting HTTP server...");
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Rice Mill ERP running on port ${PORT}`);
+    });
   })
   .catch((err) => {
-    console.error("❌ MySQL connection failed:", err.message);
+    console.error("❌ MySQL connection failed:", err);
     process.exit(1);
   });
