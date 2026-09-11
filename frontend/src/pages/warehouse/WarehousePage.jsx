@@ -5,12 +5,10 @@ import {
   updateWarehouseSettingApi,
   deleteWarehouseSettingApi,
   getWarehouseStockDetailApi,
-  getStockReportPdfApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
-import PdfPreviewModal from "../../components/PdfPreviewModal";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 // Warehouse fields only
@@ -41,52 +39,7 @@ function StockTab() {
   const [materialNameFilter, setMaterialNameFilter] = useState("");
   const [packSizeFilter, setPackSizeFilter] = useState("");
 
-  // Stock Report PDF
-  const [reportDate, setReportDate] = useState(new Date().toISOString().slice(0, 10));
-  const [reportLoading, setReportLoading] = useState(false);
-  const [reportError, setReportError] = useState("");
-  const [pdfPreview, setPdfPreview] = useState(null); // { url, fileName, title }
-
   const hasScope = viewAllWarehouses || !!warehouseFilter;
-
-  // Axios responseType:"blob" means an error body (e.g. a 403/500 JSON
-  // error) still comes back as a Blob instead of parsed JSON — read it as
-  // text and try to parse it so the real backend message shows up instead
-  // of a generic "something went wrong".
-  const extractBlobErrorMessage = async (err, fallback) => {
-    const data = err?.response?.data;
-    if (data instanceof Blob) {
-      try {
-        const text = await data.text();
-        const parsed = JSON.parse(text);
-        return parsed.msg || parsed.message || fallback;
-      } catch {
-        return fallback;
-      }
-    }
-    return err?.response?.data?.msg || err?.response?.data?.message || fallback;
-  };
-
-  const handleViewStockReport = async () => {
-    setReportError("");
-    setReportLoading(true);
-    try {
-      const params = { date: reportDate };
-      if (!viewAllWarehouses && warehouseFilter) params.warehouse_id = warehouseFilter;
-      const res = await getStockReportPdfApi(params);
-      const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
-      const namePart = !viewAllWarehouses && warehouseFilter ? (stockDetail?.warehouse_code || "warehouse") : "overall";
-      setPdfPreview({
-        url: blobUrl,
-        fileName: `stock-report-${namePart}-${reportDate}.pdf`,
-        title: !viewAllWarehouses && warehouseFilter ? `${stockDetail?.name || "Warehouse"} Stock Report` : "Overall Stock Report",
-      });
-    } catch (err) {
-      setReportError(await extractBlobErrorMessage(err, "Could not generate the stock report PDF"));
-    } finally {
-      setReportLoading(false);
-    }
-  };
 
   // Fetch stock detail whenever the scope (single warehouse vs all) changes
   useEffect(() => {
@@ -210,53 +163,7 @@ function StockTab() {
       {hasScope && (
         <div
           style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "end",
-            flexWrap: "wrap",
-            marginBottom: 16,
-            padding: "12px 16px",
-            background: "#f8fafc",
-            border: "1px solid #e2e8f0",
-            borderRadius: 8,
-          }}
-        >
-          <div className="sf-field" style={{ marginBottom: 0 }}>
-            <label>Report Date</label>
-            <input
-              type="date"
-              value={reportDate}
-              onChange={(e) => setReportDate(e.target.value)}
-              max={new Date().toISOString().slice(0, 10)}
-              style={{ padding: "8px 12px", borderRadius: 4, border: "1px solid #d1d5db", fontSize: 14 }}
-            />
-          </div>
-          <button type="button" className="dt-btn" disabled={reportLoading} onClick={handleViewStockReport}>
-            {reportLoading
-              ? "Generating…"
-              : `View ${!viewAllWarehouses && warehouseFilter ? "Warehouse" : "Overall"} Stock Report (PDF)`}
-          </button>
-          {reportError && <span style={{ color: "#dc2626", fontSize: 13 }}>{reportError}</span>}
-        </div>
-      )}
-
-      {pdfPreview && (
-        <PdfPreviewModal
-          title={pdfPreview.title}
-          blobUrl={pdfPreview.url}
-          fileName={pdfPreview.fileName}
-          onClose={() => {
-            window.URL.revokeObjectURL(pdfPreview.url);
-            setPdfPreview(null);
-          }}
-        />
-      )}
-
-      {hasScope && (
-        <div
-          style={{
             padding: "16px 20px",
-
             background: "#f8fafc",
             border: "1px solid #e2e8f0",
             borderRadius: 8,

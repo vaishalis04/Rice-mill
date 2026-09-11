@@ -290,15 +290,6 @@ export const getMaterialFlowReportApi = (params = {}) =>
     params,
     responseType: params.format === "csv" ? "blob" : "json",
   });
-
-// warehouse_id omitted -> combined report across every warehouse; date
-// defaults to today on the backend if omitted.
-export const getStockReportPdfApi = (params = {}) =>
-  axiosInstance.get("/reports/stock-report", { params, responseType: "blob" });
-
-export const getProductionReportPdfApi = (batchId) =>
-  axiosInstance.get(`/reports/production-batch/${batchId}/report`, { responseType: "blob" });
-
 export const completePackingApi = (data) =>
   axiosInstance.post("/packing/complete", data);
 // ---------------- PACKING (role: production) ----------------
