@@ -7,10 +7,12 @@ import {
   addProductionBatchMaterialApi,
   removeProductionBatchMaterialApi,
   swapProductionBatchMaterialApi,
+  getProductionReportPdfApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
+import PdfPreviewModal from "../../components/PdfPreviewModal";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyCreateForm = {
@@ -73,6 +75,12 @@ export default function ProductionBatchPage() {
   const [packingAddMaterialError, setPackingAddMaterialError] = useState("");
   const [rowActionError, setRowActionError] = useState("");
   const [rowActionLoadingId, setRowActionLoadingId] = useState(null);
+
+  // Production Report PDF — available right after a batch is finalized
+  const [lastCompletedBatch, setLastCompletedBatch] = useState(null);
+  const [productionReportLoading, setProductionReportLoading] = useState(false);
+  const [productionReportError, setProductionReportError] = useState("");
+  const [pdfPreview, setPdfPreview] = useState(null); // { url, fileName, title }
 
   const warehouses = useEntityLookup("warehouse");
   const materials = useEntityLookup("material");
@@ -180,6 +188,18 @@ export default function ProductionBatchPage() {
     setCreateForm((prev) => {
       const updated = [...prev.materials];
       updated[index][field] = value;
+      // Switching material invalidates whatever bag size/count was set for
+      // the PREVIOUS material — a <select> silently shows its first option
+      // when the stored value doesn't match any of them, which desyncs the
+      // visible "50 kg" from the actual state (still e.g. "25") used for
+      // the availability check and the submitted payload. Reset both
+      // explicitly so what's displayed is always what's actually stored.
+      if (field === "material_id") {
+        const validSizes = getCreatePackSizeOptions(value);
+        updated[index].pack_size = validSizes.length ? validSizes[0] : PACK_SIZE_PRESETS[0];
+        updated[index].custom_pack_size = "";
+        updated[index].bag_count = "";
+      }
       return { ...prev, materials: updated };
     });
     if (fieldErrors[index]) {
@@ -242,6 +262,7 @@ export default function ProductionBatchPage() {
     setError("");
     setInfo("");
     setFieldErrors({});
+    setLastCompletedBatch(null);
 
     const validMaterials = createForm.materials.filter(
       (m) => m.material_id && m.bag_count && Number(m.bag_count) > 0
@@ -663,6 +684,7 @@ export default function ProductionBatchPage() {
           `Total: ${totalKg} kg (${totalTons.toFixed(3)}tons) added to warehouse.`
       );
 
+      setLastCompletedBatch({ id: selectedBatch.id, batch_no: selectedBatch.batch_no });
       setSelectedBatch(null);
       setShowPacking(false);
       setPackingForm(emptyPackingForm);
@@ -684,11 +706,70 @@ export default function ProductionBatchPage() {
     setRowActionError("");
   };
 
+  // ---------------- Production Report PDF ----------------
+
+  // Axios responseType:"blob" means an error body (e.g. a 403/500 JSON
+  // error) still comes back as a Blob instead of parsed JSON — read it as
+  // text and try to parse it so the real backend message shows up instead
+  // of a generic "something went wrong".
+  const extractBlobErrorMessage = async (err, fallback) => {
+    const data = err?.response?.data;
+    if (data instanceof Blob) {
+      try {
+        const text = await data.text();
+        const parsed = JSON.parse(text);
+        return parsed.msg || parsed.message || fallback;
+      } catch {
+        return fallback;
+      }
+    }
+    return err?.response?.data?.msg || err?.response?.data?.message || fallback;
+  };
+
+  const handleViewProductionReport = async () => {
+    if (!lastCompletedBatch) return;
+    setProductionReportError("");
+    setProductionReportLoading(true);
+    try {
+      const res = await getProductionReportPdfApi(lastCompletedBatch.id);
+      const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      setPdfPreview({
+        url: blobUrl,
+        fileName: `production-report-${lastCompletedBatch.batch_no}.pdf`,
+        title: `Production Report — ${lastCompletedBatch.batch_no}`,
+      });
+    } catch (err) {
+      setProductionReportError(await extractBlobErrorMessage(err, "Could not generate the production report PDF"));
+    } finally {
+      setProductionReportLoading(false);
+    }
+  };
+
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>Production Batches</h2>
       {error && <div className="dt-error">{error}</div>}
       {info && <div className="dt-success">{info}</div>}
+      {lastCompletedBatch && (
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+          <button type="button" className="dt-btn" disabled={productionReportLoading} onClick={handleViewProductionReport}>
+            {productionReportLoading ? "Generating…" : `View Production Report — ${lastCompletedBatch.batch_no} (PDF)`}
+          </button>
+          {productionReportError && <span style={{ color: "#dc2626", fontSize: 13 }}>{productionReportError}</span>}
+        </div>
+      )}
+
+      {pdfPreview && (
+        <PdfPreviewModal
+          title={pdfPreview.title}
+          blobUrl={pdfPreview.url}
+          fileName={pdfPreview.fileName}
+          onClose={() => {
+            window.URL.revokeObjectURL(pdfPreview.url);
+            setPdfPreview(null);
+          }}
+        />
+      )}
 
       {!showPacking ? (
         <>

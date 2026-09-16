@@ -93,6 +93,19 @@ export const gateCheckoutApi = (id) =>
 export const gateSendToWarehouseApi = (id, extra = {}) =>
   axiosInstance.post("/gate/send-to-warehouse", { id, ...extra });
 
+// ---------------- VISITOR GATE PASS (role: gate) ----------------
+export const getVisitorsApi = (params = {}) =>
+  axiosInstance.get("/visitors", { params });
+
+export const createVisitorApi = (data) =>
+  axiosInstance.post("/visitors", data);
+
+export const checkOutVisitorApi = (id) =>
+  axiosInstance.patch(`/visitors/${id}/checkout`);
+
+export const deleteVisitorApi = (id) =>
+  axiosInstance.delete(`/visitors/${id}`);
+
 // ---------------- LOADING (role: gate) ----------------
 export const getLoadingsApi = (params = {}) =>
   axiosInstance.get("/loading", { params });
@@ -290,6 +303,15 @@ export const getMaterialFlowReportApi = (params = {}) =>
     params,
     responseType: params.format === "csv" ? "blob" : "json",
   });
+
+// warehouse_id omitted -> combined report across every warehouse; date
+// defaults to today on the backend if omitted.
+export const getStockReportPdfApi = (params = {}) =>
+  axiosInstance.get("/reports/stock-report", { params, responseType: "blob" });
+
+export const getProductionReportPdfApi = (batchId) =>
+  axiosInstance.get(`/reports/production-batch/${batchId}/report`, { responseType: "blob" });
+
 export const completePackingApi = (data) =>
   axiosInstance.post("/packing/complete", data);
 // ---------------- PACKING (role: production) ----------------

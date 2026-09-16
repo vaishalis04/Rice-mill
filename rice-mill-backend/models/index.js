@@ -21,6 +21,7 @@ const ReasonCodeMaster = require("./reasonCodeMaster.model");
 const PlantMaster = require("./plantMaster.model");
 const PurchaseOrder = require("./purchaseOrder.model");
 const GateEntry = require("./gateEntry.model");
+const Visitor = require("./visitor.model");
 const GateEntryPurchaseOrder = require("./gateEntryPurchaseOrder.model");
 const Sampling = require("./sampling.model");
 const LabTest = require("./labTest.model");
@@ -96,6 +97,7 @@ PurchaseOrder.belongsTo(VarietyMaster, {
   as: "variety",
 });
 GateEntry.belongsTo(Vehicle, { foreignKey: "vehicle_id", as: "vehicle" });
+Visitor.belongsTo(User, { foreignKey: "created_by", as: "createdByUser" });
 GateEntry.belongsTo(Driver, { foreignKey: "driver_id", as: "driver" });
 GateEntry.belongsTo(Vendor, { foreignKey: "vendor_id", as: "vendor" });
 GateEntry.belongsTo(PurchaseOrder, {
@@ -442,6 +444,7 @@ module.exports = {
   PlantMaster,
   PurchaseOrder,
   GateEntry,
+  Visitor,
   GateEntryPurchaseOrder,
   Sampling,
   LabTest,

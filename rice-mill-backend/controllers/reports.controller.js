@@ -1,9 +1,23 @@
+const createError = require("http-errors");
 const { Op } = require("sequelize");
+const PDFDocument = require("pdfkit");
 const {
   GateEntry, Vehicle, Driver, Vendor, MaterialMaster, PlantMaster,
   ProductionBatch, Lot, LengthGrading, Purchase, Inventory, FinishedGoods, Packing,
+  WarehouseMaster,
 } = require("../models/index");
 const { toCsv, sendCsv } = require("../helpers/csv");
+
+// Shared helper: resolve which PlantMaster row's name/address goes on a
+// report's letterhead — the given warehouse's plant if it has one,
+// otherwise the first plant on file.
+const resolveLetterheadPlant = async (warehouse) => {
+  if (warehouse && warehouse.plant_id) {
+    const plant = await PlantMaster.findOne({ where: { id: warehouse.plant_id, is_deleted: false } });
+    if (plant) return plant;
+  }
+  return PlantMaster.findOne({ where: { is_deleted: false }, order: [["id", "ASC"]] });
+};
 
 // Day-wise, shift-wise, MIS, cycle/process-time reports (Module 23)
 // Every endpoint returns plain JSON by default; add ?format=csv to any of them
@@ -295,6 +309,393 @@ module.exports = {
         summary,
         rows: flatRows,
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+ 
+  // GET /api/reports/stock-report?warehouse_id=&date=YYYY-MM-DD
+  // Streams a PDF, one row per (material, pack size) — "Bulk" for raw stock
+  // with no recorded bag size — with Opening/Inwards/Production-Repacking/
+  // Dispatch/Issue/Closing, all in tons. Omit warehouse_id for the combined
+  // report across every warehouse.
+  //
+  // IMPORTANT LIMITATION: this app has no stock-movement ledger (ins/outs
+  // are only ever applied as balance updates, never logged as timestamped
+  // events), so a true historical running balance can't be reconstructed
+  // for a past date. Opening/Closing are only shown when the requested
+  // date is today (Closing = the live balance; Opening = derived by
+  // reversing today's movements out of it). For any other date, Inwards/
+  // Production/Dispatch/Issue are still fully accurate (each is derived
+  // straight from timestamped source rows), but Opening/Closing show "—"
+  // with a footnote rather than a fabricated number.
+  stockReport: async (req, res, next) => {
+    try {
+      const { warehouse_id, date } = req.query;
+      const reportDate = date || new Date().toISOString().slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
+      const isToday = reportDate === today;
+      const dayStart = new Date(`${reportDate}T00:00:00.000Z`);
+      const dayEnd = new Date(`${reportDate}T23:59:59.999Z`);
+
+      let warehouse = null;
+      let warehouseIds = [];
+      if (warehouse_id) {
+        warehouse = await WarehouseMaster.findOne({ where: { id: warehouse_id, is_deleted: false } });
+        if (!warehouse) throw createError(404, "Warehouse not found");
+        warehouseIds = [warehouse.id];
+      } else {
+        const all = await WarehouseMaster.findAll({ where: { is_deleted: false } });
+        warehouseIds = all.map((w) => w.id);
+      }
+
+      const plant = await resolveLetterheadPlant(warehouse);
+
+      // Rows keyed by material + pack size (bag size for raw, pack size for packed)
+      const rowsByKey = new Map();
+      const getRow = (materialId, materialName, packSize) => {
+        const key = `${materialId}|${packSize}`;
+        const existing = rowsByKey.get(key) || {
+          material_id: materialId,
+          material_name: materialName,
+          pack_size: packSize,
+          opening: 0,
+          inwards: 0,
+          production: 0,
+          dispatch: 0,
+          issue: 0,
+          closing: 0,
+        };
+        rowsByKey.set(key, existing);
+        return existing;
+      };
+
+      // ---- Live closing stock: raw (with bag size via Lot) ----
+      const invRows = await Inventory.findAll({
+        where: { is_deleted: false, stage: "raw", balance_qty: { [Op.gt]: 0 }, warehouse_id: { [Op.in]: warehouseIds } },
+        include: [
+          { model: MaterialMaster, as: "material", attributes: ["id", "name"] },
+          { model: Lot, as: "lot", attributes: ["id", "bag_size"] },
+        ],
+      });
+      for (const r of invRows) {
+        const bagSize = r.lot?.bag_size != null ? Number(r.lot.bag_size) : null;
+        const row = getRow(r.material_id, r.material?.name || `Material ${r.material_id}`, bagSize);
+        row.closing += Number(r.balance_qty || 0);
+      }
+
+      // ---- Live closing stock: packed (Inventory fg-stage rows, labeled via Packing.pack_size) ----
+      const fgInvRows = await Inventory.findAll({
+        where: { is_deleted: false, stage: "fg", balance_qty: { [Op.gt]: 0 }, warehouse_id: { [Op.in]: warehouseIds } },
+        include: [{ model: MaterialMaster, as: "material", attributes: ["id", "name"] }],
+      });
+      if (fgInvRows.length > 0) {
+        const fgLotIds = [...new Set(fgInvRows.map((r) => r.lot_id).filter(Boolean))];
+        const packingRows = fgLotIds.length
+          ? await Packing.findAll({ where: { lot_id: { [Op.in]: fgLotIds }, is_deleted: false }, attributes: ["id", "lot_id", "material_id", "pack_size"] })
+          : [];
+        for (const r of fgInvRows) {
+          const packing = packingRows.find((p) => Number(p.lot_id) === Number(r.lot_id) && (!p.material_id || Number(p.material_id) === Number(r.material_id)));
+          const packSize = packing?.pack_size != null ? Number(packing.pack_size) : null;
+          const row = getRow(r.material_id, r.material?.name || `Material ${r.material_id}`, packSize);
+          row.closing += Number(r.balance_qty || 0);
+        }
+      }
+
+      // ---- Inwards on this date: Lots unloaded into these warehouses ----
+      const inwardLots = await Lot.findAll({
+        where: {
+          is_deleted: false,
+          warehouse_id: { [Op.in]: warehouseIds },
+          unloading_status: "completed",
+          updated_at: { [Op.between]: [dayStart, dayEnd] },
+        },
+        include: [{ model: MaterialMaster, as: "material", attributes: ["id", "name"] }],
+      });
+      for (const lot of inwardLots) {
+        const row = getRow(lot.material_id, lot.material?.name || `Material ${lot.material_id}`, lot.bag_size != null ? Number(lot.bag_size) : null);
+        row.inwards += Number(lot.qty || 0);
+      }
+
+      // ---- Packing rows created on this date: Production (destination
+      // warehouse, via FinishedGoods) and Issue (source ProductionBatch.warehouse_id) ----
+      const packingToday = await Packing.findAll({
+        where: { is_deleted: false, created_at: { [Op.between]: [dayStart, dayEnd] } },
+        attributes: ["id", "material_id", "pack_size", "batch_id"],
+      });
+      if (packingToday.length > 0) {
+        const batchIds = [...new Set(packingToday.map((p) => Number(p.batch_id)))];
+        const batches = await ProductionBatch.findAll({ where: { id: { [Op.in]: batchIds } }, attributes: ["id", "warehouse_id"] });
+        const sourceWarehouseByBatch = new Map(batches.map((b) => [b.id, b.warehouse_id]));
+
+        const materialIds2 = [...new Set(packingToday.map((p) => Number(p.material_id)).filter(Boolean))];
+        const materialRows2 = await MaterialMaster.findAll({ where: { id: { [Op.in]: materialIds2 } }, attributes: ["id", "name"] });
+        const materialNameById2 = new Map(materialRows2.map((m) => [m.id, m.name]));
+
+        const fgTodayForThesePackings = await FinishedGoods.findAll({
+          where: { packing_id: { [Op.in]: packingToday.map((p) => p.id) }, is_deleted: false },
+          attributes: ["id", "packing_id", "warehouse_id", "qty"],
+        });
+        const fgByPackingId = new Map(fgTodayForThesePackings.map((fg) => [Number(fg.packing_id), fg]));
+
+        for (const p of packingToday) {
+          const materialId = Number(p.material_id);
+          if (!materialId) continue;
+          const materialName = materialNameById2.get(materialId) || `Material ${materialId}`;
+          const packSize = Number(p.pack_size);
+          const fg = fgByPackingId.get(p.id);
+          const qtyTons = fg ? Number(fg.qty || 0) / 1000 : 0;
+
+          if (fg && warehouseIds.includes(fg.warehouse_id)) {
+            getRow(materialId, materialName, packSize).production += qtyTons;
+          }
+          const sourceWarehouseId = sourceWarehouseByBatch.get(Number(p.batch_id));
+          if (sourceWarehouseId && warehouseIds.includes(sourceWarehouseId)) {
+            getRow(materialId, materialName, packSize).issue += qtyTons;
+          }
+        }
+      }
+
+      // ---- Dispatch on this date: FinishedGoods that became 'dispatched' today ----
+      const dispatchedFg = await FinishedGoods.findAll({
+        where: {
+          is_deleted: false,
+          fg_status: "dispatched",
+          warehouse_id: { [Op.in]: warehouseIds },
+          updated_at: { [Op.between]: [dayStart, dayEnd] },
+        },
+        attributes: ["id", "packing_id", "qty"],
+      });
+      if (dispatchedFg.length > 0) {
+        const packingIds3 = [...new Set(dispatchedFg.map((r) => Number(r.packing_id)))];
+        const packingRows3 = await Packing.findAll({ where: { id: { [Op.in]: packingIds3 }, is_deleted: false }, attributes: ["id", "material_id", "pack_size"] });
+        const packingById3 = new Map(packingRows3.map((p) => [p.id, p]));
+        const materialIds3 = [...new Set(packingRows3.map((p) => Number(p.material_id)).filter(Boolean))];
+        const materialRows3 = await MaterialMaster.findAll({ where: { id: { [Op.in]: materialIds3 } }, attributes: ["id", "name"] });
+        const materialNameById3 = new Map(materialRows3.map((m) => [m.id, m.name]));
+
+        for (const fg of dispatchedFg) {
+          const packing = packingById3.get(Number(fg.packing_id));
+          if (!packing || !packing.material_id) continue;
+          const materialId = Number(packing.material_id);
+          const row = getRow(materialId, materialNameById3.get(materialId) || `Material ${materialId}`, Number(packing.pack_size));
+          row.dispatch += Number(fg.qty || 0) / 1000;
+        }
+      }
+
+      // ---- Opening stock: only derivable for today (see limitation note above) ----
+      if (isToday) {
+        for (const row of rowsByKey.values()) {
+          row.opening = row.closing - row.inwards - row.production + row.issue + row.dispatch;
+        }
+      }
+
+      const rows = Array.from(rowsByKey.values())
+        .filter((r) =>
+          Math.abs(r.opening) > 0.0005 ||
+          Math.abs(r.closing) > 0.0005 ||
+          Math.abs(r.inwards) > 0.0005 ||
+          Math.abs(r.production) > 0.0005 ||
+          Math.abs(r.dispatch) > 0.0005 ||
+          Math.abs(r.issue) > 0.0005
+        )
+        .sort((a, b) => a.material_name.localeCompare(b.material_name) || (a.pack_size ?? -1) - (b.pack_size ?? -1));
+
+      // ---- Render PDF ----
+      const title = warehouse ? `${warehouse.name.toUpperCase()} STOCK REPORT` : "OVERALL STOCK REPORT";
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="stock-report-${warehouse ? warehouse.warehouse_code : "overall"}-${reportDate}.pdf"`
+      );
+
+      const doc = new PDFDocument({ size: "A4", margin: 45, layout: "landscape" });
+      doc.pipe(res);
+
+      const headers = ["S.No", "Material", "Packing Size", "Bags", "Opening Stock", "Inwards", "Production/Repacking", "Dispatch", "Issue", "Closing Stock"];
+      const colWidths = [28, 128, 62, 50, 68, 62, 96, 62, 62, 70];
+      const startX = doc.page.margins.left;
+      const tableWidth = colWidths.reduce((a, b) => a + b, 0);
+      const rowHeight = 20;
+
+      const drawLetterhead = () => {
+        doc.font("Helvetica-Bold").fontSize(16).text(plant ? plant.name.toUpperCase() : "RICE MILL ERP", { align: "center" });
+        if (plant && plant.address) doc.font("Helvetica").fontSize(9).text(plant.address, { align: "center" });
+        doc.moveDown(0.5);
+        doc.font("Helvetica-Bold").fontSize(13).text(title, { align: "center", underline: true });
+        doc.moveDown(0.3);
+        doc.font("Helvetica").fontSize(10).text(`Date: ${reportDate}`, { align: "center" });
+        doc.moveDown(1);
+      };
+
+      const bagsDisplay = (r) => {
+        if (r.pack_size == null || !isToday) return "—";
+        return Math.floor((r.closing * 1000) / r.pack_size + 0.0001);
+      };
+
+      let y;
+      const drawGridRow = (cells, bold) => {
+        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(8.5);
+        doc.rect(startX, y, tableWidth, rowHeight).stroke();
+        let x = startX;
+        cells.forEach((cell, i) => {
+          doc.text(String(cell), x + 3, y + 6, { width: colWidths[i] - 6, align: i === 1 ? "left" : "center" });
+          x += colWidths[i];
+          if (i < cells.length - 1) doc.moveTo(x, y).lineTo(x, y + rowHeight).stroke();
+        });
+        y += rowHeight;
+      };
+
+      const startNewPage = (isFirst) => {
+        if (!isFirst) doc.addPage({ size: "A4", margin: 45, layout: "landscape" });
+        drawLetterhead();
+        y = doc.y;
+        drawGridRow(headers, true);
+      };
+
+      startNewPage(true);
+
+      rows.forEach((r, i) => {
+        if (y + rowHeight > doc.page.height - doc.page.margins.bottom) {
+          startNewPage(false);
+        }
+        drawGridRow([
+          i + 1,
+          r.material_name,
+          r.pack_size != null ? `${r.pack_size} kg` : "Bulk",
+          bagsDisplay(r),
+          isToday ? r.opening.toFixed(3) : "—",
+          r.inwards.toFixed(3),
+          r.production.toFixed(3),
+          r.dispatch.toFixed(3),
+          r.issue.toFixed(3),
+          isToday ? r.closing.toFixed(3) : "—",
+        ]);
+      });
+
+      if (!isToday) {
+        doc.moveDown(1.5);
+        doc.font("Helvetica").fontSize(8).fillColor("#666").text(
+          "Note: Opening Stock and Closing Stock (and Bags, which is derived from Closing Stock) are only available for today's date — this system does not yet keep a full stock-movement ledger needed to reconstruct a historical running balance for past dates. Inwards, Production/Repacking, Dispatch and Issue for the selected date are accurate.",
+          { width: tableWidth }
+        );
+      }
+
+      doc.end();
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // GET /api/reports/production-batch/:id/report
+  // Streams a PDF for one finalized (packed) production batch: Shift,
+  // Material, Bags, Size, Actual (tons). "Shift" and "Approx in tank" have
+  // no equivalent anywhere in this system's data, so they're left as blank
+  // columns for manual fill-in (matching the paper form) rather than guessed.
+  productionReport: async (req, res, next) => {
+    try {
+      const batch = await ProductionBatch.findOne({ where: { id: req.params.id, is_deleted: false } });
+      if (!batch) throw createError(404, "Production batch not found");
+      if (batch.batch_status === "pending") {
+        throw createError(400, "This batch hasn't been packed yet — finalize packing first to generate its production report");
+      }
+
+      const packingRows = await Packing.findAll({
+        where: { batch_id: batch.id, is_deleted: false },
+        attributes: ["id", "material_id", "pack_size", "bag_count"],
+        order: [["created_at", "ASC"]],
+      });
+
+      const materialIds = [...new Set(packingRows.map((p) => Number(p.material_id)).filter(Boolean))];
+      const materialRows = await MaterialMaster.findAll({ where: { id: { [Op.in]: materialIds } }, attributes: ["id", "name"] });
+      const materialNameById = new Map(materialRows.map((m) => [m.id, m.name]));
+
+      const fgRows = await FinishedGoods.findAll({
+        where: { packing_id: { [Op.in]: packingRows.map((p) => p.id) }, is_deleted: false },
+        attributes: ["id", "packing_id", "qty"],
+      });
+      const fgByPackingId = new Map(fgRows.map((fg) => [Number(fg.packing_id), fg]));
+
+      const warehouse = batch.warehouse_id
+        ? await WarehouseMaster.findOne({ where: { id: batch.warehouse_id, is_deleted: false } })
+        : null;
+      const plant = await resolveLetterheadPlant(warehouse);
+
+      const lines = packingRows.map((p) => {
+        const materialId = p.material_id ? Number(p.material_id) : null;
+        const fg = fgByPackingId.get(p.id);
+        return {
+          material_name: materialId ? (materialNameById.get(materialId) || `Material ${materialId}`) : "—",
+          bag_count: p.bag_count,
+          pack_size: Number(p.pack_size),
+          actual_tons: fg ? Math.round((Number(fg.qty || 0) / 1000) * 1000) / 1000 : 0,
+        };
+      });
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="production-report-${batch.batch_no}.pdf"`);
+
+      const doc = new PDFDocument({ size: "A4", margin: 50 });
+      doc.pipe(res);
+
+      doc.font("Helvetica-Bold").fontSize(16).text(plant ? plant.name.toUpperCase() : "RICE MILL ERP", { align: "center" });
+      if (plant && plant.address) doc.font("Helvetica").fontSize(9).text(plant.address, { align: "center" });
+      doc.moveDown(0.5);
+      doc.font("Helvetica-Bold").fontSize(13).text("PRODUCTION REPORT", { align: "center", underline: true });
+      doc.moveDown(1);
+
+      doc.font("Helvetica").fontSize(10);
+      const infoY = doc.y;
+      doc.text(`Date: ${batch.production_date || "-"}`, doc.page.margins.left, infoY);
+      doc.text(`Batch No: ${batch.batch_no}`, doc.page.margins.left + 260, infoY);
+      doc.moveDown(1.5);
+
+      // "Approx in Tank" isn't a literal tank reading this system has —
+      // it's filled with the nominal quantity implied by pack size x bag
+      // count, which can differ slightly from "Actual" when a packing was
+      // recorded with a qty_override (e.g. a real weighed value that
+      // didn't land exactly on a round bag-size multiple).
+      const headers = ["Shift", "Material", "Bags", "Size (kg)", "Actual (Tons)", "Approx (Tons)"];
+      const colWidths = [55, 150, 60, 70, 90, 90];
+      const startX = doc.page.margins.left;
+      const tableWidth = colWidths.reduce((a, b) => a + b, 0);
+      const rowHeight = 22;
+      let y = doc.y;
+
+      const drawGridRow = (cells, bold) => {
+        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(9);
+        doc.rect(startX, y, tableWidth, rowHeight).stroke();
+        let x = startX;
+        cells.forEach((cell, i) => {
+          doc.text(String(cell), x + 4, y + 6, { width: colWidths[i] - 8, align: i >= 2 ? "center" : "left" });
+          x += colWidths[i];
+          if (i < cells.length - 1) doc.moveTo(x, y).lineTo(x, y + rowHeight).stroke();
+        });
+        y += rowHeight;
+      };
+
+      drawGridRow(headers, true);
+
+      let totalBags = 0;
+      let totalActual = 0;
+      let totalApprox = 0;
+      lines.forEach((l) => {
+        const approxTons = Math.round(((Number(l.pack_size) || 0) * (Number(l.bag_count) || 0) / 1000) * 1000) / 1000;
+        drawGridRow(["", l.material_name, l.bag_count, l.pack_size, l.actual_tons.toFixed(3), approxTons.toFixed(3)]);
+        totalBags += Number(l.bag_count || 0);
+        totalActual += l.actual_tons;
+        totalApprox += approxTons;
+      });
+
+      drawGridRow(["", "TOTAL", totalBags, "", totalActual.toFixed(3), totalApprox.toFixed(3)], true);
+
+      doc.moveDown(1.5);
+      doc.font("Helvetica").fontSize(8).fillColor("#666").text(
+        "Note: \"Shift\" is not tracked by this system and is left blank for manual entry. \"Approx\" is the nominal quantity from pack size x bag count; \"Actual\" is the recorded packed quantity (they match unless a manual override was used when packing).",
+        { width: tableWidth }
+      );
+
+      doc.end();
     } catch (err) {
       next(err);
     }

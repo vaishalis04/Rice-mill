@@ -142,6 +142,7 @@ module.exports = {
   // subtraction the same stock could look available to two different
   // batches at once.
   getSummary: async (req, res, next) => {
+    console.log("### getSummary NEW VERSION RUNNING ###");
     try {
       const warehouse = await WarehouseMaster.findOne({
         where: { id: req.params.id, is_deleted: false },

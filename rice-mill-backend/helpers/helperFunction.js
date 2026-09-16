@@ -203,6 +203,13 @@ const generateChallanNo = async () => {
   return generateDailySequence(Dispatch, "challan_no", "CH", 3);
 };
 
+// Generate sequential daily gate pass numbers (Gate — Visitor flow)
+// Format: GP-YYYYMMDD-001
+const generateGatePassNo = async () => {
+  const { Visitor } = require("../models/index");
+  return generateDailySequence(Visitor, "gate_pass_no", "GP", 3);
+};
+
 // Generate sequential daily loading numbers (Gate Sales-Loading flow)
 // Format: LD-YYYYMMDD-001
 const generateLoadingNo = async () => {
@@ -251,5 +258,5 @@ module.exports = {
   generateTokenNo, generateLotNo, generateBatchNo, computeAgeDays,
   generateCustomerCode, generateVendorCode, generatePoNo,
   generatePackingBatchNo, generateEAN13, generateSoNo, generateChallanNo,
-  generateLoadingNo, generateCode,
+  generateLoadingNo, generateCode, generateGatePassNo,
 };

@@ -5,10 +5,12 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Day-wise, shift-wise, MIS, cycle/process-time reports (Module 23)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorize("admin"));
+router.use(verifyAccessToken, attachUser, authorize("admin", "warehouse", "production"));
 
 router.get("/gate-register", Controller.gateRegister);
 router.get("/production-summary", Controller.productionSummary);
 router.get("/material-flow", Controller.materialFlow);
+router.get("/stock-report", Controller.stockReport);
+router.get("/production-batch/:id/report", Controller.productionReport);
 
 module.exports = router;

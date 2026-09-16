@@ -13,6 +13,7 @@ import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
 import CameraCapture from "../../components/CameraCapture";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
+import VisitorSection from "./VisitorSection";
 import "./GateEntry.css";
 
 const emptyForm = {
@@ -52,6 +53,7 @@ const ENTRY_TYPE_FILTERS = [
 ];
 
 export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
+  const [pageMode, setPageMode] = useState("trucks"); // "trucks" | "visitor"
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
@@ -824,6 +826,22 @@ const handleGenerateToken = async (e) => {
         </div>
       )}
 
+      <div className="section-tabs" style={{ marginBottom: 16 }}>
+        <button
+          className={`section-tab ${pageMode === "trucks" ? "active" : ""}`}
+          onClick={() => setPageMode("trucks")}
+        >
+          🚛 Trucks (Purchase / Sales / Empty)
+        </button>
+        <button
+          className={`section-tab ${pageMode === "visitor" ? "active" : ""}`}
+          onClick={() => setPageMode("visitor")}
+        >
+          👤 Visitor
+        </button>
+      </div>
+
+      <div style={{ display: pageMode === "trucks" ? "block" : "none" }}>
       <h3 style={{ marginBottom: 4 }}>Generate Token</h3>
       <p className="field-hint" style={{ marginBottom: 12 }}>
         Fill this in when a truck arrives at the gate. Choose "Empty / Miscellaneous" for
@@ -1438,6 +1456,9 @@ const handleGenerateToken = async (e) => {
           "Use the tabs above the list to filter by truck type or by status at any stage of the journey.",
         ]}
       />
+      </div>
+
+      {pageMode === "visitor" && <VisitorSection />}
     </div>
   );
 }
