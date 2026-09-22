@@ -1,11 +1,11 @@
 const router = require("express").Router();
 const Controller = require("../controllers/warehouse.controller");
-const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Stack/Bin/Lot, raw material storage (Module 9)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorize("warehouse", "gate", "production"));
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["warehouse", "gate", "production"], ["warehouse"]));
 
 // NOTE: literal paths ("/stock", "/stock-detail") must be registered
 // BEFORE "/:id" — otherwise Express matches them into the ":id" handler

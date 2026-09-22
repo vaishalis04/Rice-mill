@@ -1,10 +1,10 @@
 const router = require("express").Router();
 const Controller = require("../controllers/negotiation.controller");
-const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Rate revision workflow (Module 7)
-router.use(verifyAccessToken, attachUser, authorize("purchase"));
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["purchase"], ["purchase"]));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

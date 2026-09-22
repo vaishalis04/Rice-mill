@@ -8,6 +8,11 @@ export const registerApi = (data) => axiosInstance.post("/auth/register", data);
 
 export const getCurrentUserApi = () => axiosInstance.get("/auth/me");
 
+// Any logged-in user — used by a custom role's dashboard to find out what
+// it's actually been granted (it can't call /role-management itself, that's
+// admin-only).
+export const getMyPermissionsApi = () => axiosInstance.get("/auth/my-permissions");
+
 export const logoutApi = () => axiosInstance.post("/auth/logout");
 
 // ---------------- MASTER SETTINGS (role: admin) ----------------

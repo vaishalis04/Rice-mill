@@ -12,8 +12,23 @@ import {
 import DataTable from "../../components/DataTable";
 
 const emptyRoleForm = { role_name: "", description: "" };
-const emptyPermissionForm = { module: "", action: "read" };
+const emptyPermissionForm = { module: "", action: "all" };
 const ACTIONS = ["create", "read", "update", "delete", "approve"];
+
+// Kept in sync with the modules actually wired into
+// `authorizeRoleOrModule(...)` across the route files — a permission for
+// a module that isn't in this list wouldn't unlock anything for a custom
+// role, so the dropdown only offers ones that do something.
+const MODULES = [
+  "gate",
+  "lab",
+  "production",
+  "purchase",
+  "sales",
+  "warehouse",
+  "weighbridge",
+  "dispatch",
+];
 
 export default function RolesPage() {
   const [roles, setRoles] = useState([]);
@@ -148,9 +163,43 @@ export default function RolesPage() {
     setError("");
     setInfo("");
     if (!permissionForm.module.trim()) {
-      setError("Enter a module name (e.g. warehouse, gate, sales).");
+      setError("Choose a module.");
       return;
     }
+
+    // "All" isn't a real action in the database (the Permission table's
+    // action column doesn't have an "all" value) — it's a shortcut that
+    // creates all 5 real actions for this module in one click, so the
+    // module-level checkbox further up ("Permissions for <role>") can
+    // then grant full create/read/update/delete/approve access in one
+    // tick, instead of adding each action to the catalog by hand first.
+    if (permissionForm.action === "all") {
+      let added = 0;
+      let alreadyExisted = 0;
+      for (const action of ACTIONS) {
+        try {
+          await createPermissionApi({ module: permissionForm.module, action });
+          added++;
+        } catch (err) {
+          if (err.response?.status === 409) {
+            alreadyExisted++;
+          } else {
+            setError(err.response?.data?.message || `Could not add ${permissionForm.module}.${action}`);
+            load();
+            return;
+          }
+        }
+      }
+      setInfo(
+        `Added ${added} permission(s) for "${permissionForm.module}"` +
+          (alreadyExisted ? ` (${alreadyExisted} already existed).` : ".") +
+          ` Tick the "${permissionForm.module}" checkbox under a role's Permissions to grant all of them at once.`
+      );
+      setPermissionForm(emptyPermissionForm);
+      load();
+      return;
+    }
+
     try {
       await createPermissionApi(permissionForm);
       setInfo(`Permission "${permissionForm.module}.${permissionForm.action}" added.`);
@@ -302,17 +351,21 @@ export default function RolesPage() {
       <form className="sf-form" onSubmit={handleAddPermission}>
         <div className="sf-field">
           <label>Module</label>
-          <input
-            name="module"
-            placeholder="e.g. warehouse, gate, sales"
-            value={permissionForm.module}
-            onChange={handlePermissionChange}
-            required
-          />
+          <select name="module" value={permissionForm.module} onChange={handlePermissionChange} required>
+            <option value="" disabled>
+              Select module…
+            </option>
+            {MODULES.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="sf-field">
           <label>Action</label>
           <select name="action" value={permissionForm.action} onChange={handlePermissionChange}>
+            <option value="all">All (create, read, update, delete, approve)</option>
             {ACTIONS.map((a) => (
               <option key={a} value={a}>
                 {a}

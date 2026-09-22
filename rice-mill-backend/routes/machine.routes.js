@@ -1,11 +1,11 @@
 const router = require("express").Router();
 const Controller = require("../controllers/machine.controller");
-const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Machine master, run logs, recovery %, maintenance (Modules 13 & 29)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorize("production"));
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["production"], ["production"]));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

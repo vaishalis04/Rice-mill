@@ -1,6 +1,6 @@
 const router = require("express").Router();
 const Controller = require("../controllers/salesOrder.controller");
-const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Order booking, allocation (Module 18)
@@ -8,7 +8,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 router.use(
   verifyAccessToken,
   attachUser,
-  authorize("sales", "admin", "gate", "warehouse", "lab", "dispatch"),
+  authorizeRoleOrModule(["sales", "admin", "gate", "warehouse", "lab", "dispatch"], ["sales"]),
 ); // Protected routes
 
 router.get(

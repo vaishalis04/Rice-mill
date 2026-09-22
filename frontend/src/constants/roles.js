@@ -39,4 +39,7 @@ export const ROLE_ROUTES = {
   [ROLE_ID.weighbridgeLegacy]: "/weighbridge/dashboard",
 };
 
-export const DEFAULT_ROUTE = "/login";
+// A role_id not present in ROLE_ROUTES above is a custom role (created via
+// Admin > Roles & Permissions) — it lands on the generic permission-driven
+// dashboard instead of a dead-end back at /login.
+export const DEFAULT_ROUTE = "/dashboard";

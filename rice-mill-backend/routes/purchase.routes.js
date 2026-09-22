@@ -1,6 +1,6 @@
 const router = require("express").Router();
 const Controller = require("../controllers/purchase.controller");
-const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // PO creation, rate negotiation, final purchase (Module 4)
@@ -8,7 +8,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 router.use(
   verifyAccessToken,
   attachUser,
-  authorize("purchase", "admin", "sales", "gate", "warehouse", "lab"),
+  authorizeRoleOrModule(["purchase", "admin", "sales", "gate", "warehouse", "lab"], ["purchase"]),
 ); // Protected routes
 
 router.get("/grouped", Controller.getAllGrouped); // must be before "/:id" (GET) or it'd be swallowed as id="grouped"

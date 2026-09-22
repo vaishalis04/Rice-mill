@@ -1,10 +1,10 @@
 const router = require("express").Router();
 const Controller = require("../controllers/customer.controller");
-const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Customer master incl. by-product buyers
-router.use(verifyAccessToken, attachUser, authorize("Sales", "admin", "dispatch"));
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["Sales", "admin", "dispatch"], ["sales"]));
 
 router.get("/",     Controller.getAll);
 router.get("/:id/history", Controller.getHistory);

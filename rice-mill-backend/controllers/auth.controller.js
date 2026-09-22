@@ -2,7 +2,7 @@ const createError = require("http-errors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-const { User, Role, PlantMaster } = require("../models");
+const { User, Role, PlantMaster, RolePermission, Permission } = require("../models");
 const { generateCode } = require("../helpers/helperFunction");
 
 const ACCESS_TOKEN_SECRET =
@@ -226,6 +226,48 @@ module.exports = {
       res.json({
         success: true,
         msg: "Logout Successful",
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // GET /api/auth/my-permissions — any logged-in user, no role restriction.
+  // Lets a custom role (created via Admin > Roles & Permissions) find out
+  // what it's actually been granted, so the frontend can build a dashboard
+  // for it — a custom role can't call /role-management/:id itself, since
+  // that's admin-only.
+  myPermissions: async (req, res, next) => {
+    try {
+      if (!req.user) throw createError.Unauthorized();
+
+      const role = req.user.role || (await Role.findByPk(req.user.role_id));
+      if (!role) {
+        return res.status(200).json({
+          success: true,
+          data: { role_id: req.user.role_id, role_name: null, permissions: [] },
+        });
+      }
+
+      const { Op } = require("sequelize");
+      const grants = await RolePermission.findAll({
+        where: { role_id: role.id, is_deleted: false },
+      });
+      const permissionIds = grants.map((g) => g.permission_id);
+      const permissions = permissionIds.length
+        ? await Permission.findAll({
+            where: { id: { [Op.in]: permissionIds }, is_deleted: false },
+            attributes: ["id", "module", "action", "code"],
+          })
+        : [];
+
+      res.status(200).json({
+        success: true,
+        data: {
+          role_id: role.id,
+          role_name: role.role_name,
+          permissions,
+        },
       });
     } catch (err) {
       next(err);

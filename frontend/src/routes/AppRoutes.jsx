@@ -14,6 +14,7 @@ import GateDashboard from "../pages/dashboards/GateDashboard";
 import WeighbridgeDashboard from "../pages/dashboards/WeighbridgeDashboard";
 import ProductionDashboard from "../pages/dashboards/ProductionDashboard";
 import DispatchDashboard from "../pages/dashboards/DispatchDashboard";
+import CustomRoleDashboard from "../pages/dashboards/CustomRoleDashboard";
 
 export default function AppRoutes() {
   return (
@@ -21,6 +22,20 @@ export default function AppRoutes() {
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<Login />} />
       <Route path="/unauthorized" element={<Unauthorized />} />
+
+      {/* Custom roles (created via Admin > Roles & Permissions) don't have
+          one of the 9 fixed ROLE_ROUTES above, so login sends them here —
+          no allowedRoles restriction, so any authenticated user can land
+          on it; it builds its own tabs from the role's actual granted
+          permissions. */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute>
+            <CustomRoleDashboard />
+          </ProtectedRoute>
+        }
+      />
 
       <Route
         path="/admin/dashboard"
