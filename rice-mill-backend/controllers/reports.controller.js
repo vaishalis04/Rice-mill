@@ -94,7 +94,7 @@ module.exports = {
           { key: "vendor_name", label: "Vendor" },
           { key: "material_name", label: "Material" },
           { key: "gate_status", label: "Status" },
-          { key: "expected_qty", label: "Expected Qty (Tons)" },
+          { key: "expected_qty", label: "Expected Qty (Qtl)" },
           { key: "entry_time", label: "Entry Time" },
           { key: "exit_time", label: "Exit Time" },
         ]);
@@ -167,8 +167,8 @@ module.exports = {
           { key: "production_date", label: "Production Date" },
           { key: "batch_status", label: "Status" },
           { key: "current_stage", label: "Current Stage" },
-          { key: "input_qty", label: "Input Qty (Tons)" },
-          { key: "output_qty", label: "Output Qty (Tons)" },
+          { key: "input_qty", label: "Input Qty (Qtl)" },
+          { key: "output_qty", label: "Output Qty (Qtl)" },
           { key: "recovery_pct", label: "Recovery %" },
         ]);
         return sendCsv(res, "production-summary.csv", csv);
@@ -298,7 +298,7 @@ module.exports = {
         const csv = toCsv(flatRows, [
           { key: "section", label: "Section" },
           { key: "material", label: "Material / Category" },
-          { key: "qty", label: "Qty (Tons)" },
+          { key: "qty", label: "Qty (Qtl)" },
         ]);
         return sendCsv(res, `material-flow-${range.label}.csv`, csv);
       }
@@ -317,7 +317,7 @@ module.exports = {
   // GET /api/reports/stock-report?warehouse_id=&date=YYYY-MM-DD
   // Streams a PDF, one row per (material, pack size) — "Bulk" for raw stock
   // with no recorded bag size — with Opening/Inwards/Production-Repacking/
-  // Dispatch/Issue/Closing, all in tons. Omit warehouse_id for the combined
+  // Dispatch/Issue/Closing, all in Qtl. Omit warehouse_id for the combined
   // report across every warehouse.
   //
   // IMPORTANT LIMITATION: this app has no stock-movement ledger (ins/outs
@@ -444,14 +444,14 @@ module.exports = {
           const materialName = materialNameById2.get(materialId) || `Material ${materialId}`;
           const packSize = Number(p.pack_size);
           const fg = fgByPackingId.get(p.id);
-          const qtyTons = fg ? Number(fg.qty || 0) / 1000 : 0;
+          const qtyQtl = fg ? Number(fg.qty || 0) / 1000 : 0;
 
           if (fg && warehouseIds.includes(fg.warehouse_id)) {
-            getRow(materialId, materialName, packSize).production += qtyTons;
+            getRow(materialId, materialName, packSize).production += qtyQtl;
           }
           const sourceWarehouseId = sourceWarehouseByBatch.get(Number(p.batch_id));
           if (sourceWarehouseId && warehouseIds.includes(sourceWarehouseId)) {
-            getRow(materialId, materialName, packSize).issue += qtyTons;
+            getRow(materialId, materialName, packSize).issue += qtyQtl;
           }
         }
       }
@@ -589,7 +589,7 @@ module.exports = {
 
   // GET /api/reports/production-batch/:id/report
   // Streams a PDF for one finalized (packed) production batch: Shift,
-  // Material, Bags, Size, Actual (tons). "Shift" and "Approx in tank" have
+  // Material, Bags, Size, Actual (Qtl). "Shift" and "Approx in tank" have
   // no equivalent anywhere in this system's data, so they're left as blank
   // columns for manual fill-in (matching the paper form) rather than guessed.
   productionReport: async (req, res, next) => {
@@ -628,7 +628,7 @@ module.exports = {
           material_name: materialId ? (materialNameById.get(materialId) || `Material ${materialId}`) : "—",
           bag_count: p.bag_count,
           pack_size: Number(p.pack_size),
-          actual_tons: fg ? Math.round((Number(fg.qty || 0) / 1000) * 1000) / 1000 : 0,
+          actual_Qtl: fg ? Math.round((Number(fg.qty || 0) / 1000) * 1000) / 1000 : 0,
         };
       });
 
@@ -655,7 +655,7 @@ module.exports = {
       // count, which can differ slightly from "Actual" when a packing was
       // recorded with a qty_override (e.g. a real weighed value that
       // didn't land exactly on a round bag-size multiple).
-      const headers = ["Shift", "Material", "Bags", "Size (kg)", "Actual (Tons)", "Approx (Tons)"];
+      const headers = ["Shift", "Material", "Bags", "Size (kg)", "Actual (Qtl)", "Approx (Qtl)"];
       const colWidths = [55, 150, 60, 70, 90, 90];
       const startX = doc.page.margins.left;
       const tableWidth = colWidths.reduce((a, b) => a + b, 0);
@@ -680,11 +680,11 @@ module.exports = {
       let totalActual = 0;
       let totalApprox = 0;
       lines.forEach((l) => {
-        const approxTons = Math.round(((Number(l.pack_size) || 0) * (Number(l.bag_count) || 0) / 1000) * 1000) / 1000;
-        drawGridRow(["", l.material_name, l.bag_count, l.pack_size, l.actual_tons.toFixed(3), approxTons.toFixed(3)]);
+        const approxQtl = Math.round(((Number(l.pack_size) || 0) * (Number(l.bag_count) || 0) / 1000) * 1000) / 1000;
+        drawGridRow(["", l.material_name, l.bag_count, l.pack_size, l.actual_Qtl.toFixed(3), approxQtl.toFixed(3)]);
         totalBags += Number(l.bag_count || 0);
-        totalActual += l.actual_tons;
-        totalApprox += approxTons;
+        totalActual += l.actual_Qtl;
+        totalApprox += approxQtl;
       });
 
       drawGridRow(["", "TOTAL", totalBags, "", totalActual.toFixed(3), totalApprox.toFixed(3)], true);

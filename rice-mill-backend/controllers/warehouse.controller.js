@@ -187,7 +187,7 @@ module.exports = {
         byMaterial.set(key, existing);
 
         // Inventory is the stock ledger of record. Use its balance for the
-        // displayed bag quantity so bag lines and total tons cannot diverge.
+        // displayed bag quantity so bag lines and total Qtl cannot diverge.
         if (row.stage === "raw") {
           const bagSize = row.lot?.bag_size != null ? Number(row.lot.bag_size) : null;
           const wholeBags = bagSize ? Math.floor((balance * 1000) / bagSize + 0.0001) : null;
@@ -198,7 +198,7 @@ module.exports = {
 
       // Packed stock is already represented by FG Inventory rows above.
       // Read pack size only as a label; use the Inventory balance for both
-      // the displayed tons and the derived bag count.
+      // the displayed Qtl and the derived bag count.
       const fgInventoryRows = inventoryRows.filter(
         (row) => row.stage === "fg" && Number(row.balance_qty || 0) > 0,
       );
@@ -292,9 +292,9 @@ module.exports = {
   // combine every warehouse into one view)
   //
   // Splits what's physically sitting in a warehouse into two groups:
-  //  - raw_stock: unpacked bulk material (Inventory, stage="raw"), in tons.
+  //  - raw_stock: unpacked bulk material (Inventory, stage="raw"), in Qtl.
   //  - packed_stock: already-packed finished goods, grouped by material +
-  //    pack size, with bag count and total tons. Sourced from
+  //    pack size, with bag count and total Qtl. Sourced from
   //    FinishedGoods + Packing (NOT from Inventory's "fg" stage rows,
   //    which exist only for Production's internal availability math and
   //    would double-count the same physical stock if shown here too).
@@ -316,8 +316,8 @@ module.exports = {
       // ---- Raw / bulk stock ----
       // Grouped by material + bag size where the unloaded lot recorded one
       // (Lot.bag_size, set at "complete unloading" time). bag_count here
-      // is a DERIVED estimate (remaining tons / bag size) — production
-      // consumption only reduces Inventory.balance_qty in tons, it never
+      // is a DERIVED estimate (remaining Qtl / bag size) — production
+      // consumption only reduces Inventory.balance_qty in Qtl, it never
       // decrements a bag count, so this isn't a literal untouched count
       // once any of that lot has been drawn on.
       const inventoryWhere = { is_deleted: false, stage: "raw", balance_qty: { [Op.gt]: 0 } };
@@ -354,8 +354,8 @@ module.exports = {
           qty: Math.round(m.qty * 1000) / 1000,
           // One decimal, not a whole number — a partially-consumed lot
           // doesn't divide evenly into whole bags (consumption is tracked
-          // in tons, not bag units), so rounding to a whole number here
-          // would make the bag count and tons not multiply back correctly.
+          // in Qtl, not bag units), so rounding to a whole number here
+          // would make the bag count and Qtl not multiply back correctly.
           bag_count: m.bag_count != null ? Math.round(m.bag_count * 10) / 10 : null,
         }))
         .filter((m) => m.qty > 0.001)
@@ -426,14 +426,14 @@ module.exports = {
             material_code: p.material_code,
             pack_size: p.pack_size,
             bag_count: p.bag_count,
-            qty_tons: Math.round((p.qty_kg / 1000) * 1000) / 1000,
+            qty_Qtl: Math.round((p.qty_kg / 1000) * 1000) / 1000,
           }))
-          .filter((p) => p.qty_tons > 0.001)
-          .sort((a, b) => b.qty_tons - a.qty_tons);
+          .filter((p) => p.qty_Qtl > 0.001)
+          .sort((a, b) => b.qty_Qtl - a.qty_Qtl);
       }
 
       const rawTotal = rawStock.reduce((sum, m) => sum + m.qty, 0);
-      const packedTotal = packedStock.reduce((sum, m) => sum + m.qty_tons, 0);
+      const packedTotal = packedStock.reduce((sum, m) => sum + m.qty_Qtl, 0);
       const totalStock = Math.round((rawTotal + packedTotal) * 1000) / 1000;
 
       let capacity = null;

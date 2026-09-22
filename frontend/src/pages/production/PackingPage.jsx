@@ -169,7 +169,7 @@ export default function PackingPage() {
             label: "Total Qty",
             render: (row) => {
               const totalKg = Number(row.pack_size || 0) * Number(row.bag_count || 0);
-              return `${totalKg} kg (${(totalKg / 1000).toFixed(3)} tons)`;
+              return `${totalKg} kg (${(totalKg / 1000).toFixed(3)} Qtl)`;
             },
           },
           { key: "barcode", label: "Barcode" },

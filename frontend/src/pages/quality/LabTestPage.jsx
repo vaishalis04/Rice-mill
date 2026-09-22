@@ -40,7 +40,6 @@ const emptyForm = {
   color: "",
   smell: "",
   variety_detected: "",
-  grain_size: "long",
   comment: "",
   verdict: "accepted",
   tested_at: "",
@@ -186,7 +185,6 @@ export default function LabTestPage() {
         color: form.color || null,
         smell: form.smell || null,
         variety_detected: form.variety_detected ? Number(form.variety_detected) : null,
-        grain_size: form.grain_size || null,
         comment: form.comment || null,
         verdict: form.verdict,
         tested_at: form.tested_at ? toIso(form.tested_at) : null,
@@ -225,7 +223,6 @@ export default function LabTestPage() {
       color: row.color || "",
       smell: row.smell || "",
       variety_detected: row.variety_detected || "",
-      grain_size: row.grain_size || "long",
       comment: row.comment || "",
       verdict: row.verdict || "accepted",
       tested_at: toLocal(row.tested_at),
@@ -854,25 +851,6 @@ export default function LabTestPage() {
                 onChange={(id) => setForm({ ...form, variety_detected: id })}
                 creatable
               />
-            </div>
-
-            <div style={styles.formGroup}>
-              <label style={styles.formLabel}>
-                Grain Size
-                <span style={styles.required}>*</span>
-              </label>
-              <select
-                name="grain_size"
-                className="form-select"
-                style={styles.formSelect}
-                value={form.grain_size}
-                onChange={handleChange}
-                required
-              >
-                <option value="long">Long</option>
-                <option value="medium">Medium</option>
-                <option value="short">Short</option>
-              </select>
             </div>
 
             <div style={styles.formGroupFull}>

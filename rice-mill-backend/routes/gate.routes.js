@@ -9,16 +9,29 @@ const { uploadImage } = require("../helpers/multer.helper");
 // entries at status 'waiting_sampling' to populate its picker.
 // "purchase" is included because Purchase Orders' gate-entry picker reads
 // from here too.
-router.use(verifyAccessToken, attachUser, authorize("gate","warehouse","production","lab","purchase","weighbridge"));
+// "admin" is included because Admin > Gate Entry now attaches Entry Type /
+// PO / SO details onto the tokens the Gate creates (see attachDetails).
+router.use(verifyAccessToken, attachUser, authorize("gate","warehouse","production","lab","purchase","weighbridge","admin"));
 
 router.get("/",     Controller.getAll);
+// Must come before "/:id" — otherwise Express would treat "misc-items" as
+// an :id value for getById.
+router.get("/misc-items", Controller.getMiscItems);
 router.get("/:id",  Controller.getById);
 router.post("/",    Controller.create);
 router.put("/:id",  Controller.update);
 router.delete("/:id", Controller.delete);
 router.post("/checkin", Controller.checkIn);
 router.post("/checkout", Controller.checkOut);
+// Gate side — Vehicle + Driver (+ Driver Photo) only, prints a token.
 router.post("/generatetoken", Controller.generateToken);
+// Admin side — attaches Entry Type + PO/SO + Challan/Expected Qty onto a
+// token generated above; restricted to admin only.
+router.post(
+  "/attach-details",
+  authorize("admin"),
+  Controller.attachDetails
+);
 // Empty trucks / miscellaneous-item trucks (entry_type = "other") only —
 // skips the rest of the journey and marks the truck received at warehouse.
 router.post("/send-to-warehouse", Controller.sendToWarehouse);

@@ -10,7 +10,10 @@ GateEntry.init(
     vehicle_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "vehicles", key: "id" } },
     driver_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "drivers", key: "id" } },
     driver_photo_url: { type: DataTypes.STRING(255) },
-    entry_type: { type: DataTypes.ENUM("purchase", "other", "sales"), allowNull: false, defaultValue: "purchase" },
+    // "pending" = created at the Gate (vehicle + driver + photo only); the
+    // Entry Type itself is not chosen until Admin > Gate Entry attaches the
+    // PO/SO details (see gate.controller.js `attachDetails`).
+    entry_type: { type: DataTypes.ENUM("pending", "purchase", "other", "sales"), allowNull: false, defaultValue: "pending" },
     vendor_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "vendors", key: "id" } },
     po_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "purchase_order", key: "id" } },
     so_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "sales_order", key: "id" } },
@@ -23,6 +26,10 @@ GateEntry.init(
     exit_time: { type: DataTypes.DATE, allowNull: true },
 gate_status: {
   type: DataTypes.ENUM(
+    // Token generated at the Gate, but Admin hasn't attached the
+    // Entry Type / PO / SO details yet — vehicle is waiting in this
+    // state until Admin does so on the Admin > Gate Entry tab.
+    "pending_details",
     "waiting_token",
     "waiting_sampling",
     "sampling_done",

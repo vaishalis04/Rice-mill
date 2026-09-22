@@ -140,8 +140,8 @@ function ProductionSummaryTab() {
         columns={[
           { key: "batch_no", label: "Batch No." },
           { key: "production_date", label: "Production Date" },
-          { key: "input_qty", label: "Input Qty (Tons)" },
-          { key: "output_qty", label: "Output Qty (Tons)" },
+          { key: "input_qty", label: "Input Qty (Qtl)" },
+          { key: "output_qty", label: "Output Qty (Qtl)" },
           {
             key: "recovery_pct",
             label: "Recovery %",
@@ -286,7 +286,7 @@ function MaterialFlowTab() {
         columns={[
           { key: "section", label: "Section" },
           { key: "material", label: "Material" },
-          { key: "qty", label: "Qty (Tons)" },
+          { key: "qty", label: "Qty (Qtl)" },
         ]}
       />
       <p className="field-hint" style={{ marginTop: 8 }}>

@@ -174,7 +174,7 @@ function StockTab() {
       addRow(m.material_id, m.material_name, m.material_code, "raw", m.bag_size, m.bag_count, m.qty)
     );
     filteredPackedStock.forEach((p) =>
-      addRow(p.material_id, p.material_name, p.material_code, "packed", p.pack_size, p.bag_count, p.qty_tons)
+      addRow(p.material_id, p.material_name, p.material_code, "packed", p.pack_size, p.bag_count, p.qty_Qtl)
     );
 
     return Array.from(groups.values())
@@ -317,13 +317,13 @@ function StockTab() {
                 <div style={{ padding: "12px 16px", background: "white", borderRadius: 6, border: "1px solid #e2e8f0" }}>
                   <div style={{ fontSize: 12, color: "#64748b" }}>Total Capacity</div>
                   <div style={{ fontSize: 20, fontWeight: 600, color: "#0f172a" }}>
-                    {stockDetail.capacity != null ? `${stockDetail.capacity.toFixed(2)} tons` : "Not set"}
+                    {stockDetail.capacity != null ? `${stockDetail.capacity.toFixed(2)} Qtl` : "Not set"}
                   </div>
                 </div>
                 <div style={{ padding: "12px 16px", background: "white", borderRadius: 6, border: "1px solid #e2e8f0" }}>
                   <div style={{ fontSize: 12, color: "#64748b" }}>Current Stock (raw + packed)</div>
                   <div style={{ fontSize: 20, fontWeight: 600, color: "#0f172a" }}>
-                    {stockDetail.total_stock.toFixed(2)} tons
+                    {stockDetail.total_stock.toFixed(2)} Qtl
                   </div>
                 </div>
                 <div style={{ padding: "12px 16px", background: "white", borderRadius: 6, border: "1px solid #e2e8f0" }}>
@@ -335,7 +335,7 @@ function StockTab() {
                       color: stockDetail.remaining_capacity <= 0 ? "#dc2626" : "#166534",
                     }}
                   >
-                    {stockDetail.remaining_capacity != null ? `${stockDetail.remaining_capacity.toFixed(2)} tons` : "Unlimited"}
+                    {stockDetail.remaining_capacity != null ? `${stockDetail.remaining_capacity.toFixed(2)} Qtl` : "Unlimited"}
                   </div>
                 </div>
               </div>
@@ -431,7 +431,7 @@ function StockTab() {
                             <div style={{ fontSize: 12, color: "#64748b" }}>{g.material_code}</div>
                           </div>
                           <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 16 }}>
-                            {g.total_qty.toFixed(2)} tons
+                            {g.total_qty.toFixed(2)} Qtl
                           </div>
                         </div>
                         {g.rows.map((r, i) => (
@@ -450,7 +450,7 @@ function StockTab() {
                               {r.bag_count != null && ` × ${r.bag_count} bag${r.bag_count === 1 ? "" : "s"}`}
                               <span style={{ color: "#94a3b8" }}> ({r.stage === "raw" ? "raw" : "packed"})</span>
                             </span>
-                            <span style={{ fontWeight: 500 }}>{r.qty.toFixed(3)} tons</span>
+                            <span style={{ fontWeight: 500 }}>{r.qty.toFixed(3)} Qtl</span>
                           </div>
                         ))}
                       </div>
@@ -628,10 +628,10 @@ export default function WarehousePage() {
         title="Warehouse Management"
         steps={[
           "Set up your Warehouses with name, type, capacity, and location.",
-          "The Stock tab shows a live snapshot of what's actually sitting in each warehouse — one box per material, listing every bag size it has (raw and packed) with a total in tons.",
+          "The Stock tab shows a live snapshot of what's actually sitting in each warehouse — one box per material, listing every bag size it has (raw and packed) with a total in Qtl.",
           "Select a warehouse, or check 'View all warehouses combined', to see its capacity, current stock, and breakdown.",
           "Use the material name and bag size filters on the Stock tab to narrow down what you're looking at.",
-          "Raw stock bag counts are estimated from remaining tons ÷ bag size — production consumption is tracked in tons, not whole bags, so this drifts from the literal count once part of a lot has been used. Packed stock bag counts are exact.",
+          "Raw stock bag counts are estimated from remaining Qtl ÷ bag size — production consumption is tracked in Qtl, not whole bags, so this drifts from the literal count once part of a lot has been used. Packed stock bag counts are exact.",
           "Warehouses are used during the unloading process to store accepted materials.",
         ]}
       />

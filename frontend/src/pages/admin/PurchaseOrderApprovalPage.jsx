@@ -824,7 +824,7 @@ export default function PurchaseOrderApprovalPage() {
                       <th>Vendor</th>
                       <th>Material</th>
                       <th>Variety</th>
-                      <th>Qty (Tons)</th>
+                      <th>Qty (Qtl)</th>
                       <th>Rate</th>
                       <th>Amount</th>
                       <th>PO Date</th>

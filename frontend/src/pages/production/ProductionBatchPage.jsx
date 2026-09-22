@@ -11,6 +11,7 @@ import {
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
+import InlineSearchSelect from "../../components/InlineSearchSelect";
 import ModuleGuide from "../../components/ModuleGuide";
 import PdfPreviewModal from "../../components/PdfPreviewModal";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
@@ -938,26 +939,18 @@ export default function ProductionBatchPage() {
                   >
                     <div className="sf-field" style={{ marginBottom: 0 }}>
                       <label>Material</label>
-                      <select
+                      <InlineSearchSelect
                         value={item.material_id}
-                        onChange={(e) => handleMaterialChange(index, "material_id", e.target.value)}
+                        onChange={(id) => handleMaterialChange(index, "material_id", id)}
                         required
-                        style={{
-                          width: "100%",
-                          padding: "8px 12px",
-                          borderRadius: 4,
-                          border: isQuantityExceeded ? "1px solid #fca5a5" : "1px solid #d1d5db",
-                          fontSize: 14,
-                          backgroundColor: isQuantityExceeded ? "#fef2f2" : "white",
-                        }}
-                      >
-                        <option value="">Select Material</option>
-                        {allAvailableMaterials.map((m) => (
-                          <option key={m.material_id} value={m.material_id}>
-                            {m.material_name} ({(m.qty ).toFixed(2)} tons)
-                          </option>
-                        ))}
-                      </select>
+                        placeholder="Search material…"
+                        options={allAvailableMaterials.map((m) => ({
+                          id: m.material_id,
+                          label: m.material_name,
+                          sublabel: `${(m.qty).toFixed(2)} tons`,
+                        }))}
+                        emptyMessage="No materials with stock in this warehouse"
+                      />
                     </div>
 
                     <div className="sf-field" style={{ marginBottom: 0 }}>
@@ -1218,25 +1211,16 @@ export default function ProductionBatchPage() {
                   >
                     <div className="sf-field" style={{ marginBottom: 0 }}>
                       <label>Material</label>
-                      <select
+                      <InlineSearchSelect
                         value={item.material_id}
+                        onChange={(id) => handleSwapMaterial(item.material_id, id)}
                         disabled={isRowBusy || packingWarehouseSummaryLoading}
-                        onChange={(e) => handleSwapMaterial(item.material_id, e.target.value)}
-                        style={{
-                          width: "100%",
-                          padding: "8px 12px",
-                          borderRadius: 4,
-                          border: "1px solid #d1d5db",
-                          fontSize: 14,
-                          background: "white",
-                        }}
-                      >
-                        {swapOptions.map((m) => (
-                          <option key={m.material_id} value={m.material_id}>
-                            {m.material_name}
-                          </option>
-                        ))}
-                      </select>
+                        placeholder="Search material…"
+                        options={swapOptions.map((m) => ({
+                          id: m.material_id,
+                          label: m.material_name,
+                        }))}
+                      />
                       <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
                         Reserved: {item.reserved_qty.toFixed(3)} tons
                       </div>
@@ -1358,32 +1342,20 @@ export default function ProductionBatchPage() {
             <form className="sf-form" onSubmit={handleAddMaterialSubmit}>
               <div className="sf-field" style={{ marginBottom: 0 }}>
                 <label>Material</label>
-                <select
+                <InlineSearchSelect
                   value={addMaterialForm.material_id}
-                  onChange={(e) =>
-                    setAddMaterialForm({ ...addMaterialForm, material_id: e.target.value })
+                  onChange={(id) =>
+                    setAddMaterialForm({ ...addMaterialForm, material_id: id })
                   }
                   required
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    borderRadius: 4,
-                    border: "1px solid #d1d5db",
-                    fontSize: 14,
-                  }}
-                >
-                  <option value="">Select Material</option>
-                  {getAddMaterialAvailableOptions().map((m) => (
-                    <option key={m.material_id} value={m.material_id}>
-                      {m.material_name} ({(m.qty).toFixed(2)} tons)
-                    </option>
-                  ))}
-                </select>
-                {getAddMaterialAvailableOptions().length === 0 && (
-                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
-                    No additional materials with stock are available in this batch's warehouse.
-                  </div>
-                )}
+                  placeholder="Search material…"
+                  options={getAddMaterialAvailableOptions().map((m) => ({
+                    id: m.material_id,
+                    label: m.material_name,
+                    sublabel: `${(m.qty).toFixed(2)} tons`,
+                  }))}
+                  emptyMessage="No additional materials with stock are available in this batch's warehouse"
+                />
               </div>
 
               <div className="sf-field" style={{ marginBottom: 0 }}>

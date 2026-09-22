@@ -134,9 +134,9 @@ export default function InventoryPage() {
             render: (row) => (row.bag_count != null ? row.bag_count : "—"),
           },
           {
-            key: "qty_tons",
-            label: "Stock (Tons)",
-            render: (row) => row.qty_tons.toFixed(3),
+            key: "qty_Qtl",
+            label: "Stock (Qtl)",
+            render: (row) => row.qty_Qtl.toFixed(3),
           },
           {
             key: "last_movement",
@@ -150,8 +150,8 @@ export default function InventoryPage() {
         title="Inventory"
         steps={[
           "Every row here is a material sitting at a specific location, broken out by bag size.",
-          "Raw stock shows a bag size when it was recorded during unloading (bag count is an estimate from remaining tons, since consumption is tracked in tons); otherwise it shows as 'Bulk'.",
-          "Packed material is grouped by its actual pack size, with the total bag count and tons for that group.",
+          "Raw stock shows a bag size when it was recorded during unloading (bag count is an estimate from remaining Qtl, since consumption is tracked in Qtl); otherwise it shows as 'Bulk'.",
+          "Packed material is grouped by its actual pack size, with the total bag count and Qtl for that group.",
           "'Last Movement' reflects the most recent stock change for that group — a raw stock deduction/addition, or a packing/dispatch update for packed stock.",
           "Use the three search boxes to narrow down by item name, warehouse, or bag size.",
         ]}

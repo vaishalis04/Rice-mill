@@ -397,7 +397,7 @@ export default function SalesOrdersPage() {
                 <tr>
                   <th>#</th>
                   <th>Material</th>
-                  <th>Qty (Tons)</th>
+                  <th>Qty (Qtl)</th>
                   <th>Rate</th>
                   <th>Status</th>
                   <th></th>
@@ -458,7 +458,7 @@ export default function SalesOrdersPage() {
               onCreated={materials.refetch}
             />
             <div className="sf-field">
-              <label>Qty (Tons)</label>
+              <label>Qty (Qtl)</label>
               <input name="qty" type="number" value={newItem.qty} onChange={handleNewItemChange} />
             </div>
             <div className="sf-field">
@@ -505,7 +505,7 @@ export default function SalesOrdersPage() {
                 onCreated={materials.refetch}
               />
               <div className="sf-field">
-                <label>Qty (Tons)</label>
+                <label>Qty (Qtl)</label>
                 <input name="qty" type="number" value={currentItem.qty} onChange={handleItemChange} />
               </div>
               <div className="sf-field">
@@ -524,7 +524,7 @@ export default function SalesOrdersPage() {
                   <tr>
                     <th>#</th>
                     <th>Material</th>
-                    <th>Qty (Tons)</th>
+                    <th>Qty (Qtl)</th>
                     <th>Rate</th>
                     <th></th>
                   </tr>
@@ -615,7 +615,7 @@ export default function SalesOrdersPage() {
           },
           {
             key: "total_qty",
-            label: "Total Qty (Tons)",
+            label: "Total Qty (Qtl)",
             render: (row) => (row.items || []).reduce((s, i) => s + Number(i.qty), 0),
           },
           { key: "order_date", label: "Order Date" },

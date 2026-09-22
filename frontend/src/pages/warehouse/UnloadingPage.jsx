@@ -11,7 +11,7 @@ import DataTable from "../../components/DataTable";
 import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
-import { kgToTons } from "../../utils/units";
+import { kgToQtl } from "../../utils/units";
 
 const startForm0 = {
   gate_entry_id: "",
@@ -364,11 +364,11 @@ export default function UnloadingPage() {
             }}>
               <span>
                 <strong>Accepted Qty:</strong> {item.accepted_qty || 0} kg 
-                ({Math.round((item.accepted_qty || 0) / 1000 * 100) / 100} tons)
+                ({Math.round((item.accepted_qty || 0) / 1000 * 100) / 100} Qtl)
               </span>
               <span>
                 <strong>Rejected Qty:</strong> {item.rejected_qty || 0} kg
-                ({Math.round((item.rejected_qty || 0) / 1000 * 100) / 100} tons)
+                ({Math.round((item.rejected_qty || 0) / 1000 * 100) / 100} Qtl)
               </span>
               <span>
                 <strong>Total:</strong> {Math.round(((item.accepted_qty || 0) + (item.rejected_qty || 0)) * 100) / 100} kg
@@ -447,10 +447,10 @@ export default function UnloadingPage() {
                     <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: warehouseSummary.materials.length ? 8 : 0 }}>
                       <span>
                         <strong>Capacity:</strong>{" "}
-                        {warehouseSummary.capacity != null ? `${kgToTons(warehouseSummary.capacity)} tons` : "Not set"}
+                        {warehouseSummary.capacity != null ? `${kgToQtl(warehouseSummary.capacity)} Qtl` : "Not set"}
                       </span>
                       <span>
-                        <strong>Current stock:</strong> {kgToTons(warehouseSummary.total_stock)} tons
+                        <strong>Current stock:</strong> {kgToQtl(warehouseSummary.total_stock)} Qtl
                       </span>
                       <span
                         style={{
@@ -463,7 +463,7 @@ export default function UnloadingPage() {
                       >
                         Remaining:{" "}
                         {warehouseSummary.remaining_capacity != null
-                          ? `${kgToTons(warehouseSummary.remaining_capacity)} tons`
+                          ? `${kgToQtl(warehouseSummary.remaining_capacity)} Qtl`
                           : "Unlimited"}
                       </span>
                     </div>
@@ -471,7 +471,7 @@ export default function UnloadingPage() {
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                         {warehouseSummary.materials.map((m) => (
                           <span key={m.material_id} style={{ color: "#475569" }}>
-                            {m.material_name}: <strong>{kgToTons(m.qty)} tons</strong>
+                            {m.material_name}: <strong>{kgToQtl(m.qty)} Qtl</strong>
                           </span>
                         ))}
                       </div>
@@ -566,8 +566,8 @@ export default function UnloadingPage() {
           },
           { key: "accepted_bags", label: "Accepted Bags" },
           { key: "rejected_bags", label: "Rejected Bags" },
-          { key: "qty", label: "Accepted Qty (Tons)", render: (row) => kgToTons(row.qty) },
-          { key: "rejected_qty", label: "Rejected Qty (Tons)", render: (row) => kgToTons(row.rejected_qty) },
+          { key: "qty", label: "Accepted Qty (Qtl)", render: (row) => kgToQtl(row.qty) },
+          { key: "rejected_qty", label: "Rejected Qty (Qtl)", render: (row) => kgToQtl(row.rejected_qty) },
           {
             key: "status",
             label: "Status",

@@ -13,6 +13,7 @@ const {
   WarehouseMaster,
   SalesOrder,
   GateEntrySalesOrder,
+  GateEntryMiscItem,
   Customer,
 } = require("../models/index");
 const { generateTokenNo } = require("../helpers/helperFunction");
@@ -73,6 +74,12 @@ const detailIncludes = [
         attributes: ["id", "material_code", "name"],
       },
     ],
+  },
+  {
+    model: GateEntryMiscItem,
+    as: "misc_items",
+    where: { is_deleted: false },
+    required: false,
   },
 ];
 
@@ -984,25 +991,26 @@ getById: async (req, res, next) => {
         );
       }
 
-      // Purchase trucks join the normal Sampling -> Lab -> Negotiation queue.
-      // Empty/miscellaneous trucks (entry_type = "other") skip all of that and
-      // go straight into the weighment queue instead. Sales (outbound loading)
-      // trucks go straight into the loading queue.
-      let nextStatus = "waiting_sampling";
-      if (entry.entry_type === "other") nextStatus = "waiting_weighment";
-      else if (entry.entry_type === "sales") nextStatus = "waiting_weighment";
-
+      // Check-in now happens right after the Gate generates the token —
+      // before Admin has attached an Entry Type / PO / SO — so we don't
+      // know yet whether this is a Purchase / Sales / Empty truck. It
+      // simply moves to "pending_details", which is what makes it show up
+      // on Admin > Gate Entry to be classified and attached. The actual
+      // routing into the Sampling / Weighment queue (based on entry_type)
+      // happens in `attachDetails` below, once Admin knows what it is.
       await entry.update({
-        gate_status: nextStatus,
+        gate_status: "pending_details",
         updated_by: req.user ? req.user.id : null,
       });
 
       const updated = await GateEntry.findByPk(entry.id, {
         include: detailIncludes,
       });
-      res
-        .status(200)
-        .json({ success: true, msg: "Vehicle checked in", data: updated });
+      res.status(200).json({
+        success: true,
+        msg: "Vehicle checked in — now waiting for Admin to attach Purchase/Sales Order details.",
+        data: updated,
+      });
     } catch (err) {
       next(err);
     }
@@ -1094,18 +1102,118 @@ getById: async (req, res, next) => {
     }
   },
 
+// ============================================================
+// GENERATE TOKEN (Gate side — Module 1)
+// ============================================================
+// Stripped down on purpose: the Gate now only ever captures Vehicle,
+// Driver and (optionally) the Driver Photo, then prints a token. It does
+// NOT know or care about Entry Type / PO / SO / Challan / Expected Qty
+// any more — those are decided afterwards by Admin (Admin > Gate Entry,
+// see `attachDetails` below), which is what actually starts the
+// truck's journey (moves it to gate_status "waiting_token" so it can be
+// checked in). Until Admin attaches those details, the entry just sits
+// at gate_status "pending_details".
 generateToken: async (req, res, next) => {
+  try {
+    const { vehicle_id, driver_id, driver_photo_url, plant_id } =
+      req.body || {};
+
+    if (!vehicle_id) {
+      throw createError(400, "vehicle_id is required");
+    }
+    if (!driver_id) {
+      throw createError(400, "driver_id is required");
+    }
+
+    const vehicle = await Vehicle.findOne({
+      where: { id: vehicle_id, is_deleted: false },
+    });
+    if (!vehicle) {
+      throw createError(400, `Invalid vehicle_id: ${vehicle_id}`);
+    }
+
+    const vehicleNo =
+      vehicle.vehicle_no ||
+      vehicle.vehicle_number ||
+      vehicle.registration_no ||
+      vehicle.reg_no;
+
+    if (!vehicleNo) {
+      throw createError(
+        400,
+        `Vehicle ${vehicle_id} does not have a vehicle number`
+      );
+    }
+
+    const driver = await Driver.findOne({
+      where: { id: driver_id, is_deleted: false },
+    });
+    if (!driver) {
+      throw createError(400, `Invalid driver_id: ${driver_id}`);
+    }
+
+    const resolvedPlantId = plant_id || (req.user ? req.user.plant_id : null);
+    const token_no = await generateTokenNo(vehicleNo);
+
+    const gateEntry = await GateEntry.create({
+      token_no,
+      vehicle_id,
+      driver_id,
+      driver_photo_url: driver_photo_url || null,
+      entry_type: "pending",
+      gate_status: "waiting_token",
+      plant_id: resolvedPlantId,
+      entry_time: new Date(),
+      created_by: req.user ? req.user.id : null,
+    });
+
+    const createdGateEntry = await GateEntry.findByPk(gateEntry.id, {
+      include: [
+        {
+          model: Vehicle,
+          as: "vehicle",
+          attributes: ["id", "vehicle_no", "type", "capacity"],
+        },
+        {
+          model: Driver,
+          as: "driver",
+          attributes: ["id", "name", "mobile", "license_no", "photo_url"],
+        },
+      ],
+    });
+
+    return res.status(201).json({
+      success: true,
+      msg: "Token generated — check the vehicle in once it's physically at the gate. Admin will attach the Purchase/Sales Order details after that.",
+      token_no,
+      data: createdGateEntry,
+    });
+  } catch (err) {
+    next(err);
+  }
+},
+
+// ============================================================
+// ATTACH DETAILS (Admin side — Admin > Gate Entry tab)
+// ============================================================
+// Takes an already-tokened gate entry (created above, still sitting at
+// gate_status "pending_details") and attaches the Entry Type, PO/SO +
+// materials, Challan No. and Expected Qty that used to be filled in at
+// the Gate itself. On success the entry moves to gate_status
+// "waiting_token" — exactly the state `generateToken` used to leave it
+// in before this split — so Check-in / Sampling / Weighbridge / etc. all
+// carry on completely unchanged from here.
+attachDetails: async (req, res, next) => {
   const t = await sequelize.transaction();
 
   try {
     const {
-      vehicle_id,
-      driver_id,
+      gate_entry_id,
       vendor_id,
       customer_id,
       challan_no,
       expected_qty,
-      plant_id,
+      remarks,
       entry_type,
 
       // Purchase Orders
@@ -1113,27 +1221,54 @@ generateToken: async (req, res, next) => {
 
       // Sales Orders
       sales_orders = [],
+
+      // "other" (empty/misc) trucks — what arrived & where it was stored,
+      // e.g. [{ item_name, qty, unit, storage_location }]
+      misc_items = [],
     } = req.body || {};
 
     // ============================================================
     // 1. BASIC VALIDATION
     // ============================================================
 
-    if (!vehicle_id) {
-      throw createError(400, "vehicle_id is required");
-    }
-
-    if (!driver_id) {
-      throw createError(400, "driver_id is required");
+    if (!gate_entry_id) {
+      throw createError(400, "gate_entry_id is required");
     }
 
     if (!entry_type) {
       throw createError(400, "entry_type is required");
     }
 
-    if (!["purchase", "sales"].includes(entry_type)) {
-      throw createError(400, "entry_type must be either purchase or sales");
+    if (!["purchase", "other", "sales"].includes(entry_type)) {
+      throw createError(
+        400,
+        "entry_type must be 'purchase', 'other' or 'sales'"
+      );
     }
+
+    // ============================================================
+    // 1b. FIND THE PENDING GATE ENTRY (created at the Gate)
+    // ============================================================
+
+    const pendingEntry = await GateEntry.findOne({
+      where: { id: gate_entry_id, is_deleted: false },
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
+
+    if (!pendingEntry) {
+      throw createError(400, `Gate entry ${gate_entry_id} not found`);
+    }
+
+    if (pendingEntry.gate_status !== "pending_details") {
+      throw createError(
+        400,
+        `Gate entry ${gate_entry_id} is not waiting on Admin (status '${pendingEntry.gate_status}') — it must be checked in at the Gate first`
+      );
+    }
+
+    const vehicle_id = pendingEntry.vehicle_id;
+    const driver_id = pendingEntry.driver_id;
 
     // ============================================================
     // 2. PURCHASE VALIDATION
@@ -1170,39 +1305,41 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
+    // 3b. MISC ITEMS VALIDATION (entry_type = "other")
+    // ============================================================
+    // Not mandatory — some "other" trucks (e.g. an empty truck just
+    // passing through) carry nothing at all — but if items are listed,
+    // each one needs at least a name and a quantity so the log is useful.
+
+    let validatedMiscItems = [];
+    if (entry_type === "other" && Array.isArray(misc_items) && misc_items.length > 0) {
+      validatedMiscItems = misc_items.map((item, idx) => {
+        const item_name = (item.item_name || "").trim();
+        const qty = Number(item.qty);
+
+        if (!item_name) {
+          throw createError(400, `misc_items[${idx}]: item_name is required`);
+        }
+        if (!Number.isFinite(qty) || qty <= 0) {
+          throw createError(400, `misc_items[${idx}]: qty must be greater than 0`);
+        }
+
+        return {
+          item_name,
+          qty,
+          unit: (item.unit || "nos").trim() || "nos",
+          storage_location: item.storage_location ? String(item.storage_location).trim() : null,
+          remarks: item.remarks || null,
+        };
+      });
+    }
+
+    // ============================================================
     // 4. RESOLVE PLANT
     // ============================================================
 
-    const resolvedPlantId = plant_id || (req.user ? req.user.plant_id : null);
-
-    // ============================================================
-    // 5. GET VEHICLE
-    // ============================================================
-
-    const vehicle = await Vehicle.findOne({
-      where: {
-        id: vehicle_id,
-        is_deleted: false,
-      },
-      transaction: t,
-    });
-
-    if (!vehicle) {
-      throw createError(400, `Invalid vehicle_id: ${vehicle_id}`);
-    }
-
-    const vehicleNo =
-      vehicle.vehicle_no ||
-      vehicle.vehicle_number ||
-      vehicle.registration_no ||
-      vehicle.reg_no;
-
-    if (!vehicleNo) {
-      throw createError(
-        400,
-        `Vehicle ${vehicle_id} does not have a vehicle number`
-      );
-    }
+    const resolvedPlantId =
+      pendingEntry.plant_id || (req.user ? req.user.plant_id : null);
 
     // ============================================================
     // 6. VALIDATE SALES ORDERS
@@ -1722,8 +1859,15 @@ generateToken: async (req, res, next) => {
     // ============================================================
     // 9. VALIDATE EXPECTED QTY
     // ============================================================
+    // Only purchase/sales have materials to cross-check the total
+    // against — an "other" (empty/misc) entry has no PO/SO lines, so
+    // expected_qty there is just whatever Admin types in, same as before.
 
-    if (expected_qty !== undefined && expected_qty !== null) {
+    if (
+      entry_type !== "other" &&
+      expected_qty !== undefined &&
+      expected_qty !== null
+    ) {
       const expectedQtyNum = Number(expected_qty);
 
       if (!Number.isFinite(expectedQtyNum) || expectedQtyNum <= 0) {
@@ -1739,38 +1883,60 @@ generateToken: async (req, res, next) => {
     }
 
     // ============================================================
-    // 10. GENERATE TOKEN NUMBER
+    // 11. ATTACH DETAILS ONTO THE EXISTING (CHECKED-IN) GATE ENTRY
     // ============================================================
+    // The token was already generated AND the truck already checked in at
+    // the Gate — we only update the row here, we never create a new one.
+    // Since we now know the Entry Type, this is where the truck actually
+    // joins its next queue: Purchase -> Sampling, Empty/Misc & Sales ->
+    // Weighment (this is exactly what `checkIn` used to decide before the
+    // Gate/Admin split — it just runs here now, once entry_type is known).
 
-    const token_no = await generateTokenNo(vehicleNo);
+    let nextStatus = "waiting_sampling";
+    if (entry_type === "other") nextStatus = "waiting_weighment";
+    else if (entry_type === "sales") nextStatus = "waiting_weighment";
 
-    // ============================================================
-    // 11. CREATE GATE ENTRY
-    // ============================================================
-
-    const gateEntryData = {
-      token_no,
-      vehicle_id,
-      driver_id,
+    const gateEntryUpdates = {
       vendor_id: entry_type === "purchase" ? vendor_id || null : null,
       customer_id: entry_type === "sales" ? customer_id || null : null,
       challan_no: challan_no || null,
-      expected_qty: expected_qty !== undefined && expected_qty !== null
-        ? Number(expected_qty)
-        : entry_type === "sales"
-        ? calculatedTotalQty
-        : null,
+      expected_qty:
+        expected_qty !== undefined && expected_qty !== null
+          ? Number(expected_qty)
+          : entry_type === "sales"
+          ? calculatedTotalQty
+          : null,
+      remarks: remarks || null,
       plant_id: resolvedPlantId,
       entry_type,
       so_id: null,
       material_id: null,
-      gate_status: "waiting_token",
-      created_by: req.user ? req.user.id : null,
+      gate_status: nextStatus,
+      updated_by: req.user ? req.user.id : null,
     };
 
-    const gateEntry = await GateEntry.create(gateEntryData, {
-      transaction: t,
-    });
+    await pendingEntry.update(gateEntryUpdates, { transaction: t });
+
+    const gateEntry = pendingEntry;
+
+    // ============================================================
+    // 11b. CREATE MISC ITEM RECORDS (entry_type = "other" only)
+    // ============================================================
+
+    if (entry_type === "other" && validatedMiscItems.length > 0) {
+      await GateEntryMiscItem.bulkCreate(
+        validatedMiscItems.map((item) => ({
+          gate_entry_id: gateEntry.id,
+          item_name: item.item_name,
+          qty: item.qty,
+          unit: item.unit,
+          storage_location: item.storage_location,
+          remarks: item.remarks,
+          created_by: req.user ? req.user.id : null,
+        })),
+        { transaction: t }
+      );
+    }
 
     // ============================================================
     // 12. CREATE SALES ORDER RELATION RECORDS
@@ -1896,6 +2062,12 @@ generateToken: async (req, res, next) => {
           as: "plant",
           attributes: ["id", "plant_code", "name"],
         },
+        {
+          model: GateEntryMiscItem,
+          as: "misc_items",
+          required: false,
+          where: { is_deleted: false },
+        },
       ],
     });
 
@@ -1943,13 +2115,17 @@ generateToken: async (req, res, next) => {
     // 17. RESPONSE
     // ============================================================
 
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
       msg:
         entry_type === "sales"
-          ? "Gate entry created with Sales Order(s)"
-          : "Gate entry created with Purchase Order(s)",
-      token_no: token_no,
+          ? "Sales Order(s) attached — truck moved to the Weighment queue"
+          : entry_type === "purchase"
+          ? "Purchase Order(s) attached — truck moved to the Sampling queue"
+          : validatedMiscItems.length > 0
+          ? "Details attached — truck moved to the Weighment queue and its items logged"
+          : "Details attached — truck moved to the Weighment queue",
+      token_no: createdGateEntry.token_no,
       data: createdGateEntry,
       material_details: materialDetails,
       total_qty: calculatedTotalQty,
@@ -1967,8 +2143,51 @@ generateToken: async (req, res, next) => {
       console.error("Transaction rollback error:", rollbackError);
     }
 
-    console.error("GENERATE TOKEN ERROR:", err);
+    console.error("ATTACH GATE ENTRY DETAILS ERROR:", err);
 
+    next(err);
+  }
+},
+
+// ============================================================
+// GET MISC ITEMS (Admin/Warehouse — "what/how much/where" log)
+// ============================================================
+// Flat list of everything logged against "other" (empty/misc) trucks —
+// deliberately not part of the Inventory/Lot system, just a simple record
+// of what arrived and where it was stored, newest first.
+getMiscItems: async (req, res, next) => {
+  try {
+    const { gate_entry_id } = req.query;
+
+    const where = { is_deleted: false };
+    if (gate_entry_id) where.gate_entry_id = gate_entry_id;
+
+    const items = await GateEntryMiscItem.findAll({
+      where,
+      include: [
+        {
+          model: GateEntry,
+          as: "gate_entry",
+          attributes: ["id", "token_no", "entry_time", "challan_no"],
+          include: [
+            {
+              model: Vehicle,
+              as: "vehicle",
+              attributes: ["id", "vehicle_no"],
+            },
+            {
+              model: Driver,
+              as: "driver",
+              attributes: ["id", "name"],
+            },
+          ],
+        },
+      ],
+      order: [["created_at", "DESC"]],
+    });
+
+    res.status(200).json({ success: true, data: items });
+  } catch (err) {
     next(err);
   }
 },

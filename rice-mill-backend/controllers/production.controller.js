@@ -226,7 +226,7 @@ module.exports = {
 
         if (requestedQty > roundedAvailable + tolerance) {
           const material = await MaterialMaster.findByPk(item.material_id);
-          throw createError(400, `${material?.name || item.material_id}: requested ${requestedQty.toFixed(3)} tons exceeds available stock (${roundedAvailable.toFixed(3)} tons)`);
+          throw createError(400, `${material?.name || item.material_id}: requested ${requestedQty.toFixed(3)} Qtl exceeds available stock (${roundedAvailable.toFixed(3)} Qtl)`);
         }
 
         const stockRows = await Inventory.findAll({
@@ -277,7 +277,7 @@ module.exports = {
 
       res.status(201).json({
         success: true,
-        msg: `Batch ${batch_no} created with ${materialsData.length} material(s) (${totalInputQty.toFixed(3)} tons total). Complete packing to finish this batch.`,
+        msg: `Batch ${batch_no} created with ${materialsData.length} material(s) (${totalInputQty.toFixed(3)} Qtl total). Complete packing to finish this batch.`,
         data: { ...batch.toJSON(), materials: materialsData, total_input_qty: totalInputQty },
       });
     } catch (err) {
@@ -356,7 +356,7 @@ module.exports = {
         const material = await MaterialMaster.findByPk(materialIdNum);
         throw createError(
           400,
-          `${material?.name || materialIdNum}: requested ${requestedQty.toFixed(3)} tons exceeds available stock (${availableQty.toFixed(3)} tons)`
+          `${material?.name || materialIdNum}: requested ${requestedQty.toFixed(3)} Qtl exceeds available stock (${availableQty.toFixed(3)} Qtl)`
         );
       }
 
@@ -397,7 +397,7 @@ module.exports = {
       const updated = await ProductionBatch.findByPk(batch.id, { include: detailIncludes });
       res.status(200).json({
         success: true,
-        msg: `Material added. Batch total is now ${newTotalQty.toFixed(3)} tons.`,
+        msg: `Material added. Batch total is now ${newTotalQty.toFixed(3)} Qtl.`,
         data: updated,
       });
     } catch (err) {
@@ -439,7 +439,7 @@ module.exports = {
         const material = await MaterialMaster.findByPk(materialIdNum);
         throw createError(
           400,
-          `${material?.name || materialIdNum}: requested ${requestedQty.toFixed(3)} tons exceeds available stock (${availableExcludingSelf.toFixed(3)} tons)`
+          `${material?.name || materialIdNum}: requested ${requestedQty.toFixed(3)} Qtl exceeds available stock (${availableExcludingSelf.toFixed(3)} Qtl)`
         );
       }
 
@@ -455,7 +455,7 @@ module.exports = {
       const updated = await ProductionBatch.findByPk(batch.id, { include: detailIncludes });
       res.status(200).json({
         success: true,
-        msg: `Quantity updated. Batch total is now ${newTotalQty.toFixed(3)} tons.`,
+        msg: `Quantity updated. Batch total is now ${newTotalQty.toFixed(3)} Qtl.`,
         data: updated,
       });
     } catch (err) {
@@ -504,7 +504,7 @@ module.exports = {
         const material = await MaterialMaster.findByPk(newMaterialId);
         throw createError(
           400,
-          `${material?.name || newMaterialId}: this line needs ${qty.toFixed(3)} tons but only ${availableQty.toFixed(3)} tons available`
+          `${material?.name || newMaterialId}: this line needs ${qty.toFixed(3)} Qtl but only ${availableQty.toFixed(3)} Qtl available`
         );
       }
 
@@ -578,7 +578,7 @@ module.exports = {
       const updated = await ProductionBatch.findByPk(batch.id, { include: detailIncludes });
       res.status(200).json({
         success: true,
-        msg: `Material removed. Batch total is now ${newTotalQty.toFixed(3)} tons.`,
+        msg: `Material removed. Batch total is now ${newTotalQty.toFixed(3)} Qtl.`,
         data: updated,
       });
     } catch (err) {

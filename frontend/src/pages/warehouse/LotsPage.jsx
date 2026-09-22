@@ -98,7 +98,7 @@ export default function LotsPage() {
       {editingId && (
         <form className="sf-form" onSubmit={handleUpdate}>
           <div className="sf-field">
-            <label>Qty (Tons)</label>
+            <label>Qty (Qtl)</label>
             <input
               type="number"
               value={editForm.qty}
@@ -179,8 +179,8 @@ export default function LotsPage() {
           },
           { key: "accepted_bags", label: "Accepted Bags" },
           { key: "rejected_bags", label: "Rejected Bags" },
-          { key: "qty", label: "Accepted Qty (Tons)" },
-          { key: "rejected_qty", label: "Rejected Qty (Tons)" },
+          { key: "qty", label: "Accepted Qty (Qtl)" },
+          { key: "rejected_qty", label: "Rejected Qty (Qtl)" },
           {
             key: "parent_lot",
             label: "Parent Lot",

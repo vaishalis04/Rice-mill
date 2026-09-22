@@ -255,7 +255,7 @@ export const ENTITY_OPTIONS = {
       label: "Purchase Order",
       fields: [
         { name: "po_no", label: "PO No.", required: true },
-        { name: "qty", label: "Qty (Tons)", type: "number", required: true },
+        { name: "qty", label: "Qty (Qtl)", type: "number", required: true },
         { name: "rate", label: "Rate", type: "number", required: true },
         { name: "po_date", label: "PO Date", type: "date" },
       ],

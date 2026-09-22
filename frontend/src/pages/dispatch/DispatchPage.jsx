@@ -280,7 +280,7 @@ export default function DispatchPage() {
           },
           {
             key: "qty",
-            label: "Qty (Tons)",
+            label: "Qty (Qtl)",
             render: (row) => row.salesOrder?.qty ?? "—",
           },
           {

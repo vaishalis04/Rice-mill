@@ -81,8 +81,14 @@ export const convertPurchaseApi = (data) =>
   axiosInstance.post("/purchases/convert", data);
 
 // ---------------- GATE ENTRY (role: gate / gateman) ----------------
+// Gate side — Vehicle + Driver (+ Driver Photo) only, prints a token.
 export const generateGateTokenApi = (data) =>
   axiosInstance.post("/gate/generatetoken", data);
+
+// Admin side — attaches Entry Type + PO/SO + Challan/Expected Qty onto a
+// token the Gate generated above (Admin > Gate Entry tab).
+export const attachGateEntryDetailsApi = (data) =>
+  axiosInstance.post("/gate/attach-details", data);
 
 export const gateCheckinApi = (id) =>
   axiosInstance.post("/gate/checkin", { id });
@@ -128,12 +134,20 @@ export const uploadGatePhotoApi = (photoBlob) => {
   });
 };
 
-export const getGateEntriesApi = (status, entry_type) => {
+export const getGateEntriesApi = (status, entry_type, limit) => {
   const params = {};
   if (status) params.status = status;
   if (entry_type) params.entry_type = entry_type;
+  if (limit) params.limit = limit;
   return axiosInstance.get("/gate", { params });
 };
+
+// "Other" (empty/misc) trucks — what arrived & where it's stored, kept
+// outside the formal Inventory system (Admin > Gate Entry log).
+export const getGateMiscItemsApi = (gate_entry_id) =>
+  axiosInstance.get("/gate/misc-items", {
+    params: gate_entry_id ? { gate_entry_id } : {},
+  });
 
 export const getGateEntryByIdApi = (id) => axiosInstance.get(`/gate/${id}`);
 
@@ -569,3 +583,23 @@ export const rejectSalesOrderApi = (so_no, data) =>
 export const getGateEntryApi = (id) => {
   return api.get(`/gate-entries/${id}`);
 };
+
+
+// ---------------- ROLE MANAGEMENT (role: admin) ----------------
+
+
+export const getRoleListApi = () => axiosInstance.get("/role-management");
+export const getRoleByIdApi = (id) => axiosInstance.get(`/role-management/${id}`);
+export const createRoleApi = (data) => axiosInstance.post("/role-management", data);
+export const updateRoleApi = (id, data) => axiosInstance.put(`/role-management/${id}`, data);
+export const deleteRoleApi = (id) => axiosInstance.delete(`/role-management/${id}`);
+export const setRolePermissionsApi = (id, permission_ids) =>
+  axiosInstance.put(`/role-management/${id}/permissions`, { permission_ids });
+export const getPermissionsCatalogApi = () => axiosInstance.get("/role-management/permissions");
+export const createPermissionApi = (data) => axiosInstance.post("/role-management/permissions", data);
+export const deletePermissionApi = (id) => axiosInstance.delete(`/role-management/permissions/${id}`);
+
+
+// ---------------- VISITORS (role: gate / admin) ----------------
+export const getVisitorByIdApi = (id) =>
+  axiosInstance.get(`/visitors/${id}`);

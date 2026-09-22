@@ -332,7 +332,9 @@ CREATE TABLE `gate_entry` (
   `vehicle_id` BIGINT NOT NULL,
   `driver_id` BIGINT NOT NULL,
   `driver_photo_url` VARCHAR(255) NULL,
-  `entry_type` ENUM('purchase','other','sales') NOT NULL DEFAULT 'purchase',
+  -- 'pending' = created at the Gate (vehicle+driver+photo only); Admin
+  -- attaches the real Entry Type via Admin > Gate Entry afterwards.
+  `entry_type` ENUM('pending','purchase','other','sales') NOT NULL DEFAULT 'pending',
   `vendor_id` BIGINT NULL,  -- entry_type = 'purchase' only
   `po_id` BIGINT NULL,
   `so_id` BIGINT NULL,  -- entry_type = 'sales' only (outbound loading)
@@ -343,7 +345,10 @@ CREATE TABLE `gate_entry` (
   `received_warehouse_id` BIGINT NULL,
   `entry_time` DATETIME NULL,
   `exit_time` DATETIME NULL,
-  `gate_status` ENUM('waiting_token', 'waiting_sampling', 'sampling_done', 'accepted', 'rejected', 'waiting_weighment', 'in_process', 'unloading', 'unloaded', 'waiting_loading', 'loaded', 'parked', 'exited') NULL DEFAULT 'waiting_token',  -- notes #2,#5,#13
+  -- 'waiting_token' = token generated at the Gate, not yet checked in.
+  -- 'pending_details' = checked in at the Gate, waiting for Admin to
+  -- attach Entry Type + PO/SO via Admin > Gate Entry.
+  `gate_status` ENUM('pending_details', 'waiting_token', 'waiting_sampling', 'sampling_done', 'accepted', 'rejected', 'waiting_weighment', 'in_process', 'unloading', 'unloaded', 'waiting_loading', 'loaded', 'parked', 'exited') NULL DEFAULT 'waiting_token',  -- notes #2,#5,#13
   `created_by` BIGINT UNSIGNED NULL,
   `updated_by` BIGINT UNSIGNED NULL,
   `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
@@ -359,6 +364,26 @@ CREATE TABLE `gate_entry` (
   FOREIGN KEY (`received_warehouse_id`) REFERENCES `warehouse_master`(`id`),
   FOREIGN KEY (`plant_id`) REFERENCES `plant_master`(`id`),
   KEY `idx_gate_entry_gate_status` (`gate_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- What came in on an "other" (empty/misc) gate entry and where it was put.
+-- Deliberately separate from Inventory/Lots (those are raw material and
+-- finished goods only) — this is just a simple what/how-much/where log so
+-- Admin/Warehouse staff can see what miscellaneous items arrived.
+CREATE TABLE `gate_entry_misc_item` (
+  `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `gate_entry_id` BIGINT NOT NULL,
+  `item_name` VARCHAR(150) NOT NULL,
+  `qty` DECIMAL(12, 2) NOT NULL,
+  `unit` VARCHAR(20) NOT NULL DEFAULT 'nos',
+  `storage_location` VARCHAR(150) NULL,
+  `remarks` VARCHAR(255) NULL,
+  `created_by` BIGINT UNSIGNED NULL,
+  `is_deleted` TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at` DATETIME NOT NULL,
+  `updated_at` DATETIME NOT NULL,
+  FOREIGN KEY (`gate_entry_id`) REFERENCES `gate_entry`(`id`),
+  KEY `idx_gate_entry_misc_item_gate_entry_id` (`gate_entry_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Outbound loading capture at the gate (entry_type = 'sales' flow).

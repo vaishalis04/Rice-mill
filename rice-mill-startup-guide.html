@@ -592,7 +592,7 @@ module.exports = (sequelize) => {<br>
           <li><span class="pill be">BE</span><div class="task-text">Routes: POST /api/gate (create entry + auto-generate token), GET /api/gate (list, filterable by status/date), PATCH /api/gate/:id/status (move status forward). Multer for driver photo upload to /uploads.</div></li>
           <li><span class="pill be">BE</span><div class="task-text">Token generation service: query DB for today's max token, increment, format as GT-20260702-001. Must be atomic — use DB transaction or sequence to avoid race conditions.</div></li>
           <li><span class="pill fe">FE</span><div class="task-text">Gate Entry page: Ant Design Form (vehicle no, vendor dropdown, challan, expected qty, driver name/mobile, photo upload). Submit → POST API. Show success with token number.</div></li>
-          <li><span class="pill fe">FE</span><div class="task-text">Gate Queue page: Ant Design Table showing today's entries with status badges (color-coded: waiting=yellow, rejected=red, unloaded=green). Status action buttons per row.</div></li>
+          <li><span class="pill fe">FE</span><div class="task-text">Gate Queue page: Ant Design Table showing today's entries with status badges (color-coded: waiting=yellow, rejected=red, unloaded=green). Status action butQtl per row.</div></li>
           <li><span class="pill fe">FE</span><div class="task-text">Vendor dropdown: fetch /api/vendors on mount. React-query with useQuery hook.</div></li>
         </ul>
         <div class="deliverable-box">

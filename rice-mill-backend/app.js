@@ -43,6 +43,8 @@ const dashboardRoutes      = require("./routes/dashboard.routes");
 const auditLogRoutes       = require("./routes/auditLog.routes");
 const notificationRoutes   = require("./routes/notification.routes");
 const rejectWasteRoutes    = require("./routes/rejectWaste.routes");
+const roleRoutes = require("./routes/role.routes");
+
 
 const app = express();
 
@@ -92,6 +94,7 @@ app.use("/api/dashboard",        dashboardRoutes);
 app.use("/api/audit-logs",       auditLogRoutes);
 app.use("/api/notifications",    notificationRoutes);
 app.use("/api/reject-waste",     rejectWasteRoutes);
+app.use("/api/role-management", roleRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {

@@ -393,7 +393,7 @@ export default function PurchaseOrdersPage() {
                 <tr>
                   <th>Material</th>
                   <th>Variety</th>
-                  <th>Qty (Tons)</th>
+                  <th>Qty (Qtl)</th>
                   <th>Rate</th>
                   <th></th>
                 </tr>
@@ -461,7 +461,7 @@ export default function PurchaseOrdersPage() {
               creatable
             />
             <div className="sf-field">
-              <label>Qty (Tons)</label>
+              <label>Qty (Qtl)</label>
               <input name="qty" type="number" value={newItem.qty} onChange={handleNewItemChange} />
             </div>
             <div className="sf-field">
@@ -523,7 +523,7 @@ export default function PurchaseOrdersPage() {
                 creatable
               />
               <div className="sf-field">
-                <label>Qty (Tons)</label>
+                <label>Qty (Qtl)</label>
                 <input name="qty" type="number" value={currentItem.qty} onChange={handleItemChange} />
               </div>
               <div className="sf-field">
@@ -542,7 +542,7 @@ export default function PurchaseOrdersPage() {
                     <tr>
                       <th>Material</th>
                       <th>Variety</th>
-                      <th>Qty (Tons)</th>
+                      <th>Qty (Qtl)</th>
                       <th>Rate</th>
                       <th></th>
                     </tr>
@@ -604,7 +604,7 @@ export default function PurchaseOrdersPage() {
           },
           {
             key: "total_qty",
-            label: "Total Qty (Tons)",
+            label: "Total Qty (Qtl)",
             render: (row) => row.total_qty ?? row.items.reduce((s, i) => s + Number(i.qty), 0),
           },
           { key: "po_date", label: "PO Date" },

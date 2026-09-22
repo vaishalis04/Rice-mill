@@ -55,6 +55,7 @@ const AuditLog = require("./auditLog.model");
 const Notification = require("./notification.model");
 const ProcessTimeLog = require("./processTimeLog.model");
 const GateEntrySalesOrder = require("./gateEntrySalesOrder.model");
+const GateEntryMiscItem = require("./gateEntryMiscItem.model");
 
 // -- Associations -------------------------------------------------------------
 // Every belongsTo below has an implicit inverse (hasMany/hasOne) that callers
@@ -422,6 +423,17 @@ GateEntrySalesOrder.belongsTo(MaterialMaster, {
   as: "material",
 });
 
+// "Other" (empty/misc) trucks — items recorded outside the formal
+// Inventory system, just a simple what/how-much/where log.
+GateEntry.hasMany(GateEntryMiscItem, {
+  foreignKey: "gate_entry_id",
+  as: "misc_items",
+});
+GateEntryMiscItem.belongsTo(GateEntry, {
+  foreignKey: "gate_entry_id",
+  as: "gate_entry",
+});
+
 module.exports = {
   sequelize,
   User,
@@ -475,6 +487,7 @@ module.exports = {
   Payment,
   MachineMaintenance,
   GateEntrySalesOrder,
+  GateEntryMiscItem,
   AuditLog,
   Notification,
   ProcessTimeLog,

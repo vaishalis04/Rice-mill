@@ -9,6 +9,9 @@ import CustomersPage from "../sales/CustomersPage";
 import VendorsPage from "../purchase/VendorsPage";
 import PurchaseOrderApprovalPage from "../admin/PurchaseOrderApprovalPage";
 import SalesOrderApprovalPage from "../admin/Salesorderapprovalpage";
+import RolesPage from "../admin/RolesPage";
+import VisitorsPage from "../admin/VisitorsPage";
+import GateEntryAdminPage from "../admin/GateEntryAdminPage";
 
 const TABS = [
   { key: "dashboard", label: "Dashboard" },
@@ -19,7 +22,10 @@ const TABS = [
   { key: "purchaseApproval", label: "PO Approval" },
   { key: "salesApproval", label: "SO Approval" },
   { key: "users", label: "Users" },
+  { key: "visitors", label: "Visitors" },
   { key: "reports", label: "Reports" },
+  { key: "roles", label: "Roles & Permissions" },
+  { key: "gateEntry", label: "Gate Entry" },
 ];
 
 export default function AdminDashboard() {
@@ -32,10 +38,13 @@ export default function AdminDashboard() {
       {tab === "vehicles" && <VehiclesDriversPage />}
       {tab === "customers" && <CustomersPage />}
       {tab === "vendors" && <VendorsPage />}
+      {tab === "visitors" && <VisitorsPage />}
       {tab === "users" && <UsersPage />}
       {tab === "reports" && <ReportsPage />}
       {tab === "purchaseApproval" && <PurchaseOrderApprovalPage />}
       {tab === "salesApproval" && <SalesOrderApprovalPage />}
+      {tab === "roles" && <RolesPage />}
+      {tab === "gateEntry" && <GateEntryAdminPage />}
     </DashboardLayout>
   );
 }

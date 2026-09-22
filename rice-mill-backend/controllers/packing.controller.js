@@ -18,7 +18,7 @@
     },
   ];
 
-  // Deducts `qty` tons of `material_id` from a warehouse's Inventory ledger
+  // Deducts `qty` Qtl of `material_id` from a warehouse's Inventory ledger
   // (oldest rows first) and drops the source Lot's qty by the same amount.
  const consumeFromWarehouse = async ({ warehouse_id, material_id, qty, lot_id, userId }) => {
   // Find inventory rows for this material in the warehouse
@@ -86,7 +86,7 @@
 
     const calculatedQty = packSize * bagCount;
     const qtyInKg = qtyOverride != null && qtyOverride !== "" ? Number(qtyOverride) : calculatedQty;
-    const qtyInTons = qtyInKg / 1000;
+    const qtyInQtl = qtyInKg / 1000;
 
     const resolvedProductionDate = productionDate || new Date().toISOString().slice(0, 10);
     const shelfDays = shelfLifeDays !== undefined ? Number(shelfLifeDays) : DEFAULT_SHELF_LIFE_DAYS;
@@ -131,16 +131,16 @@
       material_id: materialId,
       warehouse_id: destinationWarehouseId,
       stage: "fg",
-      qty_in: qtyInTons,
+      qty_in: qtyInQtl,
       qty_out: 0,
-      balance_qty: qtyInTons,
+      balance_qty: qtyInQtl,
       as_of: new Date(),
       material_id: materialId,
       plant_id: resolvedPlantId,
       created_by: userId,
     });
 
-    return { packing, finishedGoods, qty_in_kg: qtyInKg, qty_in_tons: qtyInTons };
+    return { packing, finishedGoods, qty_in_kg: qtyInKg, qty_in_Qtl: qtyInQtl };
   };
 
   module.exports = {
@@ -267,12 +267,12 @@
       });
 
       const totalKg = results.reduce((sum, r) => sum + r.qty_in_kg, 0);
-      const totalTons = totalKg / 1000;
+      const totalQtl = totalKg / 1000;
 
       res.status(201).json({
         success: true,
-        msg: `Batch ${batch.batch_no} completed. ${results.length} output material(s) packed — ${totalKg} kg (${totalTons.toFixed(3)} tons) added to destination warehouse.`,
-        data: { results, total_qty_kg: totalKg, total_qty_tons: totalTons, batch_status: "completed" },
+        msg: `Batch ${batch.batch_no} completed. ${results.length} output material(s) packed — ${totalKg} kg (${totalQtl.toFixed(3)} Qtl) added to destination warehouse.`,
+        data: { results, total_qty_kg: totalKg, total_qty_Qtl: totalQtl, batch_status: "completed" },
       });
     } catch (err) {
       next(err);

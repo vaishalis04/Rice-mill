@@ -470,7 +470,7 @@ completeUnloading: async (req, res, next) => {
       // ==========================================================
       // bag_size is kg-per-bag, but every other table in this app
       // (Inventory.balance_qty, Lot.qty elsewhere, Stack.qty, Production's
-      // availability math, etc.) treats quantities as TONS. bag_size *
+      // availability math, etc.) treats quantities as Qtl. bag_size *
       // bag_count is a quantity in KG, so it must be divided by 1000
       // before being stored anywhere as "qty" — this was previously
       // missing, which inflated every downstream figure by 1000x.
