@@ -68,6 +68,7 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
   const vehicles = useEntityLookup("vehicle");
   const drivers = useEntityLookup("driver");
   const vendors = useEntityLookup("vendor");
+  const customers = useEntityLookup("customer");
   const salesOrders = useEntityLookup("sales_order");
 
   // prefillSoId is used by the Sales module to jump straight to a
@@ -206,6 +207,35 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
     } catch (err) {
       setError(err.response?.data?.msg || err.response?.data?.message || "Failed to send to warehouse");
     }
+  };
+
+  // Works for purchase (vendor), sales (customer — either the direct
+  // customer_id on the entry, or, for multi-SO sales entries created via
+  // the sales_orders junction, the customer on the first linked Sales
+  // Order) and empty/misc (usually neither — falls through to "—").
+  const getCounterpartyName = (row) => {
+    if (row.vendor?.name) return row.vendor.name;
+    if (row.customer?.name) return row.customer.name;
+    if (row.vendor_id) return vendors.getLabel(row.vendor_id);
+    if (row.customer_id) return customers.getLabel(row.customer_id);
+
+    const linkedSalesOrder = row.sales_orders?.find((so) => so.sales_order?.customer_id)?.sales_order;
+    if (linkedSalesOrder?.customer_id) return customers.getLabel(linkedSalesOrder.customer_id);
+
+    return "—";
+  };
+
+  // Legacy single so_id/salesOrder is unused by the current multi-SO
+  // create flow (see gate.controller.js's GateEntrySalesOrder junction),
+  // so read the actual linked orders off row.sales_orders first.
+  const getSalesOrderLabel = (row) => {
+    if (row.entry_type !== "sales") return "—";
+    const junctionNos = (row.sales_orders || [])
+      .map((so) => so.sales_order?.so_no)
+      .filter(Boolean);
+    if (junctionNos.length) return [...new Set(junctionNos)].join(", ");
+    if (row.so_id) return salesOrders.getLabel(row.so_id);
+    return "—";
   };
 
   return (
@@ -383,18 +413,28 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
             },
             {
               key: "vendor_id",
-              label: "Vendor Name",
-              render: (row) => row.vendor?.name || (row.vendor_id ? vendors.getLabel(row.vendor_id) : "—"),
+              label: "Vendor / Customer Name",
+              render: (row) => getCounterpartyName(row),
+            },
+            {
+              key: "po_no",
+              label: "PO No.",
+              render: (row) => row.purchaseOrder?.po_no || "—",
+            },
+            {
+              key: "materials",
+              label: "Materials",
+              render: (row) => row.material?.name || "—",
             },
             {
               key: "driver_id",
               label: "Driver Name",
-              render: (row) => drivers.getLabel(row.driver_id),
+              render: (row) => row.driver?.name || drivers.getLabel(row.driver_id),
             },
             {
               key: "sales_order",
               label: "Sales Order",
-              render: (row) => (row.entry_type === "sales" ? salesOrders.getLabel(row.so_id) : "—"),
+              render: (row) => getSalesOrderLabel(row),
             },
             {
               key: "gate_status",

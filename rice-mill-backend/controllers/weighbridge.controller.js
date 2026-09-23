@@ -1,6 +1,6 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
-const { WeightSlip, GateEntry, Purchase, PurchaseOrder, User } = require("../models/index");
+const { WeightSlip, GateEntry, Purchase, PurchaseOrder, User, Vendor, Customer, Vehicle, MaterialMaster, SalesOrder } = require("../models/index");
 
 // Gross / Tare / Net capture, slip printing (Module 8)
 // Weighing can happen once a gate entry has either cleared lab QC (gate_status
@@ -14,7 +14,22 @@ const { WeightSlip, GateEntry, Purchase, PurchaseOrder, User } = require("../mod
 // created. Either way the gate entry advances to 'in_process'.
 
 const detailIncludes = [
-  { model: GateEntry, as: "gateEntry", attributes: ["id", "token_no", "gate_status", "entry_type", "po_id", "vendor_id", "material_id"] },
+  {
+    model: GateEntry,
+    as: "gateEntry",
+    // vendor/customer/vehicle/PO/SO/material nested here so WeightSlipsPage's
+    // list can show "Vendor/Customer Name", "PO/SO No.", "Vehicle No." and
+    // "Materials" instead of a bare numeric gate_entry_id.
+    attributes: ["id", "token_no", "gate_status", "entry_type", "po_id", "so_id", "vendor_id", "customer_id", "vehicle_id", "material_id"],
+    include: [
+      { model: Vendor, as: "vendor", attributes: ["id", "name", "vendor_code"] },
+      { model: Customer, as: "customer", attributes: ["id", "name", "customer_code"] },
+      { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
+      { model: PurchaseOrder, as: "purchaseOrder", attributes: ["id", "po_no"] },
+      { model: SalesOrder, as: "salesOrder", attributes: ["id", "so_no"] },
+      { model: MaterialMaster, as: "material", attributes: ["id", "material_code", "name"] },
+    ],
+  },
   { model: User, as: "operator", attributes: ["id", "username", "email"] },
 ];
 

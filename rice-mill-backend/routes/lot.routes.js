@@ -1,10 +1,10 @@
 const router = require("express").Router();
 const Controller = require("../controllers/lot.controller");
-const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Unloading & Lot traceability (Module 9 workflow entry point)
-router.use(verifyAccessToken, attachUser, authorize("warehouse","production"));
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["warehouse","production"], ["warehouse","production"]));
 
 router.get("/", Controller.getAll);
 router.get("/:id", Controller.getById);

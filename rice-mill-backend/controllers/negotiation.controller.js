@@ -1,5 +1,5 @@
 const createError = require("http-errors");
-const { Negotiation, LabTest, Sampling, GateEntry, PurchaseOrder, User } = require("../models/index");
+const { Negotiation, LabTest, Sampling, GateEntry, PurchaseOrder, User, Vendor, Vehicle } = require("../models/index");
 
 // Rate revision workflow (Module 7)
 // A negotiation can only be opened against a lab test whose verdict is 'negotiation'.
@@ -17,8 +17,21 @@ const detailIncludes = [
       {
         model: Sampling,
         as: "sampling",
-        attributes: ["id", "gate_entry_id"],
-        include: [{ model: GateEntry, as: "gateEntry", attributes: ["id", "token_no", "gate_status", "po_id"] }],
+        // material_id (JSON array) exposed here too so NegotiationsPage can
+        // show "Materials" the same way SamplingPage/LabTestPage do.
+        attributes: ["id", "gate_entry_id", "material_id"],
+        include: [{
+          model: GateEntry,
+          as: "gateEntry",
+          // vendor/vehicle/PO nested so the list can show "Vendor Name",
+          // "PO No." and "Vehicle No." next to the negotiated rate.
+          attributes: ["id", "token_no", "gate_status", "po_id", "vendor_id", "vehicle_id"],
+          include: [
+            { model: Vendor, as: "vendor", attributes: ["id", "name", "vendor_code"] },
+            { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
+            { model: PurchaseOrder, as: "purchaseOrder", attributes: ["id", "po_no"] },
+          ],
+        }],
       },
     ],
   },

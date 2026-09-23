@@ -244,6 +244,24 @@ export default function SamplingPage() {
     }
   };
 
+  // po_id on a sample is a JSON array of purchase_order ids — map each to
+  // its po_no using the grouped PO list already loaded for the form above.
+  const getPoNumbers = (row) => {
+    let poIds = [];
+    if (Array.isArray(row.po_id)) {
+      poIds = row.po_id;
+    } else if (row.po_id) {
+      poIds = [row.po_id];
+    }
+    poIds = poIds.filter(Boolean);
+    if (poIds.length === 0) return "—";
+
+    const names = poIds
+      .map((id) => purchaseOrders.find((po) => String(po.id) === String(id))?.po_no)
+      .filter(Boolean);
+    return names.length ? [...new Set(names)].join(", ") : "—";
+  };
+
   const getMaterialNames = (row) => {
     if (row.material_names && Array.isArray(row.material_names)) {
       return row.material_names.join(', ');
@@ -846,6 +864,21 @@ export default function SamplingPage() {
           onDelete={handleDelete}
           columns={[
             { key: "sample_code", label: "Sample Code" },
+            {
+              key: "vendor_name",
+              label: "Vendor Name",
+              render: (row) => row.gateEntry?.vendor?.name || "—",
+            },
+            {
+              key: "po_no",
+              label: "PO No.",
+              render: (row) => getPoNumbers(row),
+            },
+            {
+              key: "vehicle_no",
+              label: "Vehicle No.",
+              render: (row) => row.gateEntry?.vehicle?.vehicle_no || "—",
+            },
             { 
               key: "materials", 
               label: "Materials", 

@@ -1,11 +1,14 @@
 const router = require("express").Router();
 const Controller = require("../controllers/vehicleDriver.controller");
-const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Vehicle / driver master & history (Module 20)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorize("admin","gate","warehouse","dispatch","production","lab","weighbridge")); // Protected routes
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(
+  ["admin","gate","warehouse","dispatch","production","lab","weighbridge"],
+  ["gate","warehouse","dispatch","production","lab","weighbridge"]
+)); // Protected routes
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

@@ -201,7 +201,31 @@ export default function WeightSlipsPage() {
         onDelete={handleDelete}
         columns={[
           { key: "slip_no", label: "Slip No." },
-          { key: "gate_entry_id", label: "Gate Entry ID" },
+          {
+            key: "vendor_customer_name",
+            label: "Vendor/Customer Name",
+            render: (row) => row.gateEntry?.vendor?.name || row.gateEntry?.customer?.name || "—",
+          },
+          {
+            key: "po_so_no",
+            label: "PO/SO No.",
+            render: (row) => row.gateEntry?.purchaseOrder?.po_no || row.gateEntry?.salesOrder?.so_no || "—",
+          },
+          {
+            key: "vehicle_no",
+            label: "Vehicle No.",
+            render: (row) => row.gateEntry?.vehicle?.vehicle_no || "—",
+          },
+          {
+            key: "materials",
+            label: "Materials",
+            render: (row) => row.gateEntry?.material?.name || "—",
+          },
+          {
+            key: "gate_entry_id",
+            label: "Gate Entry",
+            render: (row) => row.gateEntry?.token_no || `#${row.gate_entry_id}`,
+          },
           { key: "gross_weight", label: "Gross Wt" },
           { key: "tare_weight", label: "Tare Wt" },
           {

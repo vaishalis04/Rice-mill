@@ -5,6 +5,7 @@ import {
   updateNegotiationApi,
   respondNegotiationApi,
   deleteNegotiationApi,
+  getMasterSettingsApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
@@ -24,6 +25,7 @@ export default function NegotiationsPage() {
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [allMaterials, setAllMaterials] = useState({});
 
   const load = () => {
     setLoading(true);
@@ -34,6 +36,41 @@ export default function NegotiationsPage() {
   };
 
   useEffect(load, []);
+
+  // Id -> name lookup so the Materials column can resolve the sampling's
+  // material_id (JSON array) to readable names, same pattern as
+  // SamplingPage/LabTestPage.
+  useEffect(() => {
+    getMasterSettingsApi("material")
+      .then((res) => {
+        const materials = res.data.data ?? res.data;
+        const map = {};
+        materials.forEach((m) => {
+          map[m.id] = m.name;
+        });
+        setAllMaterials(map);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Negotiation -> LabTest -> Sampling -> GateEntry, all nested in the
+  // /api/negotiations response (see negotiation.controller.js detailIncludes).
+  const getVendorName = (row) => row.labTest?.sampling?.gateEntry?.vendor?.name || "—";
+  const getVehicleNo = (row) => row.labTest?.sampling?.gateEntry?.vehicle?.vehicle_no || "—";
+  const getPoNo = (row) => row.labTest?.sampling?.gateEntry?.purchaseOrder?.po_no || "—";
+  const getMaterialNames = (row) => {
+    let ids = row.labTest?.sampling?.material_id;
+    if (typeof ids === "string") {
+      try {
+        ids = JSON.parse(ids);
+      } catch {
+        ids = [];
+      }
+    }
+    if (!Array.isArray(ids)) ids = ids ? [ids] : [];
+    if (ids.length === 0) return "—";
+    return ids.map((id) => allMaterials[id] || `Material ${id}`).join(", ");
+  };
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -176,6 +213,26 @@ export default function NegotiationsPage() {
             key: "lab_test_id",
             label: "Lab Test",
             render: (row) => labTests.getLabel(row.lab_test_id),
+          },
+          {
+            key: "vendor_name",
+            label: "Vendor Name",
+            render: (row) => getVendorName(row),
+          },
+          {
+            key: "po_no",
+            label: "PO No.",
+            render: (row) => getPoNo(row),
+          },
+          {
+            key: "vehicle_no",
+            label: "Vehicle No.",
+            render: (row) => getVehicleNo(row),
+          },
+          {
+            key: "materials",
+            label: "Materials",
+            render: (row) => getMaterialNames(row),
           },
           { key: "old_rate", label: "Old Rate" },
           { key: "proposed_rate", label: "Proposed Rate" },

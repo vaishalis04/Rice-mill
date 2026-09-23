@@ -8,7 +8,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 router.use(
   verifyAccessToken,
   attachUser,
-  authorizeRoleOrModule(["purchase", "admin", "sales", "gate", "warehouse", "lab"], ["purchase"]),
+  authorizeRoleOrModule(["purchase", "admin", "sales", "gate", "warehouse", "lab"], ["purchase", "sales", "gate", "warehouse", "lab"]),
 ); // Protected routes
 
 router.get("/grouped", Controller.getAllGrouped); // must be before "/:id" (GET) or it'd be swallowed as id="grouped"

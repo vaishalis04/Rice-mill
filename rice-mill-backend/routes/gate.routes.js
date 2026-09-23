@@ -11,7 +11,7 @@ const { uploadImage } = require("../helpers/multer.helper");
 // from here too.
 // "admin" is included because Admin > Gate Entry now attaches Entry Type /
 // PO / SO details onto the tokens the Gate creates (see attachDetails).
-router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["gate","warehouse","production","lab","purchase","weighbridge","admin"], ["gate"]));
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["gate","warehouse","production","lab","purchase","weighbridge","admin"], ["gate","warehouse","production","lab","purchase","weighbridge"]));
 
 router.get("/",     Controller.getAll);
 // Must come before "/:id" — otherwise Express would treat "misc-items" as

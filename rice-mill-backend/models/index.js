@@ -101,6 +101,7 @@ GateEntry.belongsTo(Vehicle, { foreignKey: "vehicle_id", as: "vehicle" });
 Visitor.belongsTo(User, { foreignKey: "created_by", as: "createdByUser" });
 GateEntry.belongsTo(Driver, { foreignKey: "driver_id", as: "driver" });
 GateEntry.belongsTo(Vendor, { foreignKey: "vendor_id", as: "vendor" });
+GateEntry.belongsTo(Customer, { foreignKey: "customer_id", as: "customer" });
 GateEntry.belongsTo(PurchaseOrder, {
   foreignKey: "po_id",
   as: "purchaseOrder",

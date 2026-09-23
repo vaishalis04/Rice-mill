@@ -274,6 +274,11 @@ export default function DispatchPage() {
             render: (row) => row.salesOrder?.customer?.name || "—",
           },
           {
+            key: "materials",
+            label: "Materials",
+            render: (row) => row.salesOrder?.material?.name || "—",
+          },
+          {
             key: "address",
             label: "Address",
             render: (row) => row.salesOrder?.customer?.address || "—",

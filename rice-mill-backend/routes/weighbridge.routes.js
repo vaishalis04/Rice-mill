@@ -12,8 +12,8 @@ router.use(verifyAccessToken, attachUser);
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);
 
-router.post("/",    authorizeRoleOrModule(["gate", "weighbridge"], ["weighbridge"]), Controller.create);
-router.put("/:id",  authorizeRoleOrModule(["gate", "weighbridge"], ["weighbridge"]), Controller.update);
-router.delete("/:id", authorizeRoleOrModule(["gate", "weighbridge"], ["weighbridge"]), Controller.delete);
+router.post("/",    authorizeRoleOrModule(["gate", "weighbridge"], ["weighbridge", "gate"]), Controller.create);
+router.put("/:id",  authorizeRoleOrModule(["gate", "weighbridge"], ["weighbridge", "gate"]), Controller.update);
+router.delete("/:id", authorizeRoleOrModule(["gate", "weighbridge"], ["weighbridge", "gate"]), Controller.delete);
 
 module.exports = router;

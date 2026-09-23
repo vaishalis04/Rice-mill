@@ -1,11 +1,11 @@
 const router = require("express").Router();
 const Controller = require("../controllers/finishedGoods.controller");
-const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // FG stock, rack/pallet, aging (Module 17)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorize("warehouse","production","gate","dispatch"));
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["warehouse","production","gate","dispatch"], ["warehouse","production","gate","dispatch"]));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

@@ -1,6 +1,6 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
-const { GateEntry, Sampling, User, PurchaseOrder, MaterialMaster,GateEntryPurchaseOrder } = require("../models/index");
+const { GateEntry, Sampling, User, PurchaseOrder, MaterialMaster,GateEntryPurchaseOrder, Vendor, Vehicle } = require("../models/index");
 const { generateCode } = require("../helpers/helperFunction");
 const sequelize = require("../config/db");
 
@@ -8,8 +8,15 @@ const detailIncludes = [
   {
     model: GateEntry,
     as: "gateEntry",
-    attributes: ["id", "token_no", "gate_status", "vendor_id"],
+    // vendor/vehicle nested here so list views (e.g. SamplingPage) can show
+    // "Vendor Name" and "Vehicle No." alongside the sample code, PO and
+    // materials without a second round-trip fetch.
+    attributes: ["id", "token_no", "gate_status", "vendor_id", "vehicle_id"],
     // no nested material here — gateEntry.material_id is null for multi-material entries
+    include: [
+      { model: Vendor, as: "vendor", attributes: ["id", "name", "vendor_code"] },
+      { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
+    ],
   },
   {
     model: MaterialMaster,

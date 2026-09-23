@@ -121,6 +121,7 @@ function authorizeRoleOrModule(roleNames = [], modules = []) {
 
       const roleId = req.user.role_id || req.user.role?.id;
       if (!roleId) {
+        console.warn(`[authorizeRoleOrModule] ${req.method} ${req.originalUrl} — no role_id on req.user`);
         return next(createError.Forbidden("Access denied: insufficient permissions"));
       }
 
@@ -128,6 +129,7 @@ function authorizeRoleOrModule(roleNames = [], modules = []) {
         where: { role_id: roleId, is_deleted: false },
       });
       if (grants.length === 0) {
+        console.warn(`[authorizeRoleOrModule] ${req.method} ${req.originalUrl} — role_id ${roleId} has zero permissions granted`);
         return next(createError.Forbidden("Access denied: insufficient permissions"));
       }
 
@@ -141,6 +143,13 @@ function authorizeRoleOrModule(roleNames = [], modules = []) {
       });
 
       if (matched === 0) {
+        const grantedPermissions = await Permission.findAll({
+          where: { id: { [Op.in]: grantedPermissionIds }, is_deleted: false },
+          attributes: ["module", "action"],
+        });
+        console.warn(
+          `[authorizeRoleOrModule] ${req.method} ${req.originalUrl} — role_id ${roleId} needs module in [${modules.join(", ")}] but has: [${grantedPermissions.map((p) => p.module).join(", ") || "none"}]`
+        );
         return next(createError.Forbidden("Access denied: insufficient permissions"));
       }
       next();

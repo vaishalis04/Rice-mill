@@ -137,6 +137,21 @@ export default function LotsPage() {
         columns={[
           { key: "lot_no", label: "Lot No." },
           {
+            key: "vendor_name",
+            label: "Vendor Name",
+            render: (row) => row.purchase?.gateEntry?.vendor?.name || "—",
+          },
+          {
+            key: "po_no",
+            label: "PO No.",
+            render: (row) => row.purchase?.purchaseOrder?.po_no || "—",
+          },
+          {
+            key: "vehicle_no",
+            label: "Vehicle No.",
+            render: (row) => row.purchase?.gateEntry?.vehicle?.vehicle_no || "—",
+          },
+          {
             key: "gate_entry_id",
             label: "Gate Entry",
             render: (row) =>

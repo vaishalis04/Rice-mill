@@ -15,6 +15,13 @@ GateEntry.init(
     // PO/SO details (see gate.controller.js `attachDetails`).
     entry_type: { type: DataTypes.ENUM("pending", "purchase", "other", "sales"), allowNull: false, defaultValue: "pending" },
     vendor_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "vendors", key: "id" } },
+    // Explicit column (was previously only implied by the
+    // GateEntry.belongsTo(Customer, { foreignKey: "customer_id" })
+    // association in models/index.js) so it's unambiguous that this is a
+    // real, persisted field — same treatment as vendor_id above. Required
+    // for every "sales" entry_type entry; used to show "Customer Name" on
+    // Sales (Outbound) and Empty/Misc trucks in the Gate Entry list.
+    customer_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "customers", key: "id" } },
     po_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "purchase_order", key: "id" } },
     so_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "sales_order", key: "id" } },
     challan_no: { type: DataTypes.STRING(30) },

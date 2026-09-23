@@ -5,7 +5,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Real-time stock ledger across all stages (Module 10)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["warehouse","production","gate","dispatch","sales","admin","lab"], ["warehouse"])); // Protected routes
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["warehouse","production","gate","dispatch","sales","admin","lab"], ["warehouse","production","gate","dispatch","sales","lab"])); // Protected routes
 
 // NOTE: "/stock-summary" must be registered before "/:id" — otherwise
 // Express matches it into the ":id" handler first (id would end up being

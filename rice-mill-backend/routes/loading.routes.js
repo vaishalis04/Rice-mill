@@ -1,10 +1,10 @@
 const router = require("express").Router();
 const Controller = require("../controllers/loading.controller");
-const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Outbound loading capture at the gate (entry_type = "sales" flow, Gate module)
-router.use(verifyAccessToken, attachUser, authorize("gate", "warehouse"));
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["gate", "warehouse"], ["gate", "warehouse"]));
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

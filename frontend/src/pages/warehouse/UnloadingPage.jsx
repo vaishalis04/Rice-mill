@@ -508,6 +508,21 @@ export default function UnloadingPage() {
         rows={inProgressLots}
         columns={[
           { key: "lot_no", label: "Lot No." },
+          {
+            key: "vendor_name",
+            label: "Vendor Name",
+            render: (row) => row.purchase?.gateEntry?.vendor?.name || "—",
+          },
+          {
+            key: "po_no",
+            label: "PO No.",
+            render: (row) => row.purchase?.purchaseOrder?.po_no || "—",
+          },
+          {
+            key: "vehicle_no",
+            label: "Vehicle No.",
+            render: (row) => row.purchase?.gateEntry?.vehicle?.vehicle_no || "—",
+          },
           { key: "material", label: "Material", render: (row) => row.material?.name || "—" },
           {
             key: "gate_entry_id",
@@ -555,6 +570,21 @@ export default function UnloadingPage() {
         rows={unloadedLots}
         columns={[
           { key: "lot_no", label: "Lot No." },
+          {
+            key: "vendor_name",
+            label: "Vendor Name",
+            render: (row) => row.purchase?.gateEntry?.vendor?.name || "—",
+          },
+          {
+            key: "po_no",
+            label: "PO No.",
+            render: (row) => row.purchase?.purchaseOrder?.po_no || "—",
+          },
+          {
+            key: "vehicle_no",
+            label: "Vehicle No.",
+            render: (row) => row.purchase?.gateEntry?.vehicle?.vehicle_no || "—",
+          },
           { key: "material", label: "Material", render: (row) => row.material?.name || "—" },
           {
             key: "warehouse_id",

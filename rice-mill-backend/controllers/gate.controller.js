@@ -35,6 +35,11 @@ const detailIncludes = [
     attributes: ["id", "vendor_code", "name", "vendor_type"],
   },
   {
+    model: Customer,
+    as: "customer",
+    attributes: ["id", "customer_code", "name"],
+  },
+  {
     model: PurchaseOrder,
     as: "purchaseOrder",
     attributes: ["id", "po_no", "qty", "rate"],
@@ -90,6 +95,7 @@ const validateReferences = async ({
   material_id,
   po_id,
   so_id,
+  customer_id,
   entry_type = "purchase",
 }) => {
   // =====================================================
@@ -597,6 +603,12 @@ getById: async (req, res, next) => {
           model: Vendor,
           as: "vendor",
           attributes: ["id", "vendor_code", "name", "vendor_type"],
+        },
+        // Customer
+        {
+          model: Customer,
+          as: "customer",
+          attributes: ["id", "customer_code", "name"],
         },
         // Plant
         {

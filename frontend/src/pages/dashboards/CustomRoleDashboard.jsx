@@ -91,6 +91,7 @@ export default function CustomRoleDashboard() {
   return (
     <DashboardLayout
       title={roleName ? `${roleName} Dashboard` : "Dashboard"}
+      roleLabel={roleName || undefined}
       tabs={visibleTabs.map((t) => ({ key: t.key, label: t.label }))}
       activeTab={tab}
       onTabChange={setTab}

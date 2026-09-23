@@ -1,7 +1,7 @@
 const createError = require("http-errors");
 const {
   Lot, Purchase, GateEntry, MaterialMaster, VarietyMaster, PurchaseOrder, Sampling, LabTest,
-  Stack, WarehouseMaster, BinStackMaster, Inventory, User,WeightSlip
+  Stack, WarehouseMaster, BinStackMaster, Inventory, User,WeightSlip, Vendor, Vehicle
 } = require("../models/index");
 const { generateLotNo } = require("../helpers/helperFunction");
 
@@ -9,18 +9,28 @@ const lotIncludes = [
   {
     model: Purchase,
     as: "purchase",
-    attributes: ["id", "gate_entry_id", "final_qty", "final_rate"],
-    include: [{
-      model: GateEntry,
-      as: "gateEntry",
-      attributes: ["id", "token_no"],
-      include: [{
-        model: Sampling,
-        as: "samplings",
-        attributes: ["id", "sample_code"],
-        include: [{ model: LabTest, as: "labTest", attributes: ["id", "comment"] }],
-      }],
-    }],
+    attributes: ["id", "gate_entry_id", "final_qty", "final_rate", "po_id"],
+    include: [
+      // po_no nested here so LotsPage/UnloadingPage can show "PO No."
+      { model: PurchaseOrder, as: "purchaseOrder", attributes: ["id", "po_no"] },
+      {
+        model: GateEntry,
+        as: "gateEntry",
+        // vendor/vehicle nested here so the list can show "Vendor Name" and
+        // "Vehicle No." alongside the lot/PO/materials.
+        attributes: ["id", "token_no", "vendor_id", "vehicle_id"],
+        include: [
+          { model: Vendor, as: "vendor", attributes: ["id", "name", "vendor_code"] },
+          { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
+          {
+            model: Sampling,
+            as: "samplings",
+            attributes: ["id", "sample_code"],
+            include: [{ model: LabTest, as: "labTest", attributes: ["id", "comment"] }],
+          },
+        ],
+      },
+    ],
   },
   { model: MaterialMaster, as: "material", attributes: ["id", "material_code", "name"] },
   { model: VarietyMaster, as: "variety", attributes: ["id", "variety_name"] },

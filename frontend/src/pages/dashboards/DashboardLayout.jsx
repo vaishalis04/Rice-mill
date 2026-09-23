@@ -23,6 +23,7 @@ export default function DashboardLayout({
   activeTab,
   onTabChange,
   children,
+  roleLabel,
 }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -57,7 +58,7 @@ export default function DashboardLayout({
             <h1>{title}</h1>
             <p className="dash-user">
               <span className="dash-role-pill">
-                {ROLE_NAME[user?.role_id] || "Unknown role"}
+                {roleLabel || ROLE_NAME[user?.role_id] || "Unknown role"}
               </span>
               <strong>{user?.username}</strong>
               {user?.plant_id ? ` · Plant #${user.plant_id}` : ""}

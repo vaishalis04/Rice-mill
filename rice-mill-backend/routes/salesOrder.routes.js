@@ -8,7 +8,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 router.use(
   verifyAccessToken,
   attachUser,
-  authorizeRoleOrModule(["sales", "admin", "gate", "warehouse", "lab", "dispatch"], ["sales"]),
+  authorizeRoleOrModule(["sales", "admin", "gate", "warehouse", "lab", "dispatch"], ["sales", "gate", "warehouse", "lab", "dispatch"]),
 ); // Protected routes
 
 router.get(

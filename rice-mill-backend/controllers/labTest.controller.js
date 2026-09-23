@@ -1,5 +1,5 @@
 const createError = require("http-errors");
-const { Sampling, LabTest, GateEntry, VarietyMaster, User, Negotiation, PurchaseOrder } = require("../models/index");
+const { Sampling, LabTest, GateEntry, VarietyMaster, User, Negotiation, PurchaseOrder, Vendor, Vehicle } = require("../models/index");
 
 // Same MariaDB/Sequelize JSON-column quirk fixed elsewhere in this codebase
 // (purchase.controller.js, loading.controller.js, salesOrder.controller.js):
@@ -27,7 +27,17 @@ const detailIncludes = [
     model: Sampling,
     as: "sampling",
     attributes: ["id", "sample_code", "gate_entry_id"],
-    include: [{ model: GateEntry, as: "gateEntry", attributes: ["id", "token_no", "gate_status"] }],
+    // vendor/vehicle nested here so LabTestPage's list can show "Vendor Name"
+    // and "Vehicle No." alongside the sample code, PO and materials.
+    include: [{
+      model: GateEntry,
+      as: "gateEntry",
+      attributes: ["id", "token_no", "gate_status", "vendor_id", "vehicle_id"],
+      include: [
+        { model: Vendor, as: "vendor", attributes: ["id", "name", "vendor_code"] },
+        { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
+      ],
+    }],
   },
   { model: VarietyMaster, as: "detectedVariety", attributes: ["id", "variety_name"] },
   { model: User, as: "tester", attributes: ["id", "username", "email"] },

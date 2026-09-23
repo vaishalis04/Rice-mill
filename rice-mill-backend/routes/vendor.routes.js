@@ -5,7 +5,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Vendor master, rating, ledger (Module 3)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["purchase","admin","sales","gate","warehouse","lab"], ["purchase"])); // Protected routes
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["purchase","admin","sales","gate","warehouse","lab"], ["purchase","sales","gate","warehouse","lab"])); // Protected routes
 
 router.get("/",     Controller.getAll);
 router.get("/:id",  Controller.getById);

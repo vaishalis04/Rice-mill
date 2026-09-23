@@ -5,7 +5,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Stack/Bin/Lot, raw material storage (Module 9)
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
-router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["warehouse", "gate", "production"], ["warehouse"]));
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["warehouse", "gate", "production"], ["warehouse", "gate", "production"]));
 
 // NOTE: literal paths ("/stock", "/stock-detail") must be registered
 // BEFORE "/:id" — otherwise Express matches them into the ":id" handler

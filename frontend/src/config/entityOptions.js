@@ -108,21 +108,13 @@ export const ENTITY_OPTIONS = {
     },
   },
   driver: {
-    fetch: async () => {
-      const [driverRows, gateRows] = await Promise.all([
-        getVehiclesDriversApi("driver").then(unwrap),
-        getGateEntriesApi(undefined, undefined, 500).then(unwrap),
-      ]);
-      const exitedDriverIds = new Set(
-        (gateRows || [])
-          .filter((row) => row.gate_status === "exited")
-          .map((row) => String(row.driver_id))
-          .filter(Boolean),
-      );
-      return (driverRows || []).filter(
-        (row) => !exitedDriverIds.has(String(row.id)),
-      );
-    },
+    // NOTE: this used to filter out any driver with an "exited" gate entry
+    // in their history — but that's *every* driver eventually, since a
+    // truck's journey always ends at "exited". That was silently making
+    // this shared lookup (used for rendering driver names in tables, not
+    // just the picker) return "#id" fallbacks instead of real names for
+    // most drivers over time. Just return the full list.
+    fetch: async () => getVehiclesDriversApi("driver").then(unwrap),
     getLabel: (row) => `${row.name}${row.mobile ? ` (${row.mobile})` : ""}`,
     quickCreate: {
       label: "Driver",
@@ -255,7 +247,7 @@ export const ENTITY_OPTIONS = {
       label: "Purchase Order",
       fields: [
         { name: "po_no", label: "PO No.", required: true },
-        { name: "qty", label: "Qty (Qtl)", type: "number", required: true },
+        { name: "qty", label: "Qty (Tons)", type: "number", required: true },
         { name: "rate", label: "Rate", type: "number", required: true },
         { name: "po_date", label: "PO Date", type: "date" },
       ],

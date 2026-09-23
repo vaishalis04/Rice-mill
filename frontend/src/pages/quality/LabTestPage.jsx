@@ -964,6 +964,30 @@ export default function LabTestPage() {
               render: (row) => samplings.getLabel(row.sampling_id),
             },
             {
+              key: "vendor_name",
+              label: "Vendor Name",
+              render: (row) => {
+                const sample = samplings.rows.find((s) => String(s.id) === String(row.sampling_id));
+                return sample?._vendorName || row.sampling?.gateEntry?.vendor?.name || "—";
+              },
+            },
+            {
+              key: "po_no",
+              label: "PO No.",
+              render: (row) => {
+                const sample = samplings.rows.find((s) => String(s.id) === String(row.sampling_id));
+                return sample?._poNos?.length ? sample._poNos.join(", ") : "—";
+              },
+            },
+            {
+              key: "vehicle_no",
+              label: "Vehicle No.",
+              render: (row) => {
+                const sample = samplings.rows.find((s) => String(s.id) === String(row.sampling_id));
+                return sample?._vehicleNo || row.sampling?.gateEntry?.vehicle?.vehicle_no || "—";
+              },
+            },
+            {
               key: "materials",
               label: "Materials",
               render: (row) => getMaterialNames(row),

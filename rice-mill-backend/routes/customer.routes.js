@@ -4,7 +4,7 @@ const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
 // Customer master incl. by-product buyers
-router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["Sales", "admin", "dispatch"], ["sales"]));
+router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["Sales", "admin", "dispatch"], ["sales", "dispatch"]));
 
 router.get("/",     Controller.getAll);
 router.get("/:id/history", Controller.getHistory);
