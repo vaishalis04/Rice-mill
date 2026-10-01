@@ -5,6 +5,9 @@ const User = require("./user.model");
 const Role = require("./role.model");
 const Permission = require("./permission.model");
 const RolePermission = require("./rolePermission.model");
+const UserPermission = require("./userPermission.model");
+const UserRegistrationRequest = require("./userRegistrationRequest.model");
+const PaymentSettlement = require("./Paymentsettlement.model");
 const Vendor = require("./vendor.model");
 const Customer = require("./customer.model");
 const Driver = require("./driver.model");
@@ -70,6 +73,13 @@ RolePermission.belongsTo(Permission, {
   foreignKey: "permission_id",
   as: "permission",
 });
+UserPermission.belongsTo(User, { foreignKey: "user_id", as: "user" });
+UserPermission.belongsTo(Permission, { foreignKey: "permission_id", as: "permission" });
+User.hasMany(UserPermission, { foreignKey: "user_id", as: "directPermissions" });
+UserRegistrationRequest.belongsTo(User, { foreignKey: "created_user_id", as: "createdUser" });
+UserRegistrationRequest.belongsTo(User, { foreignKey: "reviewed_by", as: "reviewer" });
+PaymentSettlement.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
+PaymentSettlement.belongsTo(User, { foreignKey: "created_by", as: "creator" });
 Vehicle.belongsTo(Vendor, { foreignKey: "owner_vendor_id", as: "ownerVendor" });
 MaterialMaster.belongsTo(UomMaster, { foreignKey: "uom_id", as: "uom" });
 MaterialMaster.belongsTo(VarietyMaster, {
@@ -441,6 +451,9 @@ module.exports = {
   Role,
   Permission,
   RolePermission,
+  UserPermission,
+  UserRegistrationRequest,
+  PaymentSettlement,
   Vendor,
   Customer,
   Driver,

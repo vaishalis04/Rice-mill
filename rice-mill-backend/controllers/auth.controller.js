@@ -1,8 +1,9 @@
 const createError = require("http-errors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { Op } = require("sequelize");
 
-const { User, Role, PlantMaster, RolePermission, Permission } = require("../models");
+const { User, Role, PlantMaster, RolePermission, Permission, UserPermission } = require("../models");
 const { generateCode } = require("../helpers/helperFunction");
 
 const ACCESS_TOKEN_SECRET =
@@ -80,17 +81,25 @@ module.exports = {
   // Login
   login: async (req, res, next) => {
     try {
-      const { email, password } = req.body;
+      // Backward compatible: existing callers sending { email, password }
+      // keep working exactly as before. New callers (or the same login
+      // form) can send { identifier, password } instead, where identifier
+      // is matched against email, username OR phone — so a user created
+      // by an admin, or approved from a self-registration request, can log
+      // in with their mobile number and password just as well as email.
+      const { email, identifier, password } = req.body;
+      const lookup = identifier || email;
+      if (!lookup) throw createError.BadRequest("Email/username/mobile number is required");
 
       const user = await User.findOne({
         where: {
-          email,
           is_deleted: false,
+          [Op.or]: [{ email: lookup }, { username: lookup }, { phone: lookup }],
         },
       });
 
       if (!user) {
-        throw createError.Unauthorized("Invalid Email or Password");
+        throw createError.Unauthorized("Invalid Email/Mobile No. or Password");
       }
 
       const match = await bcrypt.compare(
@@ -99,7 +108,7 @@ module.exports = {
       );
 
       if (!match) {
-        throw createError.Unauthorized("Invalid Email or Password");
+        throw createError.Unauthorized("Invalid Email/Mobile No. or Password");
       }
 
       if (!user.is_active) {
@@ -139,6 +148,7 @@ module.exports = {
           id: user.id,
           username: user.username,
           email: user.email,
+          phone: user.phone,
           role_id: user.role_id,
           plant_id: user.plant_id,
         },
@@ -236,24 +246,23 @@ module.exports = {
   // Lets a custom role (created via Admin > Roles & Permissions) find out
   // what it's actually been granted, so the frontend can build a dashboard
   // for it — a custom role can't call /role-management/:id itself, since
-  // that's admin-only.
+  // that's admin-only. Returns the UNION of the user's role-level grants
+  // and any direct per-user grants (see role.controller.js
+  // setUserPermissions) — e.g. one Warehouse user who's also been handed
+  // PO Approval individually.
   myPermissions: async (req, res, next) => {
     try {
       if (!req.user) throw createError.Unauthorized();
 
       const role = req.user.role || (await Role.findByPk(req.user.role_id));
-      if (!role) {
-        return res.status(200).json({
-          success: true,
-          data: { role_id: req.user.role_id, role_name: null, permissions: [] },
-        });
-      }
 
-      const { Op } = require("sequelize");
-      const grants = await RolePermission.findAll({
-        where: { role_id: role.id, is_deleted: false },
-      });
-      const permissionIds = grants.map((g) => g.permission_id);
+      const [roleGrants, userGrants] = await Promise.all([
+        role ? RolePermission.findAll({ where: { role_id: role.id, is_deleted: false } }) : [],
+        UserPermission.findAll({ where: { user_id: req.user.id, is_deleted: false } }),
+      ]);
+      const permissionIds = [
+        ...new Set([...roleGrants, ...userGrants].map((g) => g.permission_id)),
+      ];
       const permissions = permissionIds.length
         ? await Permission.findAll({
             where: { id: { [Op.in]: permissionIds }, is_deleted: false },
@@ -264,8 +273,8 @@ module.exports = {
       res.status(200).json({
         success: true,
         data: {
-          role_id: role.id,
-          role_name: role.role_name,
+          role_id: role ? role.id : req.user.role_id,
+          role_name: role ? role.role_name : null,
           permissions,
         },
       });

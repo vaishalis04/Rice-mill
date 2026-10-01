@@ -1,10 +1,11 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
 const PDFDocument = require("pdfkit");
+const sequelize = require("../config/db");
 const {
   GateEntry, Vehicle, Driver, Vendor, MaterialMaster, PlantMaster,
   ProductionBatch, Lot, LengthGrading, Purchase, Inventory, FinishedGoods, Packing,
-  WarehouseMaster,
+  WarehouseMaster, Customer, WeightSlip, GateEntrySalesOrder,
 } = require("../models/index");
 const { toCsv, sendCsv } = require("../helpers/csv");
 
@@ -692,6 +693,427 @@ module.exports = {
       doc.moveDown(1.5);
       doc.font("Helvetica").fontSize(8).fillColor("#666").text(
         "Note: \"Shift\" is not tracked by this system and is left blank for manual entry. \"Approx\" is the nominal quantity from pack size x bag count; \"Actual\" is the recorded packed quantity (they match unless a manual override was used when packing).",
+        { width: tableWidth }
+      );
+
+      doc.end();
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // GET /api/reports/daily-outward-pdf?date=YYYY-MM-DD&plant_id=
+  // "Daily Outward" logistics sheet — every outward (sales) truck for the
+  // day, laid out like the mill's paper tracking sheet.
+  // Sourced entirely from GateEntry (entry_type "sales") — NOT Dispatch.
+  // Dispatch is being removed from this codebase, so nothing here (or in
+  // dailyReportPdf below) reads from it any more.
+  // G.P. No. is intentionally omitted. Location / Position / Unloading Date
+  // come straight off the matching GateEntry row via Admin > Advisory
+  // Trucks (advisory_location_note / advisory_position_note / advisory_date)
+  // — a direct field read, not a guessed match, since the row itself IS
+  // that gate entry now.
+  // "MT" (Balance Weight, in metric tons) is strictly the weighbridge first
+  // weighment minus second weighment (gross - tare) off the WeightSlip tied
+  // to this exact gate entry (GateEntry.id === WeightSlip.gate_entry_id) —
+  // never a manually recorded quantity. No matching weighbridge slip => "—".
+  dailyOutwardPdf: async (req, res, next) => {
+    try {
+      const { date, plant_id } = req.query;
+      const reportDate = date || new Date().toISOString().slice(0, 10);
+
+      // Compares the calendar date the row is actually stored under (via
+      // SQL DATE(), not a JS-Date UTC window) so this can't miss rows to a
+      // server/DB timezone offset the way an ISO "Z" boundary comparison can.
+      // A sales truck's "day" is whichever of entry/exit actually falls on
+      // the requested date, so either counts as a match.
+      const where = { is_deleted: false, entry_type: "sales" };
+      if (plant_id) where.plant_id = plant_id;
+
+      const gateEntries = await GateEntry.findAll({
+        where: {
+          [Op.and]: [
+            where,
+            {
+              [Op.or]: [
+                sequelize.where(sequelize.fn("DATE", sequelize.col("exit_time")), reportDate),
+                sequelize.where(sequelize.fn("DATE", sequelize.col("entry_time")), reportDate),
+              ],
+            },
+          ],
+        },
+        include: [
+          { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
+          { model: Driver, as: "driver", attributes: ["id", "name", "mobile"] },
+          { model: Customer, as: "customer", attributes: ["id", "name"] },
+          { model: MaterialMaster, as: "material", attributes: ["id", "name"] },
+          { model: PlantMaster, as: "plant", attributes: ["id", "name"] },
+          {
+            model: GateEntrySalesOrder, as: "sales_orders", attributes: ["id"],
+            include: [{ model: MaterialMaster, as: "material", attributes: ["id", "name"] }],
+          },
+        ],
+        order: [[sequelize.fn("COALESCE", sequelize.col("exit_time"), sequelize.col("entry_time")), "ASC"]],
+      });
+
+      // Balance Weight: the weighbridge slip tied directly to this gate
+      // entry — a real FK (WeightSlip.gate_entry_id), not a vehicle/day
+      // guess, since every row here already IS one specific gate entry.
+      const gateEntryIds = gateEntries.map((g) => g.id);
+      const weighSlips = gateEntryIds.length
+        ? await WeightSlip.findAll({ where: { is_deleted: false, gate_entry_id: { [Op.in]: gateEntryIds } } })
+        : [];
+      const balanceWeightByGateEntry = new Map();
+      weighSlips.forEach((ws) => {
+        if (ws.net_weight != null) balanceWeightByGateEntry.set(ws.gate_entry_id, ws.net_weight);
+      });
+
+      const materialNameFor = (ge) => {
+        if (ge.material?.name) return ge.material.name;
+        const names = [...new Set((ge.sales_orders || []).map((r) => r.material?.name).filter(Boolean))];
+        return names.length ? names.join(", ") : "—";
+      };
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="daily-outward-${reportDate}.pdf"`);
+
+      const doc = new PDFDocument({ size: "A4", margin: 28, layout: "landscape" });
+      doc.pipe(res);
+
+      const headers = ["S.No", "Date", "Vehicle No.", "Item", "To", "Lot No.", "MT (Balance Wt.)", "Mill Name", "Party Name", "Location", "Position", "Unloading Date", "Driver Name"];
+      const colWidths = [24, 50, 60, 42, 50, 42, 58, 52, 100, 78, 60, 58, 78];
+      const startX = doc.page.margins.left;
+      const tableWidth = colWidths.reduce((a, b) => a + b, 0);
+      const rowHeight = 22;
+
+      // Letterhead plant: whichever was explicitly filtered on, else the
+      // first outward gate entry's own plant, else just the first plant on
+      // record — same fallback chain resolveLetterheadPlant() above uses.
+      const letterheadPlant = plant_id
+        ? await PlantMaster.findOne({ where: { id: plant_id, is_deleted: false } })
+        : gateEntries[0]?.plant || (await PlantMaster.findOne({ where: { is_deleted: false }, order: [["id", "ASC"]] }));
+
+      const drawLetterhead = () => {
+        if (letterheadPlant?.name) {
+          doc.font("Helvetica-Bold").fontSize(18).text(letterheadPlant.name.toUpperCase(), { align: "center" });
+          if (letterheadPlant.address) {
+            doc.font("Helvetica-Bold").fontSize(8.5).text(`Address: ${letterheadPlant.address}`, { align: "center" });
+          }
+          doc.moveDown(0.3);
+        }
+        doc.font("Helvetica-Bold").fontSize(15).text(`Daily Outward Details-${reportDate}`, { align: "center" });
+        doc.moveDown(0.6);
+      };
+
+      let y;
+      const drawGridRow = (cells, { bold, header, redCols } = {}) => {
+        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(8);
+        doc.rect(startX, y, tableWidth, rowHeight);
+        if (header) doc.fillAndStroke("#DCE6F1", "#000");
+        else doc.stroke();
+        let x = startX;
+        cells.forEach((cell, i) => {
+          doc.fillColor(redCols && redCols.includes(i) && cell && cell !== "—" ? "#CC0000" : "#000");
+          doc.text(String(cell ?? "—"), x + 3, y + 6, { width: colWidths[i] - 6, align: "center" });
+          x += colWidths[i];
+          if (i < cells.length - 1) doc.moveTo(x, y).lineTo(x, y + rowHeight).stroke();
+        });
+        doc.fillColor("#000");
+        y += rowHeight;
+      };
+
+      const startNewPage = (isFirst) => {
+        if (!isFirst) doc.addPage({ size: "A4", margin: 28, layout: "landscape" });
+        drawLetterhead();
+        y = doc.y;
+        drawGridRow(headers, { bold: true, header: true });
+      };
+
+      startNewPage(true);
+
+      gateEntries.forEach((ge, i) => {
+        if (y + rowHeight > doc.page.height - doc.page.margins.bottom) startNewPage(false);
+        const balanceWeightKg = balanceWeightByGateEntry.get(ge.id);
+        const dateValue = ge.exit_time || ge.entry_time;
+        drawGridRow(
+          [
+            i + 1,
+            dateValue ? new Date(dateValue).toLocaleDateString("en-GB") : "—",
+            ge.vehicle?.vehicle_no || "—",
+            materialNameFor(ge),
+            "—", // To — no destination field tracked against GateEntry in this system
+            "—", // Lot No. — raw outward gate exits aren't tied to a source lot
+            balanceWeightKg != null ? (Number(balanceWeightKg) / 1000).toFixed(2) : "—",
+            ge.plant?.name || "—",
+            ge.customer?.name || "—",
+            ge.advisory_location_note || "—",
+            ge.advisory_position_note || "—",
+            ge.advisory_date || "—",
+            ge.driver?.name || "—",
+          ],
+          { redCols: [10] }
+        );
+      });
+
+      if (gateEntries.length === 0) {
+        // Diagnostic, not a fallback data source: tells us whether this is
+        // "no sales trucks on this date" (expected) vs "sales trucks exist
+        // but none matched" (a real bug worth chasing further).
+        const totalSalesEntries = await GateEntry.countAll?.() ?? await GateEntry.count({ where: { is_deleted: false, entry_type: "sales" } });
+        doc.font("Helvetica").fontSize(10).text(
+          `No outward (sales) trucks recorded for this date. (${totalSalesEntries} sales gate ${totalSalesEntries === 1 ? "entry" : "entries"} exist in total, across all dates — if that number looks wrong for what you expect, the entry/exit time on those records may not be what's expected.)`,
+          startX, y + 10, { width: tableWidth }
+        );
+      }
+
+      doc.moveDown(1.5);
+      doc.font("Helvetica").fontSize(7.5).fillColor("#666").text(
+        "G.P. No. is not shown. Location, Position and Unloading Date come from Admin > Advisory Trucks for this gate entry — \"—\" until an admin fills them in there. MT is the weighbridge Balance Weight (first weighment minus second weighment) for the weighbridge slip tied to this gate entry; it shows \"—\" when no weighbridge slip exists yet. Lot No. isn't tracked for outward gate exits.",
+        { width: tableWidth }
+      );
+
+      doc.end();
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // GET /api/reports/daily-report-pdf?date=YYYY-MM-DD&plant_id=
+  // "Daily Report" — per Plant (each PlantMaster row is treated as one
+  // company/mill, matching the paper report's separate "R.D. INDUSTRIES" /
+  // "VENUS CONSUMERS PRIVATE LIMITED" sections), an Outward table (outward
+  // sales trucks) and an Inward table (Purchase — vehicles that came in
+  // against a Purchase Order), per the brief: "inward means vehicle which
+  // came in as in purchase order and outward means the vehicle which moves
+  // out for sales order". Records with no plant_id set land in a separate
+  // "Unassigned" section instead of being dropped (see below).
+  // Outward is sourced entirely from GateEntry (entry_type "sales") — NOT
+  // Dispatch, which is being removed from this codebase.
+  // Balance Weight = weighbridge first weighment minus second weighment
+  // (gross - tare) — strictly a weighbridge figure, never a manually
+  // recorded quantity. For Inward this is Purchase.weightSlip directly; for
+  // Outward it's the WeightSlip tied straight to that gate entry
+  // (WeightSlip.gate_entry_id) — a real FK, not a guessed match, since each
+  // Outward row here already IS one specific gate entry. No matching slip
+  // means "—".
+  // G.P. No. is omitted.
+  dailyReportPdf: async (req, res, next) => {
+    try {
+      const { date, plant_id } = req.query;
+      const reportDate = date || new Date().toISOString().slice(0, 10);
+
+      // SQL DATE() comparison (not a JS-Date UTC window) — see dailyOutwardPdf
+      // above for why: it can't miss rows to a server/DB timezone offset.
+      const exitOrEntryDateMatch = {
+        [Op.or]: [
+          sequelize.where(sequelize.fn("DATE", sequelize.col("exit_time")), reportDate),
+          sequelize.where(sequelize.fn("DATE", sequelize.col("entry_time")), reportDate),
+        ],
+      };
+
+      const plants = await PlantMaster.findAll({
+        where: { is_deleted: false, ...(plant_id ? { id: plant_id } : {}) },
+        order: [["id", "ASC"]],
+      });
+
+      // ---- Outward (GateEntry, entry_type "sales") for every plant ----
+      const outwardEntries = await GateEntry.findAll({
+        where: { [Op.and]: [{ is_deleted: false, entry_type: "sales" }, exitOrEntryDateMatch] },
+        include: [
+          { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
+          { model: Customer, as: "customer", attributes: ["id", "name"] },
+          { model: MaterialMaster, as: "material", attributes: ["id", "name"] },
+          {
+            model: GateEntrySalesOrder, as: "sales_orders", attributes: ["id"],
+            include: [{ model: MaterialMaster, as: "material", attributes: ["id", "name"] }],
+          },
+        ],
+      });
+      const outwardMaterialFor = (ge) => {
+        if (ge.material?.name) return ge.material.name;
+        const names = [...new Set((ge.sales_orders || []).map((r) => r.material?.name).filter(Boolean))];
+        return names.length ? names.join(", ") : "—";
+      };
+
+      // Balance Weight: the weighbridge slip tied directly to this gate
+      // entry (real FK) — no vehicle/day guessing needed since each Outward
+      // row already is one specific gate entry.
+      const outwardGateEntryIds = outwardEntries.map((g) => g.id);
+      const outwardWeighSlips = outwardGateEntryIds.length
+        ? await WeightSlip.findAll({ where: { is_deleted: false, gate_entry_id: { [Op.in]: outwardGateEntryIds } } })
+        : [];
+      const balanceWeightByGateEntry = new Map();
+      outwardWeighSlips.forEach((ws) => {
+        if (ws.net_weight != null) balanceWeightByGateEntry.set(ws.gate_entry_id, ws.net_weight);
+      });
+
+      // ---- Inward (Purchase) for every plant, one query ----
+      const purchases = await Purchase.findAll({
+        where: { is_deleted: false, purchase_date: reportDate },
+        include: [
+          {
+            model: GateEntry, as: "gateEntry", attributes: ["id", "vendor_id", "vehicle_id", "material_id"],
+            include: [
+              { model: Vendor, as: "vendor", attributes: ["id", "name"] },
+              { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
+              { model: MaterialMaster, as: "material", attributes: ["id", "name"] },
+            ],
+          },
+          { model: WeightSlip, as: "weightSlip", attributes: ["id", "gross_weight", "tare_weight"] },
+        ],
+      });
+      const purchaseIds = purchases.map((p) => p.id);
+      const inwardLots = purchaseIds.length
+        ? await Lot.findAll({ where: { purchase_id: { [Op.in]: purchaseIds }, is_deleted: false }, attributes: ["id", "purchase_id", "lot_no", "accepted_bags"] })
+        : [];
+      const lotsByPurchaseId = new Map();
+      inwardLots.forEach((l) => {
+        const list = lotsByPurchaseId.get(l.purchase_id) || [];
+        list.push(l);
+        lotsByPurchaseId.set(l.purchase_id, list);
+      });
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="daily-report-${reportDate}.pdf"`);
+
+      const doc = new PDFDocument({ size: "A4", margin: 30, layout: "landscape" });
+      doc.pipe(res);
+
+      const headers = ["S NO", "RST NO", "ITEM", "PARTY NAME", "VEHICLE NO.", "BALANCE\nWEIGHT", "BAGS", "LOT NO", "REMARK"];
+      const colWidths = [30, 50, 100, 170, 75, 70, 45, 70, 100];
+      const startX = doc.page.margins.left;
+      const tableWidth = colWidths.reduce((a, b) => a + b, 0);
+      const rowHeight = 20;
+      const headerRowHeight = 28;
+      let y;
+      let firstPage = true;
+
+      const ensureSpace = (needed) => {
+        if (y + needed > doc.page.height - doc.page.margins.bottom) {
+          doc.addPage({ size: "A4", margin: 30, layout: "landscape" });
+          y = doc.page.margins.top;
+        }
+      };
+
+      const drawGridRow = (cells, { bold, header, h } = {}) => {
+        const rh = h || rowHeight;
+        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(8.5);
+        doc.rect(startX, y, tableWidth, rh);
+        if (header) doc.fillAndStroke("#F4B183", "#000"); // matches the orange-ish section banner in the source sheet
+        else doc.stroke();
+        doc.fillColor("#000");
+        let x = startX;
+        cells.forEach((cell, i) => {
+          doc.text(String(cell ?? "—"), x + 3, y + (rh - 9) / 2, { width: colWidths[i] - 6, align: i === 2 || i === 3 ? "left" : "center" });
+          x += colWidths[i];
+          if (i < cells.length - 1) doc.moveTo(x, y).lineTo(x, y + rh).stroke();
+        });
+        y += rh;
+      };
+
+      const drawSectionBanner = (text) => {
+        ensureSpace(24);
+        doc.rect(startX, y, tableWidth, 22).fillAndStroke("#F4B183", "#000");
+        doc.fillColor("#000").font("Helvetica-Bold").fontSize(11).text(text, startX, y + 5, { width: tableWidth, align: "center" });
+        y += 22;
+      };
+
+      const drawTable = (rows) => {
+        ensureSpace(headerRowHeight);
+        drawGridRow(headers, { bold: true, header: true, h: headerRowHeight });
+        if (rows.length === 0) {
+          ensureSpace(rowHeight);
+          drawGridRow(["", "", "(none)", "", "", "", "", "", ""], {});
+        }
+        rows.forEach((r) => {
+          ensureSpace(rowHeight);
+          drawGridRow(r);
+        });
+        // TOTAL row
+        const totalWeight = rows.reduce((s, r) => s + (Number(r[5]) || 0), 0);
+        const totalBags = rows.reduce((s, r) => s + (Number(r[6]) || 0), 0);
+        ensureSpace(rowHeight);
+        drawGridRow(["", "", "", "", "TOTAL", totalWeight ? totalWeight.toFixed(0) : "—", totalBags || "—", "", ""], { bold: true });
+        y += 10;
+      };
+
+      // Guard against the report silently showing nothing: plant_id is an
+      // optional field on GateEntry/Purchase, so most records in a system
+      // that hasn't been using multi-plant tagging will have it as null and
+      // would otherwise never match any plant.id === strict-equality check
+      // below. Anything that doesn't match one of the plants being shown
+      // gets its own "Unassigned" section instead of vanishing — but only
+      // when the report isn't already scoped to one explicit plant_id.
+      const matchedPlantIds = new Set(plants.map((p) => Number(p.id)));
+      const unassignedOutward = outwardEntries.filter((g) => !matchedPlantIds.has(Number(g.plant_id)));
+      const unassignedPurchases = purchases.filter((p) => !matchedPlantIds.has(Number(p.plant_id)));
+      const sections = plants.map((p) => ({ id: p.id, name: p.name.toUpperCase() }));
+      if (!plant_id && (unassignedOutward.length > 0 || unassignedPurchases.length > 0)) {
+        sections.push({ id: null, name: "UNASSIGNED / NO PLANT SET" });
+      }
+
+      for (const section of sections) {
+        ensureSpace(60);
+        if (!firstPage) doc.moveDown(0.5);
+        firstPage = false;
+
+        doc.font("Helvetica").fontSize(10).text(`Plant Date - ${reportDate}`, startX, y, { width: tableWidth, align: "center" });
+        y = doc.y + 4;
+        doc.font("Helvetica-Bold").fontSize(15).text(section.name, startX, y, { width: tableWidth, align: "center" });
+        y = doc.y + 8;
+
+        drawSectionBanner("Outward Details");
+        const sectionOutward = section.id != null
+          ? outwardEntries.filter((g) => Number(g.plant_id) === Number(section.id))
+          : unassignedOutward;
+        const outwardRows = sectionOutward.map((ge) => {
+          // Balance Weight = first weighment - second weighment off the
+          // weighbridge slip tied directly to this gate entry. No fallback
+          // to any manually recorded quantity — per the brief, this column
+          // must be the actual weighbridge balance or nothing.
+          const balanceWeight = balanceWeightByGateEntry.get(ge.id);
+          return [
+            ge.id, ge.id, outwardMaterialFor(ge), ge.customer?.name || "—",
+            ge.vehicle?.vehicle_no || "—", balanceWeight != null ? Number(balanceWeight).toFixed(0) : "—",
+            "—", // Bags — not tracked against a raw outward gate exit in this system
+            "—", // Lot No. — not tracked against a raw outward gate exit in this system
+            ge.challan_no || "—",
+          ];
+        });
+        drawTable(outwardRows);
+
+        drawSectionBanner("Inward Details");
+        const sectionPurchases = section.id != null
+          ? purchases.filter((p) => Number(p.plant_id) === Number(section.id))
+          : unassignedPurchases;
+        const inwardRows = sectionPurchases.map((p) => {
+          const lots = lotsByPurchaseId.get(p.id) || [];
+          const bags = lots.reduce((s, l) => s + (l.accepted_bags || 0), 0);
+          const lotNo = lots.map((l) => l.lot_no).join(", ") || "—";
+          // Same rule as Outward: Balance Weight is strictly gross - tare
+          // off this purchase's weighbridge slip — no fallback to
+          // Purchase.final_qty (the negotiated/accepted qty, not a weighment).
+          const balanceWeight = p.weightSlip
+            ? Number(p.weightSlip.gross_weight || 0) - Number(p.weightSlip.tare_weight || 0)
+            : null;
+          return [
+            p.id, p.id, p.gateEntry?.material?.name || "—", p.gateEntry?.vendor?.name || "—",
+            p.gateEntry?.vehicle?.vehicle_no || "—", balanceWeight != null ? balanceWeight.toFixed(0) : "—", bags || "—", lotNo,
+            "—",
+          ];
+        });
+        drawTable(inwardRows);
+
+        y += 10;
+      }
+
+      if (sections.length === 0) {
+        doc.font("Helvetica").fontSize(10).text("No plants configured, and no unassigned outward/inward records for this date.", startX, doc.page.margins.top);
+      }
+
+      doc.moveDown(1);
+      doc.font("Helvetica").fontSize(7.5).fillColor("#666").text(
+        "G.P. No. is not shown. RST No. is this system's internal record id (GateEntry id for Outward rows, Purchase id for Inward rows) — the source sheet's RST numbering isn't tracked separately here. Balance Weight is strictly the weighbridge net weight (first weighment - second weighment, i.e. gross - tare) for a matching weighment; it shows \"—\" when no weighbridge slip could be matched, rather than falling back to a manually recorded quantity. Outward Remark shows the Challan No. Bags and Lot No. aren't tracked against a raw outward gate exit in this system. Records with no plant assigned are grouped under \"Unassigned / No Plant Set\" rather than omitted.",
         { width: tableWidth }
       );
 

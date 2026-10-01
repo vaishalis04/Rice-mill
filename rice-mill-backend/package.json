@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "db:sync": "node database/sync.js"
+    "db:sync": "node database/sync.js",
+    "seed:role-logins": "node database/seedRoleLogins.js",
+    "seed:advisory-login": "node database/seedAdvisoryLogin.js"
   },
   "keywords": [
     "rice-mill",

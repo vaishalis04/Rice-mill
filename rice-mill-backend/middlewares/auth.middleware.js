@@ -1,6 +1,6 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
-const { User, Role, Permission, RolePermission } = require("../models/index");
+const { User, Role, Permission, RolePermission, UserPermission } = require("../models/index");
 
 // const attachUser = async (req, res, next) => {
 //   try {
@@ -66,16 +66,22 @@ const requirePermission = (...codes) => async (req, res, next) => {
   try {
     if (!req.user) return next(createError.Unauthorized());
     const roleId = req.user.role_id || req.user.role?.id;
-    if (!roleId) return next(createError.Forbidden("Access denied: no role assigned"));
 
-    const grants = await RolePermission.findAll({
-      where: { role_id: roleId, is_deleted: false },
-    });
-    if (grants.length === 0) {
+    const [roleGrants, userGrants] = await Promise.all([
+      roleId ? RolePermission.findAll({ where: { role_id: roleId, is_deleted: false } }) : [],
+      UserPermission.findAll({ where: { user_id: req.user.id, is_deleted: false } }),
+    ]);
+    if (roleGrants.length === 0 && userGrants.length === 0) {
       return next(createError.Forbidden("Access denied: insufficient permissions"));
     }
 
-    const grantedPermissionIds = grants.map((g) => g.permission_id);
+    // Effective permissions = role grants UNION direct per-user grants —
+    // a user can be handed an extra page beyond what their role normally
+    // gets (see role.controller.js setUserPermissions), without needing a
+    // whole new role just for them.
+    const grantedPermissionIds = [
+      ...new Set([...roleGrants, ...userGrants].map((g) => g.permission_id)),
+    ];
     const matched = await Permission.count({
       where: {
         id: { [Op.in]: grantedPermissionIds },
@@ -98,11 +104,13 @@ module.exports = { attachUser, authorize, requirePermission, authorizeRoleOrModu
 // Passes if EITHER the user's literal role_name matches one of `roleNames`
 // (exactly what authorize() above already does — zero behavior change for
 // the 9 built-in roles) OR, for anyone else (a custom role created via
-// Admin > Roles & Permissions), their role has been granted ANY permission
-// whose `module` is in `modules`. This is what lets a custom role actually
-// reach a module's API once Admin has ticked it in Roles & Permissions —
-// without it, every route stays closed to custom roles no matter what's
-// granted, since none of them are literally named e.g. "gate" or "lab".
+// Admin > Roles & Permissions, OR a built-in-role user individually handed
+// extra pages via Admin > User Approvals / Users > Edit Permissions), the
+// UNION of their role's grants and their own direct grants includes ANY
+// permission whose `module` is in `modules`. This is what lets a custom
+// role — or a "weighbridge" user individually handed Warehouse/Quality
+// pages, say — actually reach that module's API, instead of every route
+// staying closed to anyone not literally named e.g. "gate" or "lab".
 //
 // Usage: router.use(verifyAccessToken, attachUser,
 //   authorizeRoleOrModule(["gate","warehouse","admin"], ["gate"]));
@@ -120,20 +128,19 @@ function authorizeRoleOrModule(roleNames = [], modules = []) {
       }
 
       const roleId = req.user.role_id || req.user.role?.id;
-      if (!roleId) {
-        console.warn(`[authorizeRoleOrModule] ${req.method} ${req.originalUrl} — no role_id on req.user`);
+
+      const [roleGrants, userGrants] = await Promise.all([
+        roleId ? RolePermission.findAll({ where: { role_id: roleId, is_deleted: false } }) : [],
+        UserPermission.findAll({ where: { user_id: req.user.id, is_deleted: false } }),
+      ]);
+      if (roleGrants.length === 0 && userGrants.length === 0) {
+        console.warn(`[authorizeRoleOrModule] ${req.method} ${req.originalUrl} — user ${req.user.id} (role_id ${roleId}) has zero permissions granted, role or direct`);
         return next(createError.Forbidden("Access denied: insufficient permissions"));
       }
 
-      const grants = await RolePermission.findAll({
-        where: { role_id: roleId, is_deleted: false },
-      });
-      if (grants.length === 0) {
-        console.warn(`[authorizeRoleOrModule] ${req.method} ${req.originalUrl} — role_id ${roleId} has zero permissions granted`);
-        return next(createError.Forbidden("Access denied: insufficient permissions"));
-      }
-
-      const grantedPermissionIds = grants.map((g) => g.permission_id);
+      const grantedPermissionIds = [
+        ...new Set([...roleGrants, ...userGrants].map((g) => g.permission_id)),
+      ];
       const matched = await Permission.count({
         where: {
           id: { [Op.in]: grantedPermissionIds },
@@ -148,7 +155,7 @@ function authorizeRoleOrModule(roleNames = [], modules = []) {
           attributes: ["module", "action"],
         });
         console.warn(
-          `[authorizeRoleOrModule] ${req.method} ${req.originalUrl} — role_id ${roleId} needs module in [${modules.join(", ")}] but has: [${grantedPermissions.map((p) => p.module).join(", ") || "none"}]`
+          `[authorizeRoleOrModule] ${req.method} ${req.originalUrl} — user ${req.user.id} (role_id ${roleId}) needs module in [${modules.join(", ")}] but has: [${grantedPermissions.map((p) => p.module).join(", ") || "none"}]`
         );
         return next(createError.Forbidden("Access denied: insufficient permissions"));
       }

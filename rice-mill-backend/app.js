@@ -44,6 +44,10 @@ const auditLogRoutes       = require("./routes/auditLog.routes");
 const notificationRoutes   = require("./routes/notification.routes");
 const rejectWasteRoutes    = require("./routes/rejectWaste.routes");
 const roleRoutes = require("./routes/role.routes");
+const advisoryTruckRoutes  = require("./routes/advisoryTruck.routes");
+const materialSlipRoutes   = require("./routes/materialSlip.routes");
+const registrationRequestRoutes = require("./routes/registrationRequest.routes");
+const paymentSettlementRoutes = require("./routes/paymentSettlement.routes");
 
 
 const app = express();
@@ -95,6 +99,10 @@ app.use("/api/audit-logs",       auditLogRoutes);
 app.use("/api/notifications",    notificationRoutes);
 app.use("/api/reject-waste",     rejectWasteRoutes);
 app.use("/api/role-management", roleRoutes);
+app.use("/api/advisory-trucks", advisoryTruckRoutes);
+app.use("/api/material-slips", materialSlipRoutes);
+app.use("/api/registration-requests", registrationRequestRoutes);
+app.use("/api/payment-settlements", paymentSettlementRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {
@@ -175,6 +183,83 @@ sequelize.authenticate()
           ? `✅ Database schema aligned (${totalModels - failed}/${totalModels} tables after ${pass} pass(es) — see warnings above for the rest)`
           : `✅ Database schema aligned on retry (${pass} pass(es))`,
       );
+    }
+
+    // Loading used to be UNIQUE per gate entry (one loading record per
+    // truck). It no longer is — a truck can be loaded in several passes
+    // until its Sales Order is fully loaded — but sequelize.sync({ alter })
+    // only ever ADDS indexes, it never drops one that was removed from the
+    // model. So an existing database keeps the old unique index, and every
+    // second loading pass for the same truck fails with a bare "Validation
+    // error" (that's Sequelize's wording for a MySQL duplicate-key error).
+    // Idempotent: does nothing once the index is gone.
+    try {
+      const [indexRows] = await sequelize.query("SHOW INDEX FROM `loading`");
+      const byName = new Map();
+      for (const r of indexRows) {
+        if (!byName.has(r.Key_name)) byName.set(r.Key_name, { unique: Number(r.Non_unique) === 0, cols: [] });
+        byName.get(r.Key_name).cols[r.Seq_in_index - 1] = r.Column_name;
+      }
+      const staleUnique = [...byName.entries()]
+        .filter(([name, idx]) => name !== "PRIMARY" && idx.unique && idx.cols.length === 1 && idx.cols[0] === "gate_entry_id")
+        .map(([name]) => name);
+
+      if (staleUnique.length > 0) {
+        // MySQL refuses to drop the only index on a foreign-key column, so
+        // make sure a plain (non-unique) one exists first.
+        const hasPlainIndex = [...byName.values()].some((idx) => !idx.unique && idx.cols[0] === "gate_entry_id");
+        if (!hasPlainIndex) {
+          await sequelize.query("CREATE INDEX `loading_gate_entry_id_idx` ON `loading` (`gate_entry_id`)");
+        }
+        for (const name of staleUnique) {
+          await sequelize.query(`ALTER TABLE \`loading\` DROP INDEX \`${name}\``);
+          console.log(`✅ Dropped stale unique index "${name}" on loading.gate_entry_id (multi-pass loading)`);
+        }
+      }
+    } catch (idxErr) {
+      // Non-fatal — e.g. the table doesn't exist yet on a brand-new database.
+      console.warn("ℹ️ Loading index check skipped:", idxErr.message);
+    }
+
+    // "Advisory" role: create it once if it doesn't already exist (picks up
+    // the next free id automatically — idempotent, safe to run on every
+    // boot). Frontend roles.js needs this exact id in ROLE_ID.advisory; the
+    // id actually assigned is always printed below so it can be checked
+    // against what's in that file.
+    //
+    // Also retires the old duplicate "weighbridge" role (role_id 11,
+    // ROLE_ID.weighbridgeLegacy) now that only role_id 6 is used — but only
+    // if no user currently holds it, exactly like Roles & Permissions' own
+    // "delete a role" safety check, so this can never silently orphan a
+    // real user's account.
+    try {
+      const { Role, User } = require("./models/index");
+
+      const [advisoryRole, wasCreated] = await Role.findOrCreate({
+        where: { role_name: "advisory" },
+        defaults: { role_name: "advisory", description: "Advisory Trucks and Payment Settlement Advice" },
+      });
+      console.log(
+        `${wasCreated ? "✅ Created" : "ℹ️ Found existing"} "advisory" role — id = ${advisoryRole.id}. ` +
+        `Make sure frontend/src/constants/roles.js has ROLE_ID.advisory = ${advisoryRole.id}.`
+      );
+
+      const legacyWeighbridgeId = 11;
+      const legacyRole = await Role.findOne({ where: { id: legacyWeighbridgeId, is_deleted: false } });
+      if (legacyRole) {
+        const usersOnLegacyRole = await User.count({ where: { role_id: legacyWeighbridgeId, is_deleted: false } });
+        if (usersOnLegacyRole === 0) {
+          await legacyRole.update({ is_deleted: true });
+          console.log(`✅ Retired unused duplicate role_id ${legacyWeighbridgeId} ("${legacyRole.role_name}") — role_id 6 remains the only Weighbridge role.`);
+        } else {
+          console.warn(
+            `⚠️ role_id ${legacyWeighbridgeId} ("${legacyRole.role_name}") still has ${usersOnLegacyRole} user(s) — ` +
+            `not removed. Reassign them to role_id 6 first, then restart, to finish retiring it.`
+          );
+        }
+      }
+    } catch (roleSetupErr) {
+      console.warn("ℹ️ Advisory role / legacy weighbridge role setup skipped:", roleSetupErr.message);
     }
 
     scheduleAgingJob();

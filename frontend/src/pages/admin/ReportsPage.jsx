@@ -3,10 +3,13 @@ import {
   getGateRegisterReportApi,
   getProductionSummaryReportApi,
   getMaterialFlowReportApi,
+  getDailyOutwardReportPdfApi,
+  getDailyReportPdfApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
+import PdfPreviewModal from "../../components/PdfPreviewModal";
 
 // Triggers a real browser download from a blob response. filenameFallback
 // is used if the backend doesn't send a Content-Disposition header.
@@ -297,6 +300,88 @@ function MaterialFlowTab() {
   );
 }
 
+// Shared by the two PDF-only report tabs below (Daily Outward, Daily
+// Report) — a date (+ optional plant) filter that opens the generated PDF
+// in PdfPreviewModal, same pattern as the Stock Report on the Warehouse page.
+function PdfReportTab({ title, description, fetcher, filenamePrefix }) {
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [plantId, setPlantId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [preview, setPreview] = useState(null); // { url, fileName, title }
+
+  const extractBlobErrorMessage = async (err, fallback) => {
+    const blob = err?.response?.data;
+    if (blob instanceof Blob) {
+      try {
+        const text = await blob.text();
+        const parsed = JSON.parse(text);
+        return parsed.msg || parsed.message || fallback;
+      } catch {
+        return fallback;
+      }
+    }
+    return err?.response?.data?.msg || err?.response?.data?.message || fallback;
+  };
+
+  const handleView = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const params = { date };
+      if (plantId) params.plant_id = plantId;
+      const res = await fetcher(params);
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      setPreview({ url, fileName: `${filenamePrefix}-${date}.pdf`, title: `${title} — ${date}` });
+    } catch (err) {
+      setError(await extractBlobErrorMessage(err, `Could not generate the ${title} PDF`));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <p className="field-hint" style={{ marginTop: 0 }}>{description}</p>
+      <form
+        className="sf-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleView();
+        }}
+      >
+        <div className="sf-field">
+          <label>Date</label>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+        </div>
+        <EntitySelect
+          entity="plant"
+          label="Plant / Mill (optional — all if blank)"
+          value={plantId}
+          onChange={setPlantId}
+        />
+        <button className="sf-submit" type="submit" disabled={loading}>
+          {loading ? "Generating…" : "View PDF"}
+        </button>
+      </form>
+
+      {error && <div className="dt-error">{error}</div>}
+
+      {preview && (
+        <PdfPreviewModal
+          title={preview.title}
+          blobUrl={preview.url}
+          fileName={preview.fileName}
+          onClose={() => {
+            window.URL.revokeObjectURL(preview.url);
+            setPreview(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 function Pager({ meta, onPage }) {
   if (!meta.totalPages || meta.totalPages <= 1) return null;
   return (
@@ -326,6 +411,8 @@ const TABS = [
   { key: "gate_register", label: "Gate Register" },
   { key: "production_summary", label: "Production Summary" },
   { key: "material_flow", label: "Material Flow" },
+  { key: "daily_outward", label: "Daily Outward" },
+  { key: "daily_report", label: "Daily Report" },
 ];
 
 export default function ReportsPage() {
@@ -349,6 +436,22 @@ export default function ReportsPage() {
       {tab === "gate_register" && <GateRegisterTab />}
       {tab === "production_summary" && <ProductionSummaryTab />}
       {tab === "material_flow" && <MaterialFlowTab />}
+      {tab === "daily_outward" && (
+        <PdfReportTab
+          title="Daily Outward Details"
+          description="Every dispatch (sales/outward truck) for the selected date — vehicle, item, destination, transporter and the transit status entered via 'Edit Transit Info' on the Dispatch page."
+          fetcher={getDailyOutwardReportPdfApi}
+          filenamePrefix="daily-outward"
+        />
+      )}
+      {tab === "daily_report" && (
+        <PdfReportTab
+          title="Daily Report"
+          description="Per plant/mill: Outward (dispatches against Sales Orders) and Inward (purchases against Purchase Orders) for the selected date, with Balance Weight = weighbridge first weighment minus second weighment."
+          fetcher={getDailyReportPdfApi}
+          filenamePrefix="daily-report"
+        />
+      )}
 
       <ModuleGuide
         title="Reports"
@@ -356,7 +459,9 @@ export default function ReportsPage() {
           "Gate Register — every truck that's come through the gate, with vehicle/driver/vendor/material details, filterable by date.",
           "Production Summary — every batch run, with input/output quantities and recovery %, filterable by production date.",
           "Material Flow — the big picture: how much came in, how much got processed, and how much is sitting in the warehouse right now. Pick a rolling period (today/week/month) or an exact date range.",
-          "Every report has an Export CSV button for opening the same data in Excel or Sheets.",
+          "Daily Outward — the day's outward logistics sheet: vehicle, item, destination, transporter and transit status per dispatch.",
+          "Daily Report — the day's Outward/Inward summary per plant, with weighbridge Balance Weight, bags and lot numbers.",
+          "Every report has an Export CSV button for opening the same data in Excel or Sheets (the two PDF reports above open as a PDF preview instead).",
         ]}
       />
     </div>

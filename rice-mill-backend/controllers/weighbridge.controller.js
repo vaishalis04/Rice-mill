@@ -143,6 +143,12 @@ create: async (req, res, next) => {
           `Sales entry must be in 'waiting_weighment' for first weight. Current status: '${gateEntry.gate_status}'`
         );
       }
+      if (hasFirstWeight && gateEntry.gate_status === "waiting_loading") {
+        throw createError(
+          400,
+          "Second weight isn't allowed yet — this truck isn't fully loaded. Complete loading of the whole Sales Order first (Warehouse > Loading)."
+        );
+      }
       if (hasFirstWeight && gateEntry.gate_status !== "waiting_second_weighment") {
         throw createError(
           400,
@@ -380,8 +386,16 @@ create: async (req, res, next) => {
         // For purchase entries, set to in_process after first weight
         newStatus = "in_process";
         statusMessage = "in_process";
-      } else if (isSalesEntry || isOtherEntry) {
-        // For sales and other entries, set to waiting_second_weighment
+      } else if (isSalesEntry) {
+        // Sales trucks go to Loading next — bags are loaded (bag size x no.
+        // of bags, see loading.controller.js) and only once the Sales Order
+        // is FULLY loaded does the gate entry move on to
+        // 'waiting_second_weighment'. Going straight there from here let a
+        // truck be weighed out before (or without) being loaded at all.
+        newStatus = "waiting_loading";
+        statusMessage = "waiting_loading";
+      } else if (isOtherEntry) {
+        // Empty/misc trucks don't load anything — straight to second weighment.
         newStatus = "waiting_second_weighment";
         statusMessage = "waiting_second_weighment";
       }

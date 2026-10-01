@@ -73,7 +73,8 @@ module.exports = {
   // { so_id, vehicle_id, driver_id, finished_goods_ids: [1,2,...], dispatch_weight?, dispatch_time?, dispatch_type? }
   create: async (req, res, next) => {
     try {
-      const { so_id, vehicle_id, driver_id, finished_goods_ids, dispatch_weight, dispatch_time, dispatch_type, plant_id } = req.body;
+      const { so_id, vehicle_id, driver_id, finished_goods_ids, dispatch_weight, dispatch_time, dispatch_type, plant_id,
+        transporter_name, destination, transit_location_note, transit_position_note, unloading_date } = req.body;
 
       if (!so_id || !Array.isArray(finished_goods_ids) || finished_goods_ids.length === 0) {
         throw createError(400, "so_id and a non-empty finished_goods_ids array are required");
@@ -120,6 +121,11 @@ module.exports = {
         dispatch_type: dispatch_type || "normal",
         dispatch_status: "dispatched",
         plant_id: plant_id || so.plant_id || (req.user ? req.user.plant_id : null),
+        transporter_name: transporter_name || null,
+        destination: destination || null,
+        transit_location_note: transit_location_note || null,
+        transit_position_note: transit_position_note || null,
+        unloading_date: unloading_date || null,
         created_by: req.user ? req.user.id : null,
       });
 
@@ -150,12 +156,18 @@ module.exports = {
       const dispatch = await Dispatch.findOne({ where: { id: req.params.id, is_deleted: false } });
       if (!dispatch) throw createError(404, "Dispatch not found");
 
-      const { dispatch_weight, dispatch_time, dispatch_status, plant_id } = req.body;
+      const { dispatch_weight, dispatch_time, dispatch_status, plant_id,
+        transporter_name, destination, transit_location_note, transit_position_note, unloading_date } = req.body;
       if (dispatch_status && !["pending", "dispatched", "delivered", "cancelled"].includes(dispatch_status)) {
         throw createError(400, "Invalid dispatch_status");
       }
 
-      const updates = { dispatch_weight, dispatch_time, dispatch_status, plant_id };
+      const updates = {
+        dispatch_weight, dispatch_time, dispatch_status, plant_id,
+        // Transport-tracking fields feeding the "Daily Outward" report —
+        // additive, optional, don't affect the core dispatch workflow above.
+        transporter_name, destination, transit_location_note, transit_position_note, unloading_date,
+      };
       Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
       updates.updated_by = req.user ? req.user.id : null;
 

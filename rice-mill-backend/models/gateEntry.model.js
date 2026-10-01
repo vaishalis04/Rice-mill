@@ -58,6 +58,16 @@ gate_status: {
     updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     plant_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "plant_master", key: "id" } }, // multi-plant scalability
+    // --- "Advisory Trucks" (Admin-only, exited trucks) ---
+    // Manual follow-up notes an admin adds after a truck has exited —
+    // separate from the general-purpose `remarks` field above, which is
+    // already used at check-in/attach-details time. Feeds the
+    // Location/Position/Unloading-Loading Date columns of the Daily
+    // Outward report. All nullable/additive — no effect on the gate
+    // workflow itself.
+    advisory_location_note: { type: DataTypes.STRING(255), allowNull: true },
+    advisory_position_note: { type: DataTypes.STRING(100), allowNull: true },
+    advisory_date: { type: DataTypes.DATEONLY, allowNull: true }, // Unloading Date (sales) / Loading Date (purchase)
   },
   {
     sequelize,

@@ -20,6 +20,14 @@ const emptyForm = {
   dispatch_type: "", // doc only names "direct_outward" as an example value
 };
 
+const emptyTransitForm = {
+  transporter_name: "",
+  destination: "",
+  transit_location_note: "",
+  transit_position_note: "",
+  unloading_date: "",
+};
+
 export default function DispatchPage() {
   const [dispatches, setDispatches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +47,14 @@ export default function DispatchPage() {
   const [readyFg, setReadyFg] = useState([]);
   const [fgLoading, setFgLoading] = useState(true);
   const [selectedFgIds, setSelectedFgIds] = useState([]);
+
+  // "Transit Info" — the transporter/location/position/unloading-date notes
+  // shown on the Daily Outward report (Reports page). Edited separately from
+  // the main create form since they're usually filled in after dispatch, as
+  // the truck is followed up on.
+  const [transitEditRow, setTransitEditRow] = useState(null);
+  const [transitForm, setTransitForm] = useState(emptyTransitForm);
+  const [transitSaving, setTransitSaving] = useState(false);
 
   const salesOrders = useEntityLookup("sales_order");
   const vehicles = useEntityLookup("vehicle");
@@ -162,6 +178,33 @@ export default function DispatchPage() {
       window.URL.revokeObjectURL(url);
     } catch {
       setError("Couldn't download the challan PDF");
+    }
+  };
+
+  const openTransitEdit = (row) => {
+    setTransitEditRow(row);
+    setTransitForm({
+      transporter_name: row.transporter_name || "",
+      destination: row.destination || "",
+      transit_location_note: row.transit_location_note || "",
+      transit_position_note: row.transit_position_note || "",
+      unloading_date: row.unloading_date || "",
+    });
+  };
+
+  const handleTransitSave = async (e) => {
+    e.preventDefault();
+    if (!transitEditRow) return;
+    setTransitSaving(true);
+    setError("");
+    try {
+      await updateDispatchApi(transitEditRow.id, transitForm);
+      setTransitEditRow(null);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.message || "Failed to save transit info");
+    } finally {
+      setTransitSaving(false);
     }
   };
 
@@ -312,6 +355,9 @@ export default function DispatchPage() {
                 <button className="dt-btn" onClick={() => handleDownloadChallan(row)}>
                   Download Challan
                 </button>
+                <button className="dt-btn" onClick={() => openTransitEdit(row)}>
+                  Edit Transit Info
+                </button>
                 {row.dispatch_status !== "delivered" && (
                   <button className="dt-btn" onClick={() => handleMarkDelivered(row.id)}>
                     Mark Delivered
@@ -336,6 +382,89 @@ export default function DispatchPage() {
           customerId={historyCustomerId}
           onClose={() => setHistoryCustomerId(null)}
         />
+      )}
+
+      {transitEditRow && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.4)",
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "center",
+            padding: "40px 16px",
+            zIndex: 1000,
+            overflowY: "auto",
+          }}
+          onClick={() => setTransitEditRow(null)}
+        >
+          <div
+            style={{ background: "#fff", borderRadius: 10, padding: 24, maxWidth: 480, width: "100%" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0 }}>
+              Transit Info — Challan {transitEditRow.challan_no}
+            </h3>
+            <p className="field-hint" style={{ marginTop: -6 }}>
+              Feeds the "Daily Outward" report on the Reports page (To, Location, Position, Transporter, Unloading Date).
+            </p>
+            <form className="sf-form" onSubmit={handleTransitSave}>
+              <div className="sf-field">
+                <label>Transporter Name</label>
+                <input
+                  value={transitForm.transporter_name}
+                  onChange={(e) => setTransitForm({ ...transitForm, transporter_name: e.target.value })}
+                  placeholder="e.g. Keshav Road Lines"
+                />
+              </div>
+              <div className="sf-field">
+                <label>To (Destination)</label>
+                <input
+                  value={transitForm.destination}
+                  onChange={(e) => setTransitForm({ ...transitForm, destination: e.target.value })}
+                  placeholder="e.g. Mundra"
+                />
+              </div>
+              <div className="sf-field">
+                <label>Location Note</label>
+                <input
+                  value={transitForm.transit_location_note}
+                  onChange={(e) => setTransitForm({ ...transitForm, transit_location_note: e.target.value })}
+                  placeholder="e.g. on the way / reached destination"
+                />
+              </div>
+              <div className="sf-field">
+                <label>Position Note</label>
+                <input
+                  value={transitForm.transit_position_note}
+                  onChange={(e) => setTransitForm({ ...transitForm, transit_position_note: e.target.value })}
+                  placeholder="e.g. 1 Day / Call Not Received"
+                />
+              </div>
+              <div className="sf-field">
+                <label>Unloading Date</label>
+                <input
+                  type="date"
+                  value={transitForm.unloading_date || ""}
+                  onChange={(e) => setTransitForm({ ...transitForm, unloading_date: e.target.value })}
+                />
+              </div>
+              <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8 }}>
+                <button className="sf-submit" type="submit" disabled={transitSaving}>
+                  {transitSaving ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  className="dt-btn"
+                  onClick={() => setTransitEditRow(null)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       <ModuleGuide

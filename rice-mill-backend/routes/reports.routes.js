@@ -12,5 +12,7 @@ router.get("/production-summary", Controller.productionSummary);
 router.get("/material-flow", Controller.materialFlow);
 router.get("/stock-report", Controller.stockReport);
 router.get("/production-batch/:id/report", Controller.productionReport);
+router.get("/daily-outward-pdf", Controller.dailyOutwardPdf);
+router.get("/daily-report-pdf", Controller.dailyReportPdf);
 
 module.exports = router;

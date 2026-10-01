@@ -10,25 +10,15 @@ import {
   deletePermissionApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
+import { PAGE_CATALOG, permissionCode } from "../../config/pageCatalog";
 
 const emptyRoleForm = { role_name: "", description: "" };
-const emptyPermissionForm = { module: "", action: "all" };
-const ACTIONS = ["create", "read", "update", "delete", "approve"];
+const emptyPermissionForm = { module: "", page: "" };
 
-// Kept in sync with the modules actually wired into
-// `authorizeRoleOrModule(...)` across the route files — a permission for
-// a module that isn't in this list wouldn't unlock anything for a custom
-// role, so the dropdown only offers ones that do something.
-const MODULES = [
-  "gate",
-  "lab",
-  "production",
-  "purchase",
-  "sales",
-  "warehouse",
-  "weighbridge",
-  "dispatch",
-];
+const MODULES = [...new Set(PAGE_CATALOG.map((p) => p.module))];
+const pagesForModule = (moduleName) => PAGE_CATALOG.filter((p) => p.module === moduleName);
+const labelFor = (moduleName, page) =>
+  PAGE_CATALOG.find((p) => p.module === moduleName && p.page === page)?.label || page;
 
 export default function RolesPage() {
   const [roles, setRoles] = useState([]);
@@ -62,7 +52,8 @@ export default function RolesPage() {
 
   useEffect(load, []);
 
-  // Group the flat permission list by module, for the checklist UI.
+  // Group the flat permission list by module (dashboard), for the
+  // checklist UI — same grouping the page catalog uses.
   const permissionsByModule = permissions.reduce((acc, p) => {
     (acc[p.module] = acc[p.module] || []).push(p);
     return acc;
@@ -82,7 +73,7 @@ export default function RolesPage() {
         setInfo("Role updated.");
       } else {
         await createRoleApi(roleForm);
-        setInfo(`Role "${roleForm.role_name}" created — click "Permissions" below to grant it access.`);
+        setInfo(`Role "${roleForm.role_name}" created — click "Pages" below to grant it access.`);
       }
       setRoleForm(emptyRoleForm);
       setEditingRoleId(null);
@@ -112,7 +103,7 @@ export default function RolesPage() {
     }
   };
 
-  // ---------------- Permission checklist per role ----------------
+  // ---------------- Page-permission checklist per role ----------------
 
   const handleOpenPermissions = (row) => {
     setError("");
@@ -143,66 +134,74 @@ export default function RolesPage() {
     setError("");
     try {
       await setRolePermissionsApi(managingRoleId, Array.from(checkedIds));
-      setInfo("Permissions saved.");
+      setInfo("Pages saved.");
       setManagingRoleId(null);
       load();
     } catch (err) {
-      setError(err.response?.data?.message || "Could not save permissions");
+      setError(err.response?.data?.message || "Could not save pages");
     } finally {
       setSavingPermissions(false);
     }
   };
 
-  // ---------------- Permission catalog (add/remove definitions) ----------------
+  // ---------------- Permission catalog (which module/page combos exist) ----------------
+  // A role/user can only be granted a page once it exists here — this just
+  // registers "warehouse.unloading" etc. as a real, grantable Permission
+  // row; the checklists above then use it.
 
-  const handlePermissionChange = (e) =>
-    setPermissionForm({ ...permissionForm, [e.target.name]: e.target.value });
+  const handlePermissionChange = (e) => {
+    const { name, value } = e.target;
+    setPermissionForm((prev) => ({ ...prev, [name]: value, ...(name === "module" ? { page: "" } : {}) }));
+  };
 
   const handleAddPermission = async (e) => {
     e.preventDefault();
     setError("");
     setInfo("");
-    if (!permissionForm.module.trim()) {
-      setError("Choose a module.");
+    if (!permissionForm.module) {
+      setError("Choose a dashboard/module.");
       return;
     }
 
-    // "All" isn't a real action in the database (the Permission table's
-    // action column doesn't have an "all" value) — it's a shortcut that
-    // creates all 5 real actions for this module in one click, so the
-    // module-level checkbox further up ("Permissions for <role>") can
-    // then grant full create/read/update/delete/approve access in one
-    // tick, instead of adding each action to the catalog by hand first.
-    if (permissionForm.action === "all") {
+    // "All pages" adds every catalog page for this module in one click, so
+    // the role checklist below can then tick them individually (or the
+    // whole module at once) without registering each page by hand first.
+    if (permissionForm.page === "__all__") {
+      const pages = pagesForModule(permissionForm.module);
       let added = 0;
       let alreadyExisted = 0;
-      for (const action of ACTIONS) {
+      for (const p of pages) {
         try {
-          await createPermissionApi({ module: permissionForm.module, action });
+          await createPermissionApi({ module: permissionForm.module, action: p.page });
           added++;
         } catch (err) {
           if (err.response?.status === 409) {
             alreadyExisted++;
           } else {
-            setError(err.response?.data?.message || `Could not add ${permissionForm.module}.${action}`);
+            setError(err.response?.data?.message || `Could not add ${permissionForm.module}.${p.page}`);
             load();
             return;
           }
         }
       }
       setInfo(
-        `Added ${added} permission(s) for "${permissionForm.module}"` +
+        `Added ${added} page(s) for "${permissionForm.module}"` +
           (alreadyExisted ? ` (${alreadyExisted} already existed).` : ".") +
-          ` Tick the "${permissionForm.module}" checkbox under a role's Permissions to grant all of them at once.`
+          ` Tick individual pages under a role's "Pages" to grant them.`
       );
       setPermissionForm(emptyPermissionForm);
       load();
       return;
     }
 
+    if (!permissionForm.page) {
+      setError("Choose a page.");
+      return;
+    }
+
     try {
-      await createPermissionApi(permissionForm);
-      setInfo(`Permission "${permissionForm.module}.${permissionForm.action}" added.`);
+      await createPermissionApi({ module: permissionForm.module, action: permissionForm.page });
+      setInfo(`Page "${labelFor(permissionForm.module, permissionForm.page)}" added.`);
       setPermissionForm(emptyPermissionForm);
       load();
     } catch (err) {
@@ -211,7 +210,7 @@ export default function RolesPage() {
   };
 
   const handleDeletePermission = async (id) => {
-    if (!window.confirm("Delete this permission? It will be removed from every role that has it.")) return;
+    if (!window.confirm("Remove this page permission? It will be revoked from every role/user that has it.")) return;
     try {
       await deletePermissionApi(id);
       load();
@@ -221,15 +220,16 @@ export default function RolesPage() {
   };
 
   const managingRole = roles.find((r) => r.id === managingRoleId);
+  const availablePagesForForm = permissionForm.module ? pagesForModule(permissionForm.module) : [];
 
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>Roles & Permissions</h2>
       <p style={{ color: "#666", marginTop: -8 }}>
-        Create custom roles and control exactly which permissions each one gets. Note: a brand-new
-        role only actually restricts/unlocks pages that have been specifically wired up to check
-        permissions — see the note in <code>auth.middleware.js</code> for which pages that covers
-        today.
+        Create custom roles and control exactly which <strong>pages</strong> each one can see — e.g. give the
+        Warehouse role just Unloading and Finished Goods, or hand one specific Admin page (like PO Approval) to a
+        different role entirely. A role/user only sees pages it's actually been granted here; a dashboard with none
+        granted yet shows everything, same as before.
       </p>
 
       {error && <div className="dt-error">{error}</div>}
@@ -272,7 +272,7 @@ export default function RolesPage() {
           { key: "description", label: "Description" },
           {
             key: "permission_count",
-            label: "Permissions Granted",
+            label: "Pages Granted",
             render: (row) => (row.permission_ids || []).length,
           },
           {
@@ -280,14 +280,14 @@ export default function RolesPage() {
             label: "",
             render: (row) => (
               <button className="dt-btn" onClick={() => handleOpenPermissions(row)}>
-                Permissions
+                Pages
               </button>
             ),
           },
         ]}
       />
 
-      {/* ---- Permission checklist for the role currently being managed ---- */}
+      {/* ---- Page checklist for the role currently being managed ---- */}
       {managingRoleId && managingRole && (
         <div
           style={{
@@ -298,10 +298,10 @@ export default function RolesPage() {
             borderRadius: 8,
           }}
         >
-          <h3 style={{ marginTop: 0 }}>Permissions for "{managingRole.role_name}"</h3>
+          <h3 style={{ marginTop: 0 }}>Pages for "{managingRole.role_name}"</h3>
           {Object.keys(permissionsByModule).length === 0 && (
             <p className="field-hint">
-              No permissions defined yet — add some in the catalog below first.
+              No pages registered yet — add some in the catalog below first.
             </p>
           )}
           {Object.entries(permissionsByModule).map(([moduleName, modulePerms]) => {
@@ -314,7 +314,7 @@ export default function RolesPage() {
                     checked={allChecked}
                     onChange={() => handleToggleModule(modulePerms, allChecked)}
                   />
-                  {moduleName}
+                  {PAGE_CATALOG.find((p) => p.module === moduleName)?.group || moduleName}
                 </label>
                 <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginLeft: 24, marginTop: 4 }}>
                   {modulePerms.map((p) => (
@@ -324,7 +324,7 @@ export default function RolesPage() {
                         checked={checkedIds.has(p.id)}
                         onChange={() => handleTogglePermission(p.id)}
                       />
-                      {p.action}
+                      {labelFor(p.module, p.action)}
                     </label>
                   ))}
                 </div>
@@ -333,7 +333,7 @@ export default function RolesPage() {
           })}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button className="sf-submit" onClick={handleSavePermissions} disabled={savingPermissions}>
-              {savingPermissions ? "Saving..." : "Save Permissions"}
+              {savingPermissions ? "Saving..." : "Save Pages"}
             </button>
             <button type="button" className="sf-cancel" onClick={() => setManagingRoleId(null)}>
               Cancel
@@ -342,39 +342,41 @@ export default function RolesPage() {
         </div>
       )}
 
-      {/* ---- Permission catalog (defines what CAN be granted) ---- */}
-      <h3 style={{ marginTop: 32 }}>Permission Catalog</h3>
+      {/* ---- Permission catalog (registers which module/page combos exist) ---- */}
+      <h3 style={{ marginTop: 32 }}>Page Catalog</h3>
       <p className="field-hint" style={{ marginTop: -8 }}>
-        Define the individual permissions that can be granted to a role — e.g. module "warehouse",
-        action "approve".
+        Register the individual pages that can be granted to a role — e.g. dashboard "Warehouse", page "Unloading".
       </p>
       <form className="sf-form" onSubmit={handleAddPermission}>
         <div className="sf-field">
-          <label>Module</label>
+          <label>Dashboard</label>
           <select name="module" value={permissionForm.module} onChange={handlePermissionChange} required>
             <option value="" disabled>
-              Select module…
+              Select dashboard…
             </option>
             {MODULES.map((m) => (
               <option key={m} value={m}>
-                {m}
+                {PAGE_CATALOG.find((p) => p.module === m)?.group || m}
               </option>
             ))}
           </select>
         </div>
         <div className="sf-field">
-          <label>Action</label>
-          <select name="action" value={permissionForm.action} onChange={handlePermissionChange}>
-            <option value="all">All (create, read, update, delete, approve)</option>
-            {ACTIONS.map((a) => (
-              <option key={a} value={a}>
-                {a}
+          <label>Page</label>
+          <select name="page" value={permissionForm.page} onChange={handlePermissionChange} disabled={!permissionForm.module}>
+            <option value="" disabled>
+              Select page…
+            </option>
+            <option value="__all__">All pages on this dashboard</option>
+            {availablePagesForForm.map((p) => (
+              <option key={p.page} value={p.page}>
+                {p.label}
               </option>
             ))}
           </select>
         </div>
         <button className="sf-submit" type="submit">
-          + Add Permission
+          + Add Page
         </button>
       </form>
 
@@ -382,8 +384,8 @@ export default function RolesPage() {
         rows={permissions}
         onDelete={handleDeletePermission}
         columns={[
-          { key: "module", label: "Module" },
-          { key: "action", label: "Action" },
+          { key: "module", label: "Dashboard", render: (row) => PAGE_CATALOG.find((p) => p.module === row.module)?.group || row.module },
+          { key: "action", label: "Page", render: (row) => labelFor(row.module, row.action) },
           { key: "code", label: "Code" },
         ]}
       />

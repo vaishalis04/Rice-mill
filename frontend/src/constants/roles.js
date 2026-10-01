@@ -8,7 +8,16 @@ export const ROLE_ID = {
   sales: 7,
   dispatch: 8,
   weighbridge: 6,
-  weighbridgeLegacy: 11,
+  // The old duplicate "weighbridgeLegacy" (role_id 11) is retired — role_id
+  // 6 is now the only Weighbridge role. app.js does this cleanup
+  // automatically on boot (soft-deletes role_id 11, only if unused).
+  //
+  // "advisory" is a NEW role (Advisory Trucks + Payment Settlement Advice).
+  // app.js created it automatically on boot — confirmed from the server
+  // log as id = 14 (there were already a couple of other custom roles
+  // created earlier, e.g. via registration approval testing, before this
+  // one was added — hence 14, not 12).
+  advisory: 14,
 };
 
 // role_id -> readable name (lowercase as in DB)
@@ -22,7 +31,7 @@ export const ROLE_NAME = {
   [ROLE_ID.sales]: "sales",
   [ROLE_ID.dispatch]: "dispatch",
   [ROLE_ID.weighbridge]: "weighbridge",
-  [ROLE_ID.weighbridgeLegacy]: "weighbridge",
+  [ROLE_ID.advisory]: "advisory",
 };
 
 // role_id -> where to land right after login
@@ -36,7 +45,30 @@ export const ROLE_ROUTES = {
   [ROLE_ID.sales]: "/sales/dashboard",
   [ROLE_ID.dispatch]: "/dispatch/dashboard",
   [ROLE_ID.weighbridge]: "/weighbridge/dashboard",
-  [ROLE_ID.weighbridgeLegacy]: "/weighbridge/dashboard",
+  [ROLE_ID.advisory]: "/advisory/dashboard",
+};
+
+// role_id -> the one permission `module` (config/pageCatalog.js) that
+// role's fixed dashboard actually renders pages for. Used at login to spot
+// when a user has been granted pages OUTSIDE their role's own dashboard
+// (e.g. a "warehouse" role also handed Lab Tests and PO Approval) — a
+// fixed dashboard like WarehouseDashboard only ever imports Warehouse
+// pages, so those extras could never actually show up there no matter what
+// they're granted. See Login.jsx: when that happens, send them to
+// /dashboard (CustomRoleDashboard) instead, which renders any page from
+// any module the user's actually been granted — including their role's
+// own pages, so nothing is lost.
+export const ROLE_HOME_MODULE = {
+  [ROLE_ID.admin]: "admin",
+  [ROLE_ID.purchase]: "purchase",
+  [ROLE_ID.gate]: "gate",
+  [ROLE_ID.lab]: "lab",
+  [ROLE_ID.warehouse]: "warehouse",
+  [ROLE_ID.production]: "production",
+  [ROLE_ID.sales]: "sales",
+  [ROLE_ID.dispatch]: "dispatch",
+  [ROLE_ID.weighbridge]: "weighbridge",
+  [ROLE_ID.advisory]: "advisory",
 };
 
 // A role_id not present in ROLE_ROUTES above is a custom role (created via

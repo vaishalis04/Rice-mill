@@ -3,6 +3,16 @@ const sequelize = require("../config/db");
 const { Loading, GateEntry, SalesOrder, Customer, MaterialMaster, Vehicle, Driver, User, Sampling, LabTest ,GateEntrySalesOrder } = require("../models/index");
 const { generateLoadingNo } = require("../helpers/helperFunction");
 
+// Units on a Sales Order / Loading: bag SIZE is in kg, everything else
+// (ordered, dispatched, remaining, loaded, totals) is in Qtl. 1 Qtl = 1000 kg
+// here — the same definition the frontend's utils/units.js (KG_PER_TON) uses
+// for Unloading/Stock, so Loading lines up with the rest of the app. Rounded
+// to 3 decimals (1 kg = 0.001 Qtl exactly) so small bag counts still add up
+// and "fully loaded" lands on exactly zero remaining.
+const KG_PER_QTL = 1000;
+const round3 = (n) => Math.round(Number(n) * 1000) / 1000;
+const bagsToQtl = (bagSizeKg, bags) => round3((Number(bagSizeKg) * Number(bags)) / KG_PER_QTL);
+
 // Same MariaDB/Sequelize JSON-column quirk handled in purchase.controller.js:
 // a JSON column can round-trip as a raw string instead of an already-parsed
 // array, so every read needs to tolerate both shapes.
@@ -154,11 +164,11 @@ create: async (req, res, next) => {
       throw createError(400, `Cannot load a gate entry with status '${gateEntry.gate_status}'; it must be 'waiting_loading' (checked in)`);
     }
 
-    // Check for existing loading record
-    const existing = await Loading.findOne({ 
-      where: { gate_entry_id, is_deleted: false } 
-    });
-    if (existing) throw createError(409, "A loading record already exists for this gate entry");
+    // A truck can be loaded in more than one pass (partial batches of
+    // bags arriving over time) — the only real guard is the gate_status
+    // check above, which already blocks any further loading once this
+    // gate entry has moved past 'waiting_loading' (i.e. everything on the
+    // Sales Order is fully loaded and it's ready for its second weighment).
 
     // Validate each material quantity
     const validatedMaterials = [];
@@ -166,7 +176,11 @@ create: async (req, res, next) => {
     let soId = null;
     
     for (const materialQty of material_quantities) {
-      const { so_id, material_id, qty } = materialQty;
+      const { so_id, material_id, bag_size, bags } = materialQty;
+      // qty is derived from bag_size x bags — same physical-bag-count
+      // convention Unloading uses — with a plain `qty` still accepted as a
+      // fallback for any other caller of this API.
+      const qty = bag_size != null && bags != null ? bagsToQtl(bag_size, bags) : materialQty.qty;
       
       if (!so_id) {
         throw createError(400, "so_id is required for each material quantity");
@@ -174,6 +188,10 @@ create: async (req, res, next) => {
       
       if (!material_id) {
         throw createError(400, "material_id is required for each material quantity");
+      }
+
+      if ((bag_size == null || bags == null) && !materialQty.qty) {
+        throw createError(400, `bag_size and bags (or qty) required for material ${material_id} in SO ${so_id}`);
       }
       
       if (!qty || Number(qty) <= 0) {
@@ -244,23 +262,25 @@ create: async (req, res, next) => {
       // Calculate remaining quantity for this material
       const orderedQty = Number(soItem.qty || 0);
       const dispatchedQty = Number(soItem.dispatched_qty || 0);
-      const remainingQty = orderedQty - dispatchedQty;
+      const remainingQty = round3(orderedQty - dispatchedQty);
       
-      if (Number(qty) > remainingQty) {
-        throw createError(400, `Loaded qty (${qty}) for material ${junctionRecord.material?.name || material_id} in SO ${so.so_no} exceeds remaining qty (${remainingQty})`);
+      if (round3(qty) > remainingQty) {
+        throw createError(400, `Loaded qty (${round3(qty)} Qtl) for material ${junctionRecord.material?.name || material_id} in SO ${so.so_no} exceeds remaining qty (${remainingQty} Qtl)`);
       }
       
-      totalLoadedQty += Number(qty);
+      totalLoadedQty = round3(totalLoadedQty + Number(qty));
       
       validatedMaterials.push({
         so_id: so_id,
         so_no: so.so_no,
         material_id: material_id,
         material_name: junctionRecord.material?.name || `Material ${material_id}`,
+        bag_size: bag_size != null ? Number(bag_size) : null,
+        bags: bags != null ? Number(bags) : null,
         qty: Number(qty),
         ordered_qty: orderedQty,
         dispatched_qty: dispatchedQty,
-        remaining_qty: remainingQty - Number(qty),
+        remaining_qty: round3(remainingQty - Number(qty)),
         salesOrder: so,
         junctionRecord: junctionRecord,
         soItem: soItem,
@@ -269,14 +289,16 @@ create: async (req, res, next) => {
     }
     
     // Validate total loaded quantity matches
-    if (Math.abs(Number(loaded_qty) - totalLoadedQty) > 0.01) {
+    if (Math.abs(Number(loaded_qty) - totalLoadedQty) > 0.002) {
       throw createError(400, `Total loaded_qty (${loaded_qty}) does not match sum of material quantities (${totalLoadedQty})`);
     }
 
     // Generate loading number
     const loading_no = await generateLoadingNo();
 
-    // Create a SINGLE loading record
+    // Create a SINGLE loading record — `items` is this record's own
+    // per-material breakdown (bag_size/bags/qty), separate from the Sales
+    // Order's own cumulative items updated further below.
     const loading = await Loading.create({
       loading_no,
       gate_entry_id,
@@ -285,14 +307,15 @@ create: async (req, res, next) => {
       loaded_at: loaded_at || new Date(),
       loading_operator_id: req.user ? req.user.id : null,
       remarks: remarks || `Loaded ${validatedMaterials.length} material(s)`,
+      items: validatedMaterials.map((m) => ({
+        so_id: m.so_id,
+        material_id: m.material_id,
+        bag_size: m.bag_size,
+        bags: m.bags,
+        qty: m.qty,
+      })),
       plant_id: plant_id || gateEntry.plant_id || (req.user ? req.user.plant_id : null),
       created_by: req.user ? req.user.id : null,
-    });
-
-    // Update gate entry status to 'loaded'
-    await gateEntry.update({ 
-      gate_status: "waiting_second_weighment", 
-      updated_by: req.user ? req.user.id : null 
     });
 
     // Update the sales order's dispatched quantity and items
@@ -306,7 +329,7 @@ create: async (req, res, next) => {
         const currentDispatched = Number(item.dispatched_qty || 0);
         return {
           ...item,
-          dispatched_qty: currentDispatched + Number(material.qty)
+          dispatched_qty: round3(currentDispatched + Number(material.qty))
         };
       }
       return item;
@@ -317,16 +340,27 @@ create: async (req, res, next) => {
       material_id: item.material_id,
       ordered_qty: Number(item.qty || 0),
       dispatched_qty: Number(item.dispatched_qty || 0),
-      remaining_qty: Number(item.qty || 0) - Number(item.dispatched_qty || 0)
+      remaining_qty: round3(Number(item.qty || 0) - Number(item.dispatched_qty || 0))
     }));
     
     // Check if ALL materials are fully loaded
     const allMaterialsFullyLoaded = materialsStatus.every(m => m.remaining_qty <= 0);
+
+    // This is the crux of the whole flow: the gate entry only moves on to
+    // 'waiting_second_weighment' (and can go for its second weighment) once
+    // EVERY material on the Sales Order is fully loaded. A partial load
+    // (any material still short) leaves it at 'waiting_loading' — another
+    // loading pass can be recorded against the same gate entry (see the
+    // removed "already exists" check above) until it's complete.
+    await gateEntry.update({
+      gate_status: allMaterialsFullyLoaded ? "waiting_second_weighment" : "waiting_loading",
+      updated_by: req.user ? req.user.id : null
+    });
     
     // Calculate total dispatched quantity
-    const totalDispatchedQty = updatedItems.reduce((sum, item) => {
+    const totalDispatchedQty = round3(updatedItems.reduce((sum, item) => {
       return sum + Number(item.dispatched_qty || 0);
-    }, 0);
+    }, 0));
     
     // Update the SO
     await so.update({
@@ -337,12 +371,15 @@ create: async (req, res, next) => {
     });
     
     // Calculate remaining quantities for response
-    const newRemainingQty = Number(so.qty) - totalDispatchedQty; // ✅ This was missing
+    // Real ordered total = sum of each item's own qty (the row-level so.qty
+    // column is deprecated and often empty on multi-material orders).
+    const totalOrderedQty = round3(updatedItems.reduce((sum, item) => sum + Number(item.qty || 0), 0));
+    const newRemainingQty = round3(totalOrderedQty - totalDispatchedQty);
     
     const results = [{
       so_id: so.id,
       so_no: so.so_no,
-      ordered_qty: Number(so.qty),
+      ordered_qty: totalOrderedQty,
       dispatched_qty: totalDispatchedQty,
       remaining_qty: Math.max(newRemainingQty, 0),
       is_fully_loaded: allMaterialsFullyLoaded,
@@ -367,8 +404,8 @@ create: async (req, res, next) => {
     res.status(201).json({
       success: true,
       msg: allMaterialsFullyLoaded
-        ? `Loading recorded — Sales Order ${so.so_no} is now fully loaded and marked 'dispatched'.`
-        : `Loading recorded — Sales Order ${so.so_no} still has remaining quantities.`,
+        ? `Loading recorded — Sales Order ${so.so_no} is now fully loaded; the gate entry can proceed to its second weighment.`
+        : `Loading recorded — Sales Order ${so.so_no} still has remaining quantity; the gate entry stays at 'waiting_loading' until it's fully loaded.`,
       data: created,
       results: results,
       all_fully_loaded: allMaterialsFullyLoaded
@@ -428,7 +465,7 @@ create: async (req, res, next) => {
           if (reverseQty) {
             return {
               ...item,
-              dispatched_qty: Math.max(0, Number(item.dispatched_qty || 0) - reverseQty),
+              dispatched_qty: Math.max(0, round3(Number(item.dispatched_qty || 0) - reverseQty)),
             };
           }
           return item;
@@ -439,10 +476,11 @@ create: async (req, res, next) => {
         let newTotalQty = 0;
 
         for (const entry of material_quantities) {
-          const { material_id, qty } = entry || {};
+          const { material_id, bag_size, bags } = entry || {};
+          const qty = bag_size != null && bags != null ? bagsToQtl(bag_size, bags) : entry?.qty;
           if (!material_id) throw createError(400, "material_id is required for each material quantity");
 
-          const qtyNum = Number(qty);
+          const qtyNum = round3(qty);
           if (!Number.isFinite(qtyNum) || qtyNum < 0) {
             throw createError(400, `Invalid quantity for material ${material_id}`);
           }
@@ -455,21 +493,23 @@ create: async (req, res, next) => {
 
           const orderedQty = Number(soItem.qty || 0);
           const dispatchedQty = Number(soItem.dispatched_qty || 0);
-          const remainingQty = orderedQty - dispatchedQty;
+          const remainingQty = round3(orderedQty - dispatchedQty);
 
           if (qtyNum > remainingQty) {
             const name = materialById.get(String(material_id))?.name || `Material ${material_id}`;
             throw createError(
               400,
-              `Quantity (${qtyNum}) for ${name} exceeds remaining qty (${remainingQty}) on SO ${so.so_no}`,
+              `Quantity (${qtyNum} Qtl) for ${name} exceeds remaining qty (${remainingQty} Qtl) on SO ${so.so_no}`,
             );
           }
 
-          soItem.dispatched_qty = dispatchedQty + qtyNum;
-          newTotalQty += qtyNum;
+          soItem.dispatched_qty = round3(dispatchedQty + qtyNum);
+          newTotalQty = round3(newTotalQty + qtyNum);
           newItems.push({
             so_id: loading.so_id,
             material_id: Number(material_id),
+            bag_size: bag_size != null ? Number(bag_size) : null,
+            bags: bags != null ? Number(bags) : null,
             qty: qtyNum,
           });
         }
@@ -478,17 +518,17 @@ create: async (req, res, next) => {
           throw createError(400, "At least one material must have a quantity greater than 0");
         }
 
-        const totalDispatchedQty = soItems.reduce(
+        const totalDispatchedQty = round3(soItems.reduce(
           (sum, item) => sum + Number(item.dispatched_qty || 0),
           0,
-        );
+        ));
         // Same fix as create(): the SO's real ordered total is the sum of
         // each item's own qty, not the deprecated row-level so.qty column.
         const totalOrderedQty = soItems.reduce(
           (sum, item) => sum + Number(item.qty || 0),
           0,
         );
-        const newRemainingQty = totalOrderedQty - totalDispatchedQty;
+        const newRemainingQty = round3(totalOrderedQty - totalDispatchedQty);
         const isFullyLoaded = newRemainingQty <= 0;
 
         await so.update(
@@ -510,6 +550,21 @@ create: async (req, res, next) => {
           },
           { transaction: t },
         );
+
+        // Keep the gate entry's status in step with this edit — but only
+        // while it's still sitting at the loading stage. If the truck has
+        // already gone further (second weighment done, parked, exited...),
+        // an edit here shouldn't yank it backwards or skip it forwards.
+        const gateEntry = await GateEntry.findOne({ where: { id: loading.gate_entry_id }, transaction: t });
+        if (gateEntry && ["waiting_loading", "waiting_second_weighment"].includes(gateEntry.gate_status)) {
+          const nextStatus = isFullyLoaded ? "waiting_second_weighment" : "waiting_loading";
+          if (gateEntry.gate_status !== nextStatus) {
+            await gateEntry.update(
+              { gate_status: nextStatus, updated_by: req.user ? req.user.id : null },
+              { transaction: t },
+            );
+          }
+        }
       } else {
         // Legacy path — total-only edit, no per-material changes.
         const updates = {};

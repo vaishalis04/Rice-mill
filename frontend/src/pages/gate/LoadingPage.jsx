@@ -7,10 +7,12 @@ import {
   updateSalesOrderApi,
   getGateEntryByIdApi,
   getSalesOrderByIdApi,
+  getOutwardSlipPdfApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
+import PdfPreviewModal from "../../components/PdfPreviewModal";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 const emptyForm = { gate_entry_id: "", loaded_qty: "", remarks: "" };
@@ -18,9 +20,16 @@ const emptyForm = { gate_entry_id: "", loaded_qty: "", remarks: "" };
 export default function LoadingPage() {
   const [loadings, setLoadings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pdfPreview, setPdfPreview] = useState(null); // { url, fileName, title }
+  const [slipLoadingId, setSlipLoadingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [selectedItems, setSelectedItems] = useState([]);
   const [materialQuantities, setMaterialQuantities] = useState({});
+  // Same "bag size (kg) x no. of bags" entry Unloading uses — qty is
+  // derived from these two, not typed directly, so a load always lines up
+  // with a real, physical bag count.
+  const [materialBagSizes, setMaterialBagSizes] = useState({});
+  const [materialBagCounts, setMaterialBagCounts] = useState({});
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -181,6 +190,8 @@ export default function LoadingPage() {
     setForm({ ...form, gate_entry_id });
     setSelectedItems([]);
     setMaterialQuantities({});
+    setMaterialBagSizes({});
+    setMaterialBagCounts({});
     setGateEntryMaterials([]);
   };
 
@@ -193,30 +204,49 @@ export default function LoadingPage() {
       
       // Clean up quantities for deselected items
       const newQuantities = { ...materialQuantities };
+      const newBagSizes = { ...materialBagSizes };
+      const newBagCounts = { ...materialBagCounts };
       if (!newSelection.includes(materialId)) {
         delete newQuantities[materialId];
+        delete newBagSizes[materialId];
+        delete newBagCounts[materialId];
       }
       setMaterialQuantities(newQuantities);
+      setMaterialBagSizes(newBagSizes);
+      setMaterialBagCounts(newBagCounts);
       
       return newSelection;
     });
   };
 
-  const handleQuantityChange = (materialId, value) => {
+  // Bag Size (kg) x Bags -> qty (Qtl) — same convention Unloading uses,
+  // so a load always corresponds to a real, physical bag count rather
+  // than an arbitrary typed number.
+  // Bag Size is the only field in kg — its resulting quantity (like
+  // everywhere else on this page: ordered/dispatched/remaining/loaded)
+  // is in Qtl. 1 Qtl = 1000 kg, rounded to 3 decimals so small bag
+  // counts still add up exactly (matches loading.controller.js's
+  // bagsToQtl on the backend).
+  const KG_PER_QTL = 1000;
+  const round3 = (n) => Math.round(Number(n) * 1000) / 1000;
+
+  const handleBagInputChange = (materialId, field, value) => {
     const material = availableMaterials.find(m => m.id === materialId);
     if (!material) return;
-    
-    const numValue = Number(value) || 0;
-    
-    if (numValue > material.remaining_qty) {
-      setError(`Cannot exceed remaining quantity of ${material.remaining_qty} for ${material.material_name}`);
+
+    const nextBagSize = field === "bagSize" ? Number(value) || 0 : Number(materialBagSizes[materialId] || 0);
+    const nextBags = field === "bags" ? Number(value) || 0 : Number(materialBagCounts[materialId] || 0);
+    const computedQty = round3((nextBagSize * nextBags) / KG_PER_QTL);
+
+    if (computedQty > material.remaining_qty) {
+      setError(`${nextBags} bags x ${nextBagSize} kg = ${computedQty} Qtl exceeds remaining quantity of ${material.remaining_qty} Qtl for ${material.material_name}`);
       return;
     }
-    
-    setMaterialQuantities(prev => ({
-      ...prev,
-      [materialId]: numValue
-    }));
+
+    if (field === "bagSize") setMaterialBagSizes(prev => ({ ...prev, [materialId]: value }));
+    else setMaterialBagCounts(prev => ({ ...prev, [materialId]: value }));
+
+    setMaterialQuantities(prev => ({ ...prev, [materialId]: computedQty }));
     setError("");
   };
 
@@ -233,8 +263,13 @@ export default function LoadingPage() {
 
     for (const materialId of selectedItems) {
       const qty = Number(materialQuantities[materialId] || 0);
+      const bagSize = Number(materialBagSizes[materialId] || 0);
+      const bags = Number(materialBagCounts[materialId] || 0);
       const material = availableMaterials.find((m) => m.id === materialId);
 
+      if (bagSize <= 0 || bags <= 0) {
+        throw new Error(`Please enter bag size and no. of bags for ${material?.material_name || "material"}`);
+      }
       if (qty <= 0) {
         throw new Error(`Please enter quantity for ${material?.material_name || "material"}`);
       }
@@ -248,14 +283,13 @@ export default function LoadingPage() {
       quantities.push({
         so_id: Number(material.so_id),
         material_id: Number(material.material_id),
+        bag_size: bagSize,
+        bags,
         qty,
       });
       totalQty += qty;
     }
 
-    if (Math.abs(totalQty - Number(form.loaded_qty || 0)) > 0.01) {
-      throw new Error(`Total material quantities (${totalQty}) must equal loaded_qty (${form.loaded_qty || 0})`);
-    }
     if (totalQty === 0) {
       throw new Error("Total loaded quantity must be greater than 0");
     }
@@ -309,6 +343,8 @@ export default function LoadingPage() {
       setForm(emptyForm);
       setSelectedItems([]);
       setMaterialQuantities({});
+      setMaterialBagSizes({});
+      setMaterialBagCounts({});
       setEditingOwnQuantities({});
       setEditingId(null);
       setEditingSoId(null);
@@ -353,28 +389,36 @@ export default function LoadingPage() {
       remarks: row.remarks || "",
     });
 
-    const existingBreakdown = Array.isArray(row.material_quantities)
-      ? row.material_quantities
+    const existingBreakdown = Array.isArray(row.items)
+      ? row.items
       : [];
 
     if (existingBreakdown.length > 0) {
       const keys = [];
       const quantities = {};
+      const bagSizes = {};
+      const bagCounts = {};
       const ownByMaterial = {};
 
       existingBreakdown.forEach((m) => {
         const uniqueKey = `${m.so_id}-${m.material_id}`;
         keys.push(uniqueKey);
         quantities[uniqueKey] = Number(m.qty) || 0;
+        bagSizes[uniqueKey] = m.bag_size ?? "";
+        bagCounts[uniqueKey] = m.bags ?? "";
         ownByMaterial[m.material_id] = Number(m.qty) || 0;
       });
 
       setSelectedItems(keys);
       setMaterialQuantities(quantities);
+      setMaterialBagSizes(bagSizes);
+      setMaterialBagCounts(bagCounts);
       setEditingOwnQuantities(ownByMaterial);
     } else {
       setSelectedItems([]);
       setMaterialQuantities({});
+      setMaterialBagSizes({});
+      setMaterialBagCounts({});
       setEditingOwnQuantities({});
     }
   };
@@ -385,6 +429,8 @@ export default function LoadingPage() {
     setForm(emptyForm);
     setSelectedItems([]);
     setMaterialQuantities({});
+    setMaterialBagSizes({});
+    setMaterialBagCounts({});
     setEditingOwnQuantities({});
   };
 
@@ -395,6 +441,20 @@ export default function LoadingPage() {
       load();
     } catch {
       setError("Delete failed");
+    }
+  };
+
+  const handleViewOutwardSlip = async (row) => {
+    setError("");
+    setSlipLoadingId(row.id);
+    try {
+      const res = await getOutwardSlipPdfApi(row.id);
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      setPdfPreview({ url, fileName: `outward-slip-${row.loading_no}.pdf`, title: `Outward Slip — ${row.loading_no}` });
+    } catch (err) {
+      setError(err.response?.data?.message || "Couldn't generate the Outward Slip PDF");
+    } finally {
+      setSlipLoadingId(null);
     }
   };
 
@@ -495,11 +555,11 @@ export default function LoadingPage() {
                                 SO: {material.so_no}
                               </span>
                               <div style={{ marginTop: 2, fontSize: 12, color: "#475569" }}>
-                                Ordered: <strong>{material.ordered_qty}</strong> kg
+                                Ordered: <strong>{material.ordered_qty}</strong> Qtl
                                 {" · "}
-                                Dispatched so far: <strong>{material.dispatched_qty}</strong> kg
+                                Dispatched so far: <strong>{material.dispatched_qty}</strong> Qtl
                                 {" · "}
-                                Remaining: <strong>{material.remaining_qty}</strong> kg
+                                Remaining: <strong>{material.remaining_qty}</strong> Qtl
                               </div>
                               {material.is_fully_loaded && (
                                 <span
@@ -545,17 +605,16 @@ export default function LoadingPage() {
                               )}
                             </div>
                             {isSelectable && isSelected && (
-                              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                 <input
                                   type="number"
                                   step="0.01"
                                   min="0"
-                                  max={material.remaining_qty}
-                                  value={currentQty}
-                                  onChange={(e) => handleQuantityChange(material.id, e.target.value)}
-                                  placeholder="Qty"
+                                  value={materialBagSizes[material.id] ?? ""}
+                                  onChange={(e) => handleBagInputChange(material.id, "bagSize", e.target.value)}
+                                  placeholder="Bag size"
                                   style={{
-                                    width: 100,
+                                    width: 80,
                                     padding: "4px 6px",
                                     border: "1px solid #d1d5db",
                                     borderRadius: 4,
@@ -563,13 +622,30 @@ export default function LoadingPage() {
                                   }}
                                   required
                                 />
-                                <span style={{ fontSize: 12, color: "#64748b" }}>kg</span>
+                                <span style={{ fontSize: 12, color: "#64748b" }}>kg x</span>
+                                <input
+                                  type="number"
+                                  step="1"
+                                  min="0"
+                                  value={materialBagCounts[material.id] ?? ""}
+                                  onChange={(e) => handleBagInputChange(material.id, "bags", e.target.value)}
+                                  placeholder="Bags"
+                                  style={{
+                                    width: 70,
+                                    padding: "4px 6px",
+                                    border: "1px solid #d1d5db",
+                                    borderRadius: 4,
+                                    fontSize: 13,
+                                  }}
+                                  required
+                                />
+                                <span style={{ fontSize: 12, color: "#64748b" }}>bags = {currentQty || 0} Qtl</span>
                               </div>
                             )}
                           </div>
                           {isSelected && currentQty > 0 && (
                             <div style={{ fontSize: 11, color: "#64748b", marginTop: 2, marginLeft: 28 }}>
-                              {currentQty} kg loaded — {material.remaining_qty - currentQty} kg remaining after this truck
+                              {currentQty} Qtl loaded — {round3(material.remaining_qty - currentQty)} Qtl remaining after this truck
                             </div>
                           )}
                         </div>
@@ -580,12 +656,14 @@ export default function LoadingPage() {
                       <div style={{ marginTop: 8, padding: "6px 8px", background: "#e6f7e6", borderRadius: 4 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
                           <strong>Selected: {selectedItems.length} material(s)</strong>
-                          <span>Total to load: {totalLoadedQty} kg</span>
+                          <span>Total to load: {totalLoadedQty} Qtl</span>
                           <button
                             type="button"
                             onClick={() => {
                               setSelectedItems([]);
                               setMaterialQuantities({});
+                              setMaterialBagSizes({});
+                              setMaterialBagCounts({});
                             }}
                             style={{
                               padding: "2px 8px",
@@ -622,25 +700,19 @@ export default function LoadingPage() {
         )}
         
         <div className="sf-field">
-          <label>Total Loaded Qty (kg)</label>
+          <label>Total Loaded Qty (Qtl)</label>
           <input
             name="loaded_qty"
             type="number"
-            step="0.01"
-            value={form.loaded_qty}
-            onChange={handleChange}
+            step="0.001"
+            value={totalLoadedQty || form.loaded_qty}
+            readOnly
             required
-            placeholder="Enter total quantity"
+            placeholder="Computed from bag size x bags above"
           />
           {selectedItems.length > 0 && (
             <p className="field-hint">
-              Total remaining across selected materials: {totalRemainingQty} kg
-              {totalLoadedQty > 0 && ` | Entered in materials: ${totalLoadedQty} kg`}
-              {Math.abs(totalLoadedQty - Number(form.loaded_qty || 0)) > 0.01 && totalLoadedQty > 0 && (
-                <span style={{ color: "#dc2626", display: "block" }}>
-                  ⚠️ Mismatch: {totalLoadedQty} kg entered in materials vs {form.loaded_qty || 0} kg total
-                </span>
-              )}
+              Total remaining across selected materials: {totalRemainingQty} Qtl
             </p>
           )}
         </div>
@@ -674,8 +746,8 @@ export default function LoadingPage() {
           <h4 style={{ marginTop: 0 }}>Partial Loading Detected</h4>
           {lastResult.results.map((result, idx) => (
             <div key={idx} style={{ fontSize: 14, marginBottom: 4 }}>
-              {result.so_no}: {result.dispatched_qty}/{result.ordered_qty} loaded — 
-              <strong> {result.remaining_qty} kg remaining</strong>
+              {result.so_no}: {result.dispatched_qty}/{result.ordered_qty} Qtl loaded — 
+              <strong> {result.remaining_qty} Qtl remaining</strong>
               {result.is_fully_loaded && " ✅"}
             </div>
           ))}
@@ -733,11 +805,11 @@ export default function LoadingPage() {
             render: (row) => salesOrders.getLabel(row.so_id),
           },
           {
-            key: "material_quantities",
+            key: "items",
             label: "Materials Loaded",
             render: (row) => {
-              const breakdown = Array.isArray(row.material_quantities)
-                ? row.material_quantities
+              const breakdown = Array.isArray(row.items)
+                ? row.items
                 : [];
               if (breakdown.length === 0) {
                 return row.remarks || "—";
@@ -750,7 +822,9 @@ export default function LoadingPage() {
                       `Material ${m.material_id}`;
                     return (
                       <span key={idx} style={{ fontSize: 12, whiteSpace: "nowrap" }}>
-                        <strong>{name}:</strong> {m.qty} kg
+                        <strong>{name}:</strong>{" "}
+                        {m.bag_size && m.bags ? `${m.bags} bags x ${m.bag_size} kg = ` : ""}
+                        {m.qty} Qtl
                       </span>
                     );
                   })}
@@ -758,25 +832,45 @@ export default function LoadingPage() {
               );
             },
           },
-          { key: "loaded_qty", label: "Loaded Qty (kg)" },
+          { key: "loaded_qty", label: "Loaded Qty (Qtl)" },
           {
             key: "loaded_at",
             label: "Loaded At",
             render: (row) => (row.loaded_at ? new Date(row.loaded_at).toLocaleString() : "—"),
           },
+          {
+            key: "outward_slip",
+            label: "Outward Slip",
+            render: (row) => (
+              <button className="dt-btn" disabled={slipLoadingId === row.id} onClick={() => handleViewOutwardSlip(row)}>
+                {slipLoadingId === row.id ? "Generating…" : "View"}
+              </button>
+            ),
+          },
         ]}
       />
+
+      {pdfPreview && (
+        <PdfPreviewModal
+          title={pdfPreview.title}
+          blobUrl={pdfPreview.url}
+          fileName={pdfPreview.fileName}
+          onClose={() => {
+            window.URL.revokeObjectURL(pdfPreview.url);
+            setPdfPreview(null);
+          }}
+        />
+      )}
 
       <ModuleGuide
         title="Loading"
         steps={[
-          "Only sales (outbound) gate entries that are checked in and 'waiting_loading' show up here.",
+          "Only sales (outbound) gate entries that are checked in and 'waiting_loading' show up here — that happens right after the first weighment.",
           "Select the gate entry, then choose which materials this truck is carrying.",
-          "Enter the quantity for each selected material — quantities are tracked per material.",
-          "The total of all material quantities must equal the total loaded_qty.",
-          "If a material isn't fully loaded, you can create another gate entry against the same Sales Order.",
-          "The remaining quantity will automatically show up for the next truck.",
-          "Once all materials are fully loaded, the Sales Order is automatically marked as 'dispatched'.",
+          "Enter Bag Size (kg) and No. of Bags for each selected material, same as Unloading — the quantity is computed automatically.",
+          "If a material isn't fully loaded, load the rest in a separate loading entry against the same truck (or the next one) once more bags are ready.",
+          "The truck can only go for its second weighment once every material on the Sales Order is fully loaded — a partial load leaves it at 'waiting_loading'.",
+          "Once all materials are fully loaded, the gate entry moves to 'waiting_second_weighment' and the Sales Order is automatically marked as 'dispatched'.",
           "You can also manually close the order if you want to stop loading the remaining quantity."
         ]}
       />

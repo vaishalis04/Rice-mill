@@ -6,6 +6,26 @@ export const loginApi = (email, password) =>
 
 export const registerApi = (data) => axiosInstance.post("/auth/register", data);
 
+// ---------------- SELF-REGISTRATION (pending admin approval) ----------------
+export const submitRegistrationRequestApi = (data) =>
+  axiosInstance.post("/registration-requests", data);
+
+export const getRegistrationRequestsApi = (params = {}) =>
+  axiosInstance.get("/registration-requests", { params });
+
+export const approveRegistrationRequestApi = (id, data) =>
+  axiosInstance.post(`/registration-requests/${id}/approve`, data);
+
+export const rejectRegistrationRequestApi = (id, reason) =>
+  axiosInstance.post(`/registration-requests/${id}/reject`, { reason });
+
+// ---------------- PER-USER PERMISSION OVERRIDES ----------------
+export const getUserPermissionsApi = (userId) =>
+  axiosInstance.get(`/role-management/users/${userId}/permissions`);
+
+export const setUserPermissionsApi = (userId, pages) =>
+  axiosInstance.put(`/role-management/users/${userId}/permissions`, { pages });
+
 export const getCurrentUserApi = () => axiosInstance.get("/auth/me");
 
 // Any logged-in user — used by a custom role's dashboard to find out what
@@ -330,6 +350,46 @@ export const getStockReportPdfApi = (params = {}) =>
 
 export const getProductionReportPdfApi = (batchId) =>
   axiosInstance.get(`/reports/production-batch/${batchId}/report`, { responseType: "blob" });
+
+// date defaults to today on the backend if omitted; plant_id optional.
+export const getDailyOutwardReportPdfApi = (params = {}) =>
+  axiosInstance.get("/reports/daily-outward-pdf", { params, responseType: "blob" });
+
+export const getDailyReportPdfApi = (params = {}) =>
+  axiosInstance.get("/reports/daily-report-pdf", { params, responseType: "blob" });
+
+// ---------------- ADVISORY TRUCKS (Admin only) ----------------
+export const getAdvisoryTrucksApi = (params = {}) =>
+  axiosInstance.get("/advisory-trucks", { params });
+
+export const updateAdvisoryTruckApi = (id, data) =>
+  axiosInstance.patch(`/advisory-trucks/${id}`, data);
+
+// ---------------- MATERIAL SLIPS (Inward after Unloading / Outward after Loading) ----------------
+export const getInwardSlipPdfApi = (lotId) =>
+  axiosInstance.get(`/material-slips/inward/${lotId}`, { responseType: "blob" });
+
+export const getOutwardSlipPdfApi = (loadingId) =>
+  axiosInstance.get(`/material-slips/outward/${loadingId}`, { responseType: "blob" });
+
+// ---------------- PAYMENT SETTLEMENT ADVICE (Advisory role) ----------------
+export const getPaymentSettlementsApi = (params = {}) =>
+  axiosInstance.get("/payment-settlements", { params });
+
+export const getPaymentSettlementByIdApi = (id) =>
+  axiosInstance.get(`/payment-settlements/${id}`);
+
+export const createPaymentSettlementApi = (data) =>
+  axiosInstance.post("/payment-settlements", data);
+
+export const updatePaymentSettlementApi = (id, data) =>
+  axiosInstance.put(`/payment-settlements/${id}`, data);
+
+export const deletePaymentSettlementApi = (id) =>
+  axiosInstance.delete(`/payment-settlements/${id}`);
+
+export const getPaymentSettlementPdfApi = (id) =>
+  axiosInstance.get(`/payment-settlements/${id}/pdf`, { responseType: "blob" });
 
 export const completePackingApi = (data) =>
   axiosInstance.post("/packing/complete", data);

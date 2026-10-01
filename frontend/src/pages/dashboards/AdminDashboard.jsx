@@ -12,27 +12,34 @@ import SalesOrderApprovalPage from "../admin/Salesorderapprovalpage";
 import RolesPage from "../admin/RolesPage";
 import VisitorsPage from "../admin/VisitorsPage";
 import GateEntryAdminPage from "../admin/GateEntryAdminPage";
+import AdvisoryTrucksPage from "../admin/AdvisoryTrucksPage";
+import UserApprovalsPage from "../admin/UserApprovalsPage";
+import { usePermissionFilteredTabs } from "../../hooks/usePermissionFilteredTabs";
+import { permissionCode } from "../../config/pageCatalog";
 
-const TABS = [
-  { key: "dashboard", label: "Dashboard" },
-  { key: "master", label: "Master Settings" },
-  { key: "vehicles", label: "Vehicles & Drivers" },
-  { key: "customers", label: "Customers" },
-  { key: "vendors", label: "Vendors" },
-  { key: "purchaseApproval", label: "PO Approval" },
-  { key: "salesApproval", label: "SO Approval" },
-  { key: "users", label: "Users" },
-  { key: "visitors", label: "Visitors" },
-  { key: "reports", label: "Reports" },
-  { key: "roles", label: "Roles & Permissions" },
-  { key: "gateEntry", label: "Gate Entry" },
+const ALL_TABS = [
+  { key: "dashboard", label: "Dashboard" }, // no code — always visible, it's just the landing overview
+  { key: "master", label: "Master Settings", code: permissionCode("admin", "master_settings") },
+  { key: "vehicles", label: "Vehicles & Drivers", code: permissionCode("admin", "vehicles_drivers") },
+  { key: "customers", label: "Customers", code: permissionCode("admin", "customers") },
+  { key: "vendors", label: "Vendors", code: permissionCode("admin", "vendors") },
+  { key: "purchaseApproval", label: "PO Approval", code: permissionCode("admin", "po_approval") },
+  { key: "salesApproval", label: "SO Approval", code: permissionCode("admin", "so_approval") },
+  { key: "users", label: "Users", code: permissionCode("admin", "users") },
+  { key: "userApprovals", label: "User Approvals", code: permissionCode("admin", "user_approvals") },
+  { key: "visitors", label: "Visitors", code: permissionCode("admin", "visitors") },
+  { key: "reports", label: "Reports", code: permissionCode("admin", "reports") },
+  { key: "roles", label: "Roles & Permissions", code: permissionCode("admin", "roles") },
+  { key: "gateEntry", label: "Gate Entry", code: permissionCode("admin", "gate_entry") },
+  { key: "advisoryTrucks", label: "Advisory Trucks", code: permissionCode("admin", "advisory_trucks") },
 ];
 
 export default function AdminDashboard() {
   const [tab, setTab] = useState("dashboard");
+  const tabs = usePermissionFilteredTabs(ALL_TABS);
 
   return (
-    <DashboardLayout title="Admin Dashboard" tabs={TABS} activeTab={tab} onTabChange={setTab}>
+    <DashboardLayout title="Admin Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab}>
       {tab === "dashboard" && <AdminAnalyticsPage />}
       {tab === "master" && <MasterSettingsPage />}
       {tab === "vehicles" && <VehiclesDriversPage />}
@@ -40,11 +47,13 @@ export default function AdminDashboard() {
       {tab === "vendors" && <VendorsPage />}
       {tab === "visitors" && <VisitorsPage />}
       {tab === "users" && <UsersPage />}
+      {tab === "userApprovals" && <UserApprovalsPage />}
       {tab === "reports" && <ReportsPage />}
       {tab === "purchaseApproval" && <PurchaseOrderApprovalPage />}
       {tab === "salesApproval" && <SalesOrderApprovalPage />}
       {tab === "roles" && <RolesPage />}
       {tab === "gateEntry" && <GateEntryAdminPage />}
+      {tab === "advisoryTrucks" && <AdvisoryTrucksPage />}
     </DashboardLayout>
   );
 }

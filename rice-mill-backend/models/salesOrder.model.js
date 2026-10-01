@@ -36,7 +36,7 @@ SalesOrder.init(
     // possibly multiple trucks (see loading.controller.js). qty - dispatched_qty
     // = how much is still left to load.
     dispatched_qty: {
-      type: DataTypes.DECIMAL(12, 2),
+      type: DataTypes.DECIMAL(14, 3), // Qtl, 3 decimals (see loading.controller.js)
       allowNull: false,
       defaultValue: 0,
     },

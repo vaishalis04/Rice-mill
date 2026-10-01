@@ -3,6 +3,7 @@ import ProtectedRoute from "../components/ProtectedRoute";
 import { ROLE_ID } from "../constants/roles";
 
 import Login from "../pages/auth/Login";
+import Register from "../pages/auth/Register";
 import Unauthorized from "../pages/auth/Unauthorized";
 
 import AdminDashboard from "../pages/dashboards/AdminDashboard";
@@ -14,6 +15,7 @@ import GateDashboard from "../pages/dashboards/GateDashboard";
 import WeighbridgeDashboard from "../pages/dashboards/WeighbridgeDashboard";
 import ProductionDashboard from "../pages/dashboards/ProductionDashboard";
 import DispatchDashboard from "../pages/dashboards/DispatchDashboard";
+import AdvisoryDashboard from "../pages/dashboards/AdvisoryDashboard";
 import CustomRoleDashboard from "../pages/dashboards/CustomRoleDashboard";
 
 export default function AppRoutes() {
@@ -21,6 +23,7 @@ export default function AppRoutes() {
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
       <Route path="/unauthorized" element={<Unauthorized />} />
 
       {/* Custom roles (created via Admin > Roles & Permissions) don't have
@@ -94,7 +97,7 @@ export default function AppRoutes() {
       <Route
         path="/weighbridge/dashboard"
         element={
-          <ProtectedRoute allowedRoles={[ROLE_ID.gate, ROLE_ID.weighbridge, ROLE_ID.weighbridgeLegacy]}>
+          <ProtectedRoute allowedRoles={[ROLE_ID.gate, ROLE_ID.weighbridge]}>
             <WeighbridgeDashboard />
           </ProtectedRoute>
         }
@@ -114,6 +117,15 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute allowedRoles={[ROLE_ID.dispatch]}>
             <DispatchDashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/advisory/dashboard"
+        element={
+          <ProtectedRoute allowedRoles={[ROLE_ID.advisory, ROLE_ID.admin]}>
+            <AdvisoryDashboard />
           </ProtectedRoute>
         }
       />

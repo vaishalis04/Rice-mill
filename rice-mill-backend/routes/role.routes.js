@@ -14,6 +14,9 @@ router.get("/permissions", Controller.getPermissions);
 router.post("/permissions", Controller.createPermission);
 router.delete("/permissions/:id", Controller.deletePermission);
 
+router.get("/users/:userId/permissions", Controller.getUserPermissions);
+router.put("/users/:userId/permissions", Controller.setUserPermissions);
+
 router.get("/", Controller.getAll);
 router.get("/:id", Controller.getById);
 router.post("/", Controller.create);

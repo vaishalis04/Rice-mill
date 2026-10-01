@@ -4,14 +4,20 @@ const { Role, Permission, RolePermission, User } = require("../models/index");
 
 // Admin-managed custom roles + permissions.
 //
+// Permissions are granted per PAGE (e.g. "warehouse.unloading",
+// "admin.advisory_trucks"), not per CRUD action — see permission.model.js.
+// The frontend's page catalogs (RolesPage.jsx, and each dashboard's
+// TAB_CATALOG) are the source of truth for which module/page combinations
+// actually mean something; this controller just stores whatever
+// module/action pair it's given.
+//
 // IMPORTANT — see auth.middleware.js's requirePermission(): most existing
 // routes still gate access with authorize("admin","warehouse",...), a
 // hardcoded role-NAME whitelist. A role created here stores and shows up
-// correctly everywhere, but won't unlock any page on its own until that
-// page's route is migrated to requirePermission(...) — do that
-// deliberately, one route at a time, once you're ready.
-
-const VALID_ACTIONS = ["create", "read", "update", "delete", "approve"];
+// correctly everywhere, and a granted page now actually shows/hides that
+// tab on the matching dashboard, but a page's underlying API routes won't
+// themselves enforce this until migrated to requirePermission(...) too —
+// do that deliberately, one route at a time, once you're ready.
 
 module.exports = {
   // ---------------- Permissions catalog ----------------
@@ -30,24 +36,25 @@ module.exports = {
   },
 
   // POST /api/role-management/permissions  { module, action }
-  // code is generated as "<module>.<action>" — this is what
-  // requirePermission() checks against on any migrated route.
+  // "action" is a page key (e.g. "unloading") — code is generated as
+  // "<module>.<action>" (e.g. "warehouse.unloading"), which is what a
+  // dashboard's TAB_CATALOG matches against to show/hide that tab, and
+  // what requirePermission() checks on any migrated route.
   createPermission: async (req, res, next) => {
     try {
       const { module: moduleName, action } = req.body;
       if (!moduleName || !moduleName.trim()) throw createError(400, "module is required");
-      if (!VALID_ACTIONS.includes(action)) {
-        throw createError(400, `action must be one of: ${VALID_ACTIONS.join(", ")}`);
-      }
+      if (!action || !action.trim()) throw createError(400, "action (page key) is required");
       const cleanModule = moduleName.trim().toLowerCase();
-      const code = `${cleanModule}.${action}`;
+      const cleanAction = action.trim().toLowerCase().replace(/\s+/g, "_");
+      const code = `${cleanModule}.${cleanAction}`;
 
       const existing = await Permission.findOne({ where: { code } });
-      if (existing) throw createError(409, "This module/action permission already exists");
+      if (existing) throw createError(409, "This module/page permission already exists");
 
       const permission = await Permission.create({
         module: cleanModule,
-        action,
+        action: cleanAction,
         code,
         created_by: req.user ? req.user.id : null,
       });
@@ -226,6 +233,82 @@ module.exports = {
 
       await role.update({ is_deleted: true, updated_by: req.user ? req.user.id : null });
       res.status(200).json({ success: true, msg: "Role deleted" });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // ---------------- Direct per-user permission overrides ----------------
+  // Same shape as role permissions, but attached straight to one user —
+  // for a single user who needs an extra page beyond their role's usual
+  // set (e.g. one Warehouse user who also needs PO Approval), and for
+  // attaching page permissions when approving a self-registration request.
+
+  // GET /api/role-management/users/:userId/permissions
+  getUserPermissions: async (req, res, next) => {
+    try {
+      const { UserPermission } = require("../models/index");
+      const user = await User.findOne({ where: { id: req.params.userId, is_deleted: false } });
+      if (!user) throw createError(404, "User not found");
+
+      const grants = await UserPermission.findAll({ where: { user_id: user.id, is_deleted: false } });
+      res.status(200).json({ success: true, data: { user_id: user.id, permission_ids: grants.map((g) => g.permission_id) } });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // PUT /api/role-management/users/:userId/permissions  { permission_ids?: [], pages?: [{module, page}] }
+  // `pages` (module+page pairs) is the normal path from the UI — each one
+  // is found-or-created in the Permission catalog on the spot, same as
+  // registrationRequest.controller.js's approve(), so a page can be
+  // granted without first separately registering it in the catalog.
+  setUserPermissions: async (req, res, next) => {
+    try {
+      const { UserPermission } = require("../models/index");
+      const user = await User.findOne({ where: { id: req.params.userId, is_deleted: false } });
+      if (!user) throw createError(404, "User not found");
+
+      const { permission_ids, pages } = req.body;
+      const resolvedIds = new Set();
+      if (permission_ids !== undefined) {
+        if (!Array.isArray(permission_ids)) throw createError(400, "permission_ids must be an array");
+        permission_ids.forEach((id) => resolvedIds.add(Number(id)));
+      }
+      if (Array.isArray(pages)) {
+        for (const { module: moduleName, page } of pages) {
+          if (!moduleName || !page) continue;
+          const code = `${moduleName}.${page}`;
+          const [permission] = await Permission.findOrCreate({
+            where: { code },
+            defaults: { module: moduleName, action: page, code, created_by: req.user ? req.user.id : null },
+          });
+          resolvedIds.add(permission.id);
+        }
+      }
+      const uniqueIds = [...resolvedIds];
+
+      if (uniqueIds.length > 0) {
+        const validCount = await Permission.count({ where: { id: { [Op.in]: uniqueIds }, is_deleted: false } });
+        if (validCount !== uniqueIds.length) throw createError(400, "One or more permissions are invalid");
+      }
+
+      const existing = await UserPermission.findAll({ where: { user_id: user.id, is_deleted: false } });
+      const existingIds = existing.map((up) => up.permission_id);
+
+      const toRemove = existing.filter((up) => !uniqueIds.includes(up.permission_id));
+      const toAdd = uniqueIds.filter((pid) => !existingIds.includes(pid));
+
+      await Promise.all(
+        toRemove.map((up) => up.update({ is_deleted: true, updated_by: req.user ? req.user.id : null }))
+      );
+      if (toAdd.length > 0) {
+        await UserPermission.bulkCreate(
+          toAdd.map((pid) => ({ user_id: user.id, permission_id: pid, created_by: req.user ? req.user.id : null }))
+        );
+      }
+
+      res.status(200).json({ success: true, msg: `Permissions updated for "${user.username}"` });
     } catch (err) {
       next(err);
     }

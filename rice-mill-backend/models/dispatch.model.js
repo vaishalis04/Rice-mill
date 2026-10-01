@@ -15,6 +15,14 @@ Dispatch.init(
     dispatch_time: { type: DataTypes.DATE },
     dispatch_type: { type: DataTypes.ENUM("normal", "direct_outward"), defaultValue: "normal" }, // note #23: direct outward skips FG warehouse
     dispatch_status: { type: DataTypes.ENUM("pending", "dispatched", "delivered", "cancelled"), defaultValue: "pending" },
+    // --- Transport tracking (added for the "Daily Outward" logistics report) ---
+    // All nullable/optional — filled in by ops as the truck is followed up on
+    // after dispatch; none of this blocks or changes the existing dispatch flow.
+    transporter_name: { type: DataTypes.STRING(100), allowNull: true },
+    destination: { type: DataTypes.STRING(150), allowNull: true }, // "To" column
+    transit_location_note: { type: DataTypes.STRING(255), allowNull: true }, // e.g. "on the way", "Gadi phuch gai he sir ji"
+    transit_position_note: { type: DataTypes.STRING(100), allowNull: true }, // e.g. "1 Day", "Call No Received"
+    unloading_date: { type: DataTypes.DATEONLY, allowNull: true },
     created_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     updated_by: { type: DataTypes.BIGINT, allowNull: true, references: { model: "users", key: "id" } },
     is_deleted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },

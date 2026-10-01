@@ -15,6 +15,7 @@ const users = [
   { email: "11@gmail.com", password: "role11@11", role_name: "weighbridge", username: "weighbridge_user_11" },
   { email: "9@gmail.com",  password: "role9@9",   role_name: "admin",       username: "admin_user" },
   { email: "10@gmail.com", password: "role10@10", role_name: "production",  username: "production_user" },
+  { email: "14@gmail.com", password: "role14@14", role_name: "advisory",    username: "advisory_user" },
 ];
 
 (async () => {

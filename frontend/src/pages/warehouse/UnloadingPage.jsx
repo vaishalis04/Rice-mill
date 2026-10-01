@@ -6,10 +6,12 @@ import {
   getWeightSlipsApi,
   getGateEntryApi,
   getWarehouseSummaryApi,
+  getInwardSlipPdfApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
+import PdfPreviewModal from "../../components/PdfPreviewModal";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 import { kgToQtl } from "../../utils/units";
 
@@ -31,6 +33,8 @@ export default function UnloadingPage() {
   const [unloadingItems, setUnloadingItems] = useState([]);
   const [isUnloadingFormOpen, setIsUnloadingFormOpen] = useState(false);
   const [currentGateEntryId, setCurrentGateEntryId] = useState(null);
+  const [pdfPreview, setPdfPreview] = useState(null); // { url, fileName, title }
+  const [slipLoadingId, setSlipLoadingId] = useState(null);
   const [currentWarehouseId, setCurrentWarehouseId] = useState(null);
 
   // Details for whichever warehouse is currently selected in the Start
@@ -396,6 +400,20 @@ export default function UnloadingPage() {
     );
   };
 
+  const handleViewInwardSlip = async (row) => {
+    setError("");
+    setSlipLoadingId(row.id);
+    try {
+      const res = await getInwardSlipPdfApi(row.id);
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      setPdfPreview({ url, fileName: `inward-slip-${row.lot_no}.pdf`, title: `Inward Slip — ${row.lot_no}` });
+    } catch (err) {
+      setError(err.response?.data?.message || "Couldn't generate the Inward Slip PDF");
+    } finally {
+      setSlipLoadingId(null);
+    }
+  };
+
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>Unloading</h2>
@@ -620,8 +638,29 @@ export default function UnloadingPage() {
               );
             },
           },
+          {
+            key: "inward_slip",
+            label: "Inward Slip",
+            render: (row) => (
+              <button className="dt-btn" disabled={slipLoadingId === row.id} onClick={() => handleViewInwardSlip(row)}>
+                {slipLoadingId === row.id ? "Generating…" : "View"}
+              </button>
+            ),
+          },
         ]}
       />
+
+      {pdfPreview && (
+        <PdfPreviewModal
+          title={pdfPreview.title}
+          blobUrl={pdfPreview.url}
+          fileName={pdfPreview.fileName}
+          onClose={() => {
+            window.URL.revokeObjectURL(pdfPreview.url);
+            setPdfPreview(null);
+          }}
+        />
+      )}
 
       <ModuleGuide
         title="Unloading"
