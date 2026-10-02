@@ -1,4 +1,5 @@
 const createError = require("http-errors");
+const { STATUS_LABELS: ADVISORY_STATUS_LABELS } = require("../helpers/advisoryStatus.helper");
 const { Op } = require("sequelize");
 const PDFDocument = require("pdfkit");
 const sequelize = require("../config/db");
@@ -712,7 +713,9 @@ module.exports = {
   // come straight off the matching GateEntry row via Admin > Advisory
   // Trucks (advisory_location_note / advisory_position_note / advisory_date)
   // — a direct field read, not a guessed match, since the row itself IS
-  // that gate entry now.
+  // that gate entry now. The Location note is no longer typed on the Advisory
+  // page; where an older truck still has one it is shown as before, otherwise
+  // the truck's Advisory Status (At Transit / At Location / ...) is shown.
   // "MT" (Balance Weight, in metric tons) is strictly the weighbridge first
   // weighment minus second weighment (gross - tare) off the WeightSlip tied
   // to this exact gate entry (GateEntry.id === WeightSlip.gate_entry_id) —
@@ -846,7 +849,7 @@ module.exports = {
             balanceWeightKg != null ? (Number(balanceWeightKg) / 1000).toFixed(2) : "—",
             ge.plant?.name || "—",
             ge.customer?.name || "—",
-            ge.advisory_location_note || "—",
+            ge.advisory_location_note || ADVISORY_STATUS_LABELS[ge.advisory_status] || "—",
             ge.advisory_position_note || "—",
             ge.advisory_date || "—",
             ge.driver?.name || "—",

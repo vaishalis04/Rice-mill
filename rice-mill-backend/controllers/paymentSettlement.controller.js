@@ -6,7 +6,7 @@ const { PaymentSettlement, PlantMaster } = require("../models/index");
 // reference spreadsheet (Book2.xlsx) and paper form. Every formula below
 // is the spreadsheet's own formula for that cell, just written in JS:
 //   NET WEIGHT (F12)        = load_weight - empty_weight
-//   final "NET WEIGHT" (A16) = NET WEIGHT F12 - less_bag_weight - less_moisture - less_misc
+//   final "NET WEIGHT" (A16) = F12 - less_bag_weight - less_moisture - less_misc
 //   row amount (G18/G19)    = weight x rate
 //   TOTAL bags/weight (C22/D22) = sum(main rows) - sum(return rows)
 //   TOTAL amount (G22)      = sum(main row amounts) - sum(return row amounts)
@@ -116,7 +116,18 @@ const ALLOWED_FIELDS = [
   "less_hammali", "rounded_value", "sauda_date", "sauda", "inward_date", "inward_weight",
   "pending_sauda", "payment_through", "payment_date", "remarks", "plant_id",
 ];
-const pickFields = (body) => Object.fromEntries(ALLOWED_FIELDS.filter((k) => body[k] !== undefined).map((k) => [k, body[k]]));
+// Optional DATEONLY columns — the form's <input type="date"> sends "" when
+// left blank, and MySQL rejects "" for a date column outright ("Incorrect
+// date value: 'Invalid date'"). Only settlement_date is required; these
+// three must become null, not "", when empty.
+const DATE_FIELDS = ["sauda_date", "inward_date", "payment_date"];
+const pickFields = (body) =>
+  Object.fromEntries(
+    ALLOWED_FIELDS.filter((k) => body[k] !== undefined).map((k) => [
+      k,
+      DATE_FIELDS.includes(k) && body[k] === "" ? null : body[k],
+    ])
+  );
 
 const serialize = (row) => ({ ...row.get({ plain: true }), computed: computeTotals(row) });
 
@@ -197,6 +208,13 @@ module.exports = {
   },
 
   // GET /api/payment-settlements/:id/pdf
+  // Single-page A4 layout that mirrors the mill's paper/Excel "Payment
+  // Settlement Advice" form cell-for-cell (column proportions below are the
+  // form's own, expressed as fractions of its 658-unit width). Every cell is
+  // positioned from an explicit row top (never from doc.y, which pdfkit moves
+  // after each text() call and which caused the old misaligned rows / extra
+  // pages), and the row height shrinks if a long item list is added so the
+  // advice always stays on one page.
   generatePdf: async (req, res, next) => {
     try {
       const row = await PaymentSettlement.findOne({
@@ -206,8 +224,31 @@ module.exports = {
       if (!row) throw createError(404, "Payment settlement not found");
       const d = row.get({ plain: true });
       const c = computeTotals(d);
-      const fmtDate = (v) => (v ? new Date(v).toLocaleDateString("en-GB") : "");
-      const fmt = (n) => (n === 0 ? "0" : Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 }));
+
+      // ---- value formatting: plain numbers, exactly like the paper form (no thousands separators) ----
+      const pad2 = (n) => String(n).padStart(2, "0");
+      const fmtDate = (v) => {
+        if (!v) return "";
+        const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+        const dt = new Date(v);
+        return Number.isNaN(dt.getTime()) ? "" : `${pad2(dt.getDate())}-${pad2(dt.getMonth() + 1)}-${dt.getFullYear()}`;
+      };
+      const num = (n, dp = 2) => {
+        if (n === null || n === undefined || n === "") return "";
+        const v = Number(n);
+        return Number.isFinite(v) ? String(Number(v.toFixed(dp))) : "";
+      };
+      const blankIfZero = (n) => (Number(n) ? num(n) : "");
+
+      const commissionTag = (() => {
+        const s = String(d.commission_input ?? "").trim();
+        if (!s || s === "0") return "";
+        const perQtl = s.match(/^([\d.]+)\s*\/\s*qt?l?/i);
+        if (perQtl) return `(${perQtl[1]}/QNTS)`;
+        return `(${s.toUpperCase()})`;
+      })();
+      const danaGrams = Number(d.less_dana_pct) ? Number((Number(d.less_dana_pct) * 1000).toFixed(2)) : 0;
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="settlement-${d.id}.pdf"`);
@@ -215,132 +256,178 @@ module.exports = {
       const doc = new PDFDocument({ size: "A4", margin: 24 });
       doc.pipe(res);
 
-      const left = doc.page.margins.left;
-      const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-      let y = doc.y;
+      const L = doc.page.margins.left;
+      const W = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const U = 658; // the form's own width in layout units
+      const X = (u) => L + (u / U) * W;
 
-      // Orange G.P. No. banner, matching the paper form.
-      doc.rect(left, y, width, 20).fill("#F5A25D");
-      doc.fillColor("#000").font("Helvetica-Bold").fontSize(10).text(`G.P.NO-${d.gp_no || d.id}`, left, y + 5, { width: width - 10, align: "right" });
-      y += 24;
-      doc.y = y;
+      // ---- row-count budget so the whole advice fits one page ----
+      const itemRows = Math.max(4, c.items.length);
+      const remarkLines = (d.remarks || "").split("\n").map((s) => s.trim()).filter(Boolean);
+      const remarkRows = Math.max(2, remarkLines.length);
+      const units = 1.2 /*banner*/ + 1.3 /*title*/ + 2 /*party/date/lorry*/ + 12 /*invoice..net weight header*/ +
+        1 /*item header*/ + itemRows + 1 /*TOTAL*/ + 9 /*TOTAL amt..net payable (net payable counts 1.2)*/ + 0.2 +
+        2 /*freight headers*/ + 5 /*freight rows*/ + 2 /*payment through/date*/ + remarkRows + 3 /*signatures*/;
+      const availH = doc.page.height - doc.page.margins.top - doc.page.margins.bottom;
+      const rh = Math.min(17, availH / units);
+      const fs = Math.min(9, rh * 0.55);
 
-      const outerTop = y;
-      const rowH = 16;
-      const drawRow = (cells, opts = {}) => {
-        const h = opts.h || rowH;
-        doc.rect(left, doc.y, width, h).stroke();
-        let x = left;
-        (opts.widths || cells.map(() => width / cells.length)).forEach((w, i) => {
-          if (i > 0) doc.moveTo(x, doc.y).lineTo(x, doc.y + h).stroke();
-          doc.font(cells[i]?.bold ? "Helvetica-Bold" : "Helvetica").fontSize(cells[i]?.size || 9);
-          if (cells[i]?.align === "center") doc.text(cells[i]?.text ?? "", x, doc.y + (h - 10) / 2, { width: w, align: "center" });
-          else doc.text(cells[i]?.text ?? "", x + 6, doc.y + (h - 10) / 2, { width: w - 10 });
-          x += w;
-        });
-        doc.y += h;
+      let y = doc.page.margins.top;
+
+      // One cell: border + text, positioned from the row top `ry`.
+      const cell = (u0, u1, ry, h, text, o = {}) => {
+        const x0 = X(u0), x1 = X(u1), w = x1 - x0;
+        if (o.fill) doc.save().rect(x0, ry, w, h).fill(o.fill).restore();
+        if (o.border !== false) doc.lineWidth(o.lw || 0.6).strokeColor("#000").rect(x0, ry, w, h).stroke();
+        const t = text === null || text === undefined ? "" : String(text);
+        if (!t) return;
+        let size = o.size || fs;
+        doc.font(o.bold ? "Helvetica-Bold" : "Helvetica");
+        while (size > 5.5 && doc.fontSize(size).widthOfString(t) > w - 6) size -= 0.5;
+        doc.fontSize(size).fillColor("#000");
+        const ty = o.top ? ry + 4 : ry + (h - size) / 2 + size * 0.08;
+        doc.text(t, x0 + 3, ty, { width: w - 6, align: o.align || "center", lineBreak: false });
       };
+      const adv = (h) => { y += h; };
 
-      drawRow([{ text: "PAYMENT SETTLEMENT ADVICE", bold: true, size: 13, align: "center" }], { h: 20 });
-      drawRow(
-        [
-          { text: "PARTY NAME", bold: true },
-          { text: d.party_name, bold: true, size: 12, align: "center" },
-          { text: "DATE", bold: true },
-          { text: fmtDate(d.settlement_date) },
-        ],
-        { widths: [width * 0.18, width * 0.42, width * 0.14, width * 0.26], h: 22 }
-      );
-      drawRow(
-        [{ text: "" }, { text: "" }, { text: "LORRY", bold: true }, { text: d.lorry_no || "" }],
-        { widths: [width * 0.18, width * 0.42, width * 0.14, width * 0.26] }
-      );
-      drawRow([{ text: "INVOICE NUMBER/DATED", bold: true }, { text: d.invoice_number_dated || "" }], { widths: [width * 0.4, width * 0.6] });
-      drawRow([{ text: "GST NUMBER", bold: true }, { text: d.gst_number || "" }], { widths: [width * 0.4, width * 0.6] });
-      drawRow([{ text: "PARTY MOBILE NUMBER", bold: true }, { text: d.party_mobile || "" }], { widths: [width * 0.4, width * 0.6] });
-      drawRow([{ text: "BROKER NAME", bold: true }, { text: d.broker_name || "" }], { widths: [width * 0.4, width * 0.6] });
-      drawRow([{ text: "BROKER PAN", bold: true }, { text: d.broker_pan || "" }], { widths: [width * 0.4, width * 0.6] });
-      drawRow([{ text: "LOAD WEIGHT", bold: true }, { text: fmt(d.load_weight) }], { widths: [width * 0.4, width * 0.6] });
-      drawRow([{ text: "EMPTY WEIGHT", bold: true }, { text: fmt(d.empty_weight) }], { widths: [width * 0.4, width * 0.6] });
-      drawRow([{ text: "NET WEIGHT", bold: true }, { text: fmt(c.netWeight) }], { widths: [width * 0.4, width * 0.6] });
-      drawRow([{ text: "LESS- BAG WEIGHT", bold: true }, { text: fmt(d.less_bag_weight) }], { widths: [width * 0.4, width * 0.6] });
-      drawRow([{ text: "LESS-MOISTURE", bold: true }, { text: fmt(d.less_moisture) }], { widths: [width * 0.4, width * 0.6] });
-      drawRow([{ text: "LESS-MISC", bold: true }, { text: fmt(d.less_misc) }], { widths: [width * 0.4, width * 0.6] });
-      drawRow([{ text: "NET WEIGHT", bold: true }, { text: fmt(c.finalNetWeight), bold: true }], { widths: [width * 0.4, width * 0.6] });
+      // 1. Orange G.P. No banner
+      cell(0, U, y, rh * 1.2, "", { fill: "#F5A25D", border: false });
+      doc.font("Helvetica-Bold").fontSize(fs + 1).fillColor("#000")
+        .text(`G.P.NO-${d.gp_no || d.id}`, L, y + (rh * 1.2 - (fs + 1)) / 2 + 0.5, { width: W - 8, align: "right", lineBreak: false });
+      adv(rh * 1.2);
 
-      const itemW = [width * 0.22, width * 0.16, width * 0.2, width * 0.18, width * 0.24];
-      drawRow(
-        [{ text: "ITEM", bold: true, align: "center" }, { text: "BAGS", bold: true, align: "center" }, { text: "WEIGHT", bold: true, align: "center" }, { text: "RATE", bold: true, align: "center" }, { text: "AMOUNT", bold: true, align: "center" }],
-        { widths: itemW }
-      );
-      c.items.forEach((it) => {
-        drawRow(
-          [
-            { text: it.is_return ? "RETURN" : it.item_name || "Item", align: "center" },
-            { text: it.bags ? String(it.bags) : "", align: "center" },
-            { text: it.weight ? fmt(it.weight) : "", align: "center" },
-            { text: it.rate ? fmt(it.rate) : "", align: "center" },
-            { text: it.amount ? fmt(it.amount) : "0", align: "center" },
-          ],
-          { widths: itemW }
-        );
-      });
-      drawRow(
-        [
-          { text: "TOTAL", bold: true, align: "center" },
-          { text: String(c.totalBags), bold: true, align: "center" },
-          { text: fmt(c.totalWeight), bold: true, align: "center" },
-          { text: fmt(c.rate), bold: true, align: "center" },
-          { text: fmt(c.totalAmount), bold: true, align: "center" },
-        ],
-        { widths: itemW }
-      );
+      // 2. Title
+      cell(0, U, y, rh * 1.3, "PAYMENT SETTLEMENT ADVICE", { bold: true, size: fs + 1.5 });
+      adv(rh * 1.3);
 
-      const deductionW = [width * 0.6, width * 0.4];
-      drawRow([{ text: "TOTAL", bold: true, align: "center" }, { text: fmt(c.totalAmount), bold: true, align: "center" }], { widths: deductionW });
-      drawRow([{ text: "TDS", align: "center" }, { text: fmt(c.tds), align: "center" }], { widths: deductionW });
-      drawRow([{ text: "LESS DANA" + (d.less_dana_pct ? ` (${d.less_dana_pct}%)` : ""), align: "center" }, { text: fmt(c.danaAmount), align: "center" }], { widths: deductionW });
-      drawRow([{ text: "Quality Difference", align: "center" }, { text: fmt(c.qualityDifference), align: "center" }], { widths: deductionW });
-      drawRow([{ text: `LESS COMMISSION${d.commission_input ? ` (${d.commission_input})` : ""}`, align: "center" }, { text: fmt(c.commissionAmount), align: "center" }], { widths: deductionW });
-      drawRow([{ text: "CD" + (d.cd_pct ? ` (${d.cd_pct}%)` : ""), align: "center" }, { text: fmt(c.cdAmount), align: "center" }], { widths: deductionW });
-      drawRow([{ text: "LESS HAMMALI", align: "center" }, { text: fmt(c.hammali), align: "center" }], { widths: deductionW });
-      drawRow([{ text: "ROUNDED VALUE", align: "center" }, { text: fmt(c.roundedValue), align: "center" }], { widths: deductionW });
-      drawRow([{ text: "NET PAYABLE AMOUNT", bold: true, align: "center" }, { text: fmt(c.netPayableAmount), bold: true, align: "center" }], { widths: deductionW, h: 20 });
+      // 3. Party name (spans two rows) + DATE / LORRY
+      cell(0, 128, y, rh * 2, "PARTY NAME", { bold: true });
+      cell(128, 467, y, rh * 2, d.party_name, { bold: true, size: fs + 5 });
+      cell(467, 532, y, rh, "DATE", { bold: true });
+      cell(532, 658, y, rh, fmtDate(d.settlement_date));
+      cell(467, 532, y + rh, rh, "LORRY", { bold: true });
+      cell(532, 658, y + rh, rh, d.lorry_no || "");
+      adv(rh * 2);
 
-      drawRow([{ text: "LORRY FREIGHT PAYMENT DETAILS", bold: true, align: "center" }, { text: "BROKERAGE DETAILS", bold: true, align: "center" }], { widths: [width * 0.6, width * 0.4] });
-      drawRow(
-        [
-          { text: "SAUDA DATE", bold: true, align: "center" },
-          { text: "SAUDA", bold: true, align: "center" },
-          { text: "INWARD DETAILS", bold: true, align: "center" },
-          { text: "PENDING SAUDA", bold: true, align: "center" },
-          { text: "AMOUNT", bold: true, align: "center" },
-        ],
-        { widths: [width * 0.15, width * 0.15, width * 0.3, width * 0.2, width * 0.2] }
-      );
-      drawRow(
-        [
-          { text: fmtDate(d.sauda_date), align: "center" },
-          { text: d.sauda || "", align: "center" },
-          { text: [fmtDate(d.inward_date), d.inward_weight ? fmt(d.inward_weight) : ""].filter(Boolean).join(" — "), align: "center" },
-          { text: d.pending_sauda || "", align: "center" },
-          { text: fmt(c.brokerageAmount), align: "center" },
-        ],
-        { widths: [width * 0.15, width * 0.15, width * 0.3, width * 0.2, width * 0.2] }
-      );
+      // 4. Label (left 55%) / value (right 45%) rows
+      const info = (label, value, o = {}) => {
+        cell(0, 363, y, rh, label, { bold: true, ...(o.labelOpts || {}) });
+        cell(363, 658, y, rh, value, { bold: !!o.boldValue });
+        adv(rh);
+      };
+      info("INVOICE NUMBER/DATED", d.invoice_number_dated || "");
+      info("GST NUMBER", d.gst_number || "");
+      info("PARTY MOBILE NUMBER", d.party_mobile || "");
+      info("BROKER NAME", d.broker_name || "");
+      info("BROKER PAN", d.broker_pan || "");
+      info("LOAD WEIGHT", num(d.load_weight, 3));
+      info("EMPTY WEIGHT", num(d.empty_weight, 3));
+      info("NET WEIGHT", num(c.netWeight, 3));
+      info("LESS- BAG WEIGHT", blankIfZero(d.less_bag_weight));
+      info("LESS-MOISTURE", blankIfZero(d.less_moisture));
+      info("LESS-MISC", blankIfZero(d.less_misc));
+      // The form prints just the "NET WEIGHT" caption here (the figure itself
+      // is the Weight column of the item table right below).
+      cell(0, 363, y, rh, "NET WEIGHT", { bold: true });
+      cell(363, 658, y, rh, "");
+      adv(rh);
 
-      drawRow([{ text: "PAYMENT THROUGH :", bold: true }, { text: d.payment_through || "" }], { widths: [width * 0.3, width * 0.7] });
-      drawRow([{ text: "PAYMENT DATE :", bold: true }, { text: fmtDate(d.payment_date) }], { widths: [width * 0.3, width * 0.7] });
+      // 5. Item table
+      const COL = [0, 128, 202, 364, 467, 658];
+      const rowCells = (texts, o = {}) => {
+        texts.forEach((t, i) => cell(COL[i], COL[i + 1], y, rh, t, o));
+        adv(rh);
+      };
+      rowCells(["ITEM", "BAGS", "WEIGHT", "RATE", "AMOUNT"], { bold: true });
+      for (let i = 0; i < itemRows; i++) {
+        const it = c.items[i];
+        if (!it) { rowCells(["", "", "", "", "0"]); continue; }
+        rowCells([
+          it.is_return ? "RETURN" : it.item_name || "Item",
+          it.bags ? String(it.bags) : "",
+          it.weight ? num(it.weight, 3) : "",
+          it.rate ? num(it.rate) : "",
+          num(it.amount) || "0",
+        ]);
+      }
+      rowCells([
+        "TOTAL",
+        String(c.totalBags),
+        num(c.totalWeight, 3),
+        c.rate ? Number(c.rate).toFixed(2) : "",
+        num(c.totalAmount) || "0",
+      ], { bold: true });
 
-      const remarkLines = (d.remarks || "").split("\n").filter(Boolean);
-      drawRow([{ text: "REMARK:-", bold: true }, { text: remarkLines[0] || "" }], { widths: [width * 0.15, width * 0.85] });
-      remarkLines.slice(1).forEach((line) => {
-        drawRow([{ text: "" }, { text: line }], { widths: [width * 0.15, width * 0.85] });
-      });
+      // 6. Deductions block (left 0-202 stays empty, as on the form)
+      cell(0, 467, y, rh, "TOTAL", { bold: true, border: false, align: "right" });
+      cell(467, 658, y, rh, num(c.totalAmount) || "0", { bold: true, lw: 1 });
+      adv(rh);
+      const dedTop = y;
+      const ded = (label, value) => {
+        cell(202, 467, y, rh, label);
+        cell(467, 658, y, rh, value);
+        adv(rh);
+      };
+      ded("TDS 1%", num(c.tds) || "0");
+      ded("LESS DANA", num(c.danaAmount) || "0");
+      ded("Quality Difference", num(c.qualityDifference) || "0");
+      ded(`LESS COMMISSION${commissionTag}`, blankIfZero(c.commissionAmount));
+      ded(`CD ${Number(d.cd_pct) ? num(d.cd_pct) : 1}%`, blankIfZero(c.cdAmount));
+      ded("LESS HAMMALI", blankIfZero(c.hammali));
+      ded("ROUNDED VALUE", blankIfZero(c.roundedValue));
+      cell(202, 467, y, rh * 1.2, "NET PAYABLE AMOUNT", { bold: true, lw: 1 });
+      cell(467, 658, y, rh * 1.2, num(c.netPayableAmount) || "0", { bold: true, lw: 1 });
+      // empty framed area to the left of the deductions, as on the form
+      cell(0, 202, dedTop, y + rh * 1.2 - dedTop, "");
+      adv(rh * 1.2 + rh * 0.2);
 
-      drawRow([{ text: "", align: "center" }, { text: "CHECKED BY", bold: true, align: "center" }, { text: "PASSED BY", bold: true, align: "center" }], { widths: [width * 0.34, width * 0.33, width * 0.33], h: 30 });
+      // 7. Lorry freight / brokerage details
+      cell(0, 363, y, rh, "LORRY FREIGHT PAYMENT DETAILS", { bold: true });
+      cell(363, 658, y, rh, "BROKERAGE DETAILS", { bold: true });
+      adv(rh);
+      const FC = [0, 128, 202, 364, 532, 658];
+      ["SAUDA DATE", "SAUDA", "INWARD DETAILS", "PENDING SAUDA", "AMOUNT"].forEach((t, i) => cell(FC[i], FC[i + 1], y, rh, t, { bold: true }));
+      adv(rh);
+      // data row — inward details is split into date | weight
+      cell(0, 128, y, rh, fmtDate(d.sauda_date));
+      cell(128, 202, y, rh, d.sauda || "");
+      cell(202, 300, y, rh, fmtDate(d.inward_date));
+      cell(300, 364, y, rh, num(d.inward_weight, 3));
+      cell(364, 532, y, rh, d.pending_sauda || "");
+      cell(532, 658, y, rh, blankIfZero(c.brokerageAmount));
+      adv(rh);
+      const freightRow = (first, weightTxt) => {
+        cell(0, 128, y, rh, first);
+        cell(128, 202, y, rh, "");
+        cell(202, 300, y, rh, "");
+        cell(300, 364, y, rh, weightTxt || "");
+        cell(364, 532, y, rh, "");
+        cell(532, 658, y, rh, "");
+        adv(rh);
+      };
+      freightRow(danaGrams ? `${danaGrams} DANA` : "", "");
+      freightRow("", "");
+      freightRow(d.broker_name || "", "");
+      freightRow("", d.inward_weight ? num(d.inward_weight, 3) : "");
 
-      doc.rect(left, outerTop, width, doc.y - outerTop).stroke();
+      // 8. Payment through / date / remarks
+      cell(0, U, y, rh, "PAYMENT THROUGH :" + (d.payment_through ? `  ${d.payment_through}` : ""), { bold: true, align: "left" });
+      adv(rh);
+      cell(0, U, y, rh, "PAYMENT DATE :" + (d.payment_date ? `  ${fmtDate(d.payment_date)}` : ""), { bold: true, align: "left" });
+      adv(rh);
+      for (let i = 0; i < remarkRows; i++) {
+        cell(0, 60, y, rh, i === 0 ? "REMARK:-" : "", { bold: true, align: "left" });
+        cell(60, U, y, rh, remarkLines[i] || "");
+        adv(rh);
+      }
+
+      // 9. Signatures
+      const sh = rh * 3;
+      cell(0, 128, y, sh, "");
+      cell(128, 467, y, sh, "CHECKED BY", { bold: true, top: true });
+      cell(467, 530, y, sh, "");
+      cell(530, 658, y, sh, "PASSED BY", { bold: true, top: true });
+      adv(sh);
 
       doc.end();
     } catch (err) {

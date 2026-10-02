@@ -68,6 +68,12 @@ gate_status: {
     advisory_location_note: { type: DataTypes.STRING(255), allowNull: true },
     advisory_position_note: { type: DataTypes.STRING(100), allowNull: true },
     advisory_date: { type: DataTypes.DATEONLY, allowNull: true }, // Unloading Date (sales) / Loading Date (purchase)
+    // Follow-up status chosen on the Advisory Trucks page. Stored as a short
+    // key (e.g. "at_transit", "completed") rather than a DB ENUM so the list
+    // can change later without a schema migration. Which keys are allowed
+    // depends on entry_type — see helpers/advisoryStatus.helper.js. A truck
+    // marked "completed" drops off the Advisory Trucks list.
+    advisory_status: { type: DataTypes.STRING(30), allowNull: true },
   },
   {
     sequelize,

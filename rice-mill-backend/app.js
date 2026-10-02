@@ -227,11 +227,11 @@ sequelize.authenticate()
     // id actually assigned is always printed below so it can be checked
     // against what's in that file.
     //
-    // Also retires the old duplicate "weighbridge" role (role_id 11,
-    // ROLE_ID.weighbridgeLegacy) now that only role_id 6 is used — but only
-    // if no user currently holds it, exactly like Roles & Permissions' own
-    // "delete a role" safety check, so this can never silently orphan a
-    // real user's account.
+    // Also retires the old duplicate "weighbridge" role (role_id 11) now
+    // that only role_id 6 is used: any user still on it is moved to role 6
+    // first (keeping whatever pages role 11 had granted as direct per-user
+    // grants), then role 11 is soft-deleted — so no account is ever
+    // orphaned. Only runs when role 11 really is a same-name duplicate.
     try {
       const { Role, User } = require("./models/index");
 
@@ -245,16 +245,46 @@ sequelize.authenticate()
       );
 
       const legacyWeighbridgeId = 11;
+      const canonicalWeighbridgeId = 6;
       const legacyRole = await Role.findOne({ where: { id: legacyWeighbridgeId, is_deleted: false } });
       if (legacyRole) {
-        const usersOnLegacyRole = await User.count({ where: { role_id: legacyWeighbridgeId, is_deleted: false } });
-        if (usersOnLegacyRole === 0) {
+        const { RolePermission, UserPermission } = require("./models/index");
+        const canonicalRole = await Role.findOne({ where: { id: canonicalWeighbridgeId, is_deleted: false } });
+        const sameName = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+
+        // Only ever merge when role 11 really IS a duplicate of the real
+        // Weighbridge role (same name) — never touch an unrelated role.
+        if (canonicalRole && sameName(legacyRole.role_name, canonicalRole.role_name)) {
+          const legacyUsers = await User.findAll({ where: { role_id: legacyWeighbridgeId } });
+
+          if (legacyUsers.length > 0) {
+            // Anything role 11 had been granted becomes a direct per-user
+            // grant for the users being moved, so nobody loses access just
+            // because their role row changed. (Role 6 itself is left alone.)
+            const legacyGrants = await RolePermission.findAll({
+              where: { role_id: legacyWeighbridgeId, is_deleted: false },
+            });
+            for (const u of legacyUsers) {
+              for (const g of legacyGrants) {
+                await UserPermission.findOrCreate({
+                  where: { user_id: u.id, permission_id: g.permission_id },
+                  defaults: { user_id: u.id, permission_id: g.permission_id, is_deleted: false },
+                });
+              }
+            }
+            await User.update({ role_id: canonicalWeighbridgeId }, { where: { role_id: legacyWeighbridgeId } });
+            console.log(
+              `✅ Moved ${legacyUsers.length} user(s) from duplicate role_id ${legacyWeighbridgeId} to role_id ${canonicalWeighbridgeId} ` +
+              `(${legacyUsers.map((u) => u.email || u.username).join(", ")}) — they must log in again.`
+            );
+          }
+
           await legacyRole.update({ is_deleted: true });
-          console.log(`✅ Retired unused duplicate role_id ${legacyWeighbridgeId} ("${legacyRole.role_name}") — role_id 6 remains the only Weighbridge role.`);
+          console.log(`✅ Retired duplicate role_id ${legacyWeighbridgeId} ("${legacyRole.role_name}") — role_id ${canonicalWeighbridgeId} is the only Weighbridge role.`);
         } else {
           console.warn(
-            `⚠️ role_id ${legacyWeighbridgeId} ("${legacyRole.role_name}") still has ${usersOnLegacyRole} user(s) — ` +
-            `not removed. Reassign them to role_id 6 first, then restart, to finish retiring it.`
+            `⚠️ role_id ${legacyWeighbridgeId} ("${legacyRole.role_name}") is not a duplicate of role_id ${canonicalWeighbridgeId} ` +
+            `("${canonicalRole ? canonicalRole.role_name : "missing"}") — left untouched.`
           );
         }
       }

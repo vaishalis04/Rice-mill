@@ -96,6 +96,7 @@ module.exports = {
           is_deleted: false,
           [Op.or]: [{ email: lookup }, { username: lookup }, { phone: lookup }],
         },
+        include: [{ model: Role, as: "role", attributes: ["id", "role_name"], required: false }],
       });
 
       if (!user) {
@@ -150,6 +151,7 @@ module.exports = {
           email: user.email,
           phone: user.phone,
           role_id: user.role_id,
+          role_name: user.role ? user.role.role_name : null,
           plant_id: user.plant_id,
         },
       });

@@ -3,14 +3,16 @@ import { getAdvisoryTrucksApi, updateAdvisoryTruckApi } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import ModuleGuide from "../../components/ModuleGuide";
 
-// Admin-only. Every truck that has already exited the gate — Purchase,
-// Sales or Empty/Misc — with a place to type free-text Location/Position
-// remarks and an Unloading/Loading date. These three fields feed straight
-// into the Daily Outward PDF (Reports page) for the same vehicle/day.
-// Lives entirely on GateEntry (advisory_location_note / advisory_position_note
-// / advisory_date) — no Dispatch model/page/route is touched by this feature.
+// Admin + Advisory role. Every truck that has already exited the gate —
+// Purchase, Sales or Empty/Misc — that is not yet Completed. For each one you
+// set a Status (the choices depend on the truck type, and come from the
+// server so they can never drift), a free-text Position remark and an
+// Unloading/Loading date. Marking a truck "Completed" removes it from this
+// list. Lives entirely on GateEntry — no Dispatch model/page/route is touched.
 
-const emptyForm = { advisory_location_note: "", advisory_position_note: "", advisory_date: "" };
+const emptyForm = { advisory_status: "", advisory_position_note: "", advisory_date: "" };
+
+const typeLabel = (t) => (t === "purchase" ? "Purchase" : t === "sales" ? "Sales (Outbound)" : "Empty / Misc");
 
 export default function AdvisoryTrucksPage() {
   const [trucks, setTrucks] = useState([]);
@@ -36,7 +38,7 @@ export default function AdvisoryTrucksPage() {
     setInfo("");
     setEditRow(row);
     setForm({
-      advisory_location_note: row.advisory_location_note || "",
+      advisory_status: row.advisory_status || "",
       advisory_position_note: row.advisory_position_note || "",
       advisory_date: row.advisory_date || "",
     });
@@ -45,11 +47,28 @@ export default function AdvisoryTrucksPage() {
   const handleSave = async (e) => {
     e.preventDefault();
     if (!editRow) return;
+
+    const markingCompleted = form.advisory_status === "completed";
+    // Completed trucks leave this list and can't be brought back from here,
+    // so make sure that's intended before saving.
+    if (
+      markingCompleted &&
+      !window.confirm(
+        `Mark ${editRow.token_no} (${editRow.vehicle_no}) as Completed?\n\nIt will be removed from the Advisory Trucks list.`
+      )
+    ) {
+      return;
+    }
+
     setSaving(true);
     setError("");
     try {
       await updateAdvisoryTruckApi(editRow.id, form);
-      setInfo(`Saved for ${editRow.token_no}.`);
+      setInfo(
+        markingCompleted
+          ? `${editRow.token_no} marked Completed and removed from this list.`
+          : `Saved for ${editRow.token_no}.`
+      );
       setEditRow(null);
       load();
     } catch (err) {
@@ -63,8 +82,8 @@ export default function AdvisoryTrucksPage() {
     <div>
       <h2 style={{ marginTop: 0 }}>Advisory Trucks</h2>
       <p className="field-hint" style={{ marginTop: -6 }}>
-        Every truck that has exited the gate. Add a Location / Position remark and an Unloading or Loading date —
-        these show up on the Daily Outward report (Reports page) for the same vehicle and date.
+        Every truck that has exited the gate and isn't Completed yet. Set its Status, add a Position remark and an
+        Unloading or Loading date. Once a truck is marked Completed it is removed from this list.
       </p>
 
       {error && <div className="dt-error">{error}</div>}
@@ -97,10 +116,14 @@ export default function AdvisoryTrucksPage() {
             render: (row) => row.party_name || "—",
           },
           {
+            key: "materials",
+            label: "Materials",
+            render: (row) => row.materials || "—",
+          },
+          {
             key: "entry_type",
             label: "Type",
-            render: (row) =>
-              row.entry_type === "purchase" ? "Purchase" : row.entry_type === "sales" ? "Sales (Outbound)" : "Empty / Misc",
+            render: (row) => typeLabel(row.entry_type),
           },
           {
             key: "exit_time",
@@ -108,9 +131,9 @@ export default function AdvisoryTrucksPage() {
             render: (row) => (row.exit_time ? new Date(row.exit_time).toLocaleString() : "—"),
           },
           {
-            key: "advisory_location_note",
-            label: "Location",
-            render: (row) => row.advisory_location_note || "—",
+            key: "advisory_status",
+            label: "Status",
+            render: (row) => (row.advisory_status_label ? <span className="dt-badge">{row.advisory_status_label}</span> : "—"),
           },
           {
             key: "advisory_position_note",
@@ -157,17 +180,27 @@ export default function AdvisoryTrucksPage() {
               Advisory Remarks — {editRow.token_no} ({editRow.vehicle_no})
             </h3>
             <p className="field-hint" style={{ marginTop: -6 }}>
-              Shown on the Daily Outward report for this vehicle on the matching date.
+              {typeLabel(editRow.entry_type)}
+              {editRow.party_name ? ` · Party: ${editRow.party_name}` : ""}
+              {editRow.entry_type === "other" && editRow.materials ? ` · Materials: ${editRow.materials}` : ""}
             </p>
             <form className="sf-form" onSubmit={handleSave}>
-              <div className="sf-field">
-                <label>Location</label>
-                <input
-                  value={form.advisory_location_note}
-                  onChange={(e) => setForm({ ...form, advisory_location_note: e.target.value })}
-                  placeholder="e.g. on the way / reached destination"
-                />
-              </div>
+              {(editRow.advisory_status_options || []).length > 0 && (
+                <div className="sf-field">
+                  <label>Status</label>
+                  <select
+                    value={form.advisory_status}
+                    onChange={(e) => setForm({ ...form, advisory_status: e.target.value })}
+                  >
+                    <option value="">— Select status —</option>
+                    {editRow.advisory_status_options.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="sf-field">
                 <label>Position</label>
                 <input
@@ -200,10 +233,12 @@ export default function AdvisoryTrucksPage() {
       <ModuleGuide
         title="Advisory Trucks"
         steps={[
-          "Shows every truck (Purchase, Sales or Empty/Misc) that has already exited the gate — newest exit first.",
-          "\"Add / Edit Remarks\" lets you type a Location and Position note and set an Unloading/Loading date for that truck.",
-          "These three fields feed the Daily Outward PDF on the Reports page — matched to the same vehicle on the same date.",
-          "This is admin-only and doesn't change anything about how trucks move through the Gate, Weighbridge or Dispatch flows.",
+          "Shows every truck (Purchase, Sales or Empty/Misc) that has already exited the gate and is not yet Completed — newest exit first.",
+          "\"Add / Edit Remarks\" lets you set the truck's Status, a Position note and an Unloading/Loading date.",
+          "Status choices depend on the truck: Sales (At Transit, At Location, Unload Complete, Receivable Pending, Completed), Purchase (Unload Complete, On Hold, Pending Payment, Completed), Empty/Misc (Payment Pending, Completed).",
+          "Marking a truck Completed removes it from this list. It is not deleted — it still appears in reports.",
+          "Empty/Misc trucks also show the materials they carried, along with the party name.",
+          "This doesn't change anything about how trucks move through the Gate, Weighbridge or Dispatch flows.",
         ]}
       />
     </div>

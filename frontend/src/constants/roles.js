@@ -34,6 +34,17 @@ export const ROLE_NAME = {
   [ROLE_ID.advisory]: "advisory",
 };
 
+// Built-in role lookup by NAME (lowercase). The role NAME is the stable
+// identity of a built-in role — ids can drift between databases (e.g. an
+// old duplicate "weighbridge" role with id 11 next to the real id 6), and
+// the backend itself already authorizes by role name. Returns the
+// canonical built-in role_id for a role name, or null for a custom role.
+export const BUILTIN_ROLE_ID_BY_NAME = Object.fromEntries(
+  Object.entries(ROLE_NAME).map(([id, name]) => [name, Number(id)])
+);
+export const builtinRoleIdFromName = (name) =>
+  BUILTIN_ROLE_ID_BY_NAME[String(name || "").trim().toLowerCase()] ?? null;
+
 // role_id -> where to land right after login
 export const ROLE_ROUTES = {
   [ROLE_ID.admin]: "/admin/dashboard",

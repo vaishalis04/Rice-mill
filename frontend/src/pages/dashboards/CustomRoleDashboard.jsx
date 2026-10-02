@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
 import { getMyPermissionsApi } from "../../api/api";
+import { builtinRoleIdFromName, ROLE_ROUTES, ROLE_HOME_MODULE } from "../../constants/roles";
 import DashboardLayout from "./DashboardLayout";
 import { permissionCode } from "../../config/pageCatalog";
 
@@ -99,7 +101,21 @@ export default function CustomRoleDashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  const visibleTabs = TAB_CATALOG.filter((t) => grantedCodes.includes(t.code));
+  // Built-in roles (weighbridge, warehouse, ...) already own their home
+  // module's pages without needing any grant — page-level grants are only
+  // REQUIRED for custom roles. So for a built-in role that reaches this
+  // page (because an admin also handed it extra pages from other modules),
+  // keep its own pages visible too, unless an admin has deliberately
+  // curated the role's own pages — same rule usePermissionFilteredTabs
+  // applies on the fixed dashboards.
+  const builtinRoleId = builtinRoleIdFromName(roleName);
+  const homeModule = builtinRoleId ? ROLE_HOME_MODULE[builtinRoleId] : null;
+  const homeTabs = homeModule ? TAB_CATALOG.filter((t) => t.code.startsWith(`${homeModule}.`)) : [];
+  const hasOwnGrant = homeTabs.some((t) => grantedCodes.includes(t.code));
+  const effectiveCodes =
+    homeModule && !hasOwnGrant ? [...grantedCodes, ...homeTabs.map((t) => t.code)] : grantedCodes;
+
+  const visibleTabs = TAB_CATALOG.filter((t) => effectiveCodes.includes(t.code));
 
   useEffect(() => {
     if (!tab && visibleTabs.length > 0) setTab(visibleTabs[0].key);
@@ -111,6 +127,13 @@ export default function CustomRoleDashboard() {
         <div style={{ padding: 24 }}>Loading your dashboard…</div>
       </DashboardLayout>
     );
+  }
+
+  // A built-in role must never be stranded on the "no pages granted" screen
+  // — send it straight to its own dashboard. (Only a custom role with no
+  // grants sees that message.)
+  if (!error && builtinRoleId && visibleTabs.length === 0 && ROLE_ROUTES[builtinRoleId]) {
+    return <Navigate to={ROLE_ROUTES[builtinRoleId]} replace />;
   }
 
   const active = visibleTabs.find((t) => t.key === tab);

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { loginApi, logoutApi, getCurrentUserApi } from "../api/api";
+import { builtinRoleIdFromName } from "../constants/roles";
 
 const AuthContext = createContext(null);
 
@@ -36,7 +37,18 @@ export function AuthProvider({ children }) {
     const res = await loginApi(email, password);
     // Matches your real backend's response shape:
     // { success, accessToken, refreshToken, user: { id, username, email, role_id, plant_id } }
-    const { accessToken, refreshToken, user: loggedInUser } = res.data;
+    const { accessToken, refreshToken, user: rawUser } = res.data;
+
+    // A built-in role (admin, gate, weighbridge, ...) is identified by its
+    // NAME, not its numeric id — so a user sitting on a duplicate/legacy
+    // role row with the same name (e.g. a second "weighbridge" role) still
+    // gets routed to their role's own dashboard instead of the generic
+    // custom-role page. Custom roles (no built-in name) are left untouched.
+    const canonicalId = builtinRoleIdFromName(rawUser.role_name);
+    const loggedInUser =
+      canonicalId && canonicalId !== Number(rawUser.role_id)
+        ? { ...rawUser, role_id: canonicalId }
+        : rawUser;
 
     localStorage.setItem("token", accessToken);
     localStorage.setItem("refreshToken", refreshToken);

@@ -11,8 +11,7 @@ const users = [
   { email: "5@gmail.com",  password: "role5@5",   role_name: "warehouse",   username: "warehouse_user" },
   { email: "6@gmail.com",  password: "role6@6",   role_name: "weighbridge", username: "weighbridge_user" },
   { email: "7@gmail.com",  password: "role7@7",   role_name: "sales",       username: "sales_user" },
-  { email: "8@gmail.com",  password: "role8@8",   role_name: "weighbridge", username: "weighbridge_user_8" },
-  { email: "11@gmail.com", password: "role11@11", role_name: "weighbridge", username: "weighbridge_user_11" },
+  // { email: "8@gmail.com",  password: "role8@8",   role_name: "weighbridge", username: "weighbridge_user_8" },
   { email: "9@gmail.com",  password: "role9@9",   role_name: "admin",       username: "admin_user" },
   { email: "10@gmail.com", password: "role10@10", role_name: "production",  username: "production_user" },
   { email: "14@gmail.com", password: "role14@14", role_name: "advisory",    username: "advisory_user" },
@@ -21,8 +20,10 @@ const users = [
 (async () => {
   try {
     for (const u of users) {
+      // is_deleted:false so a retired duplicate role (e.g. the old
+      // "weighbridge" role_id 11) is never picked up again.
       const [role] = await Role.findOrCreate({
-        where: { role_name: u.role_name },
+        where: { role_name: u.role_name, is_deleted: false },
         defaults: { role_name: u.role_name },
       });
 

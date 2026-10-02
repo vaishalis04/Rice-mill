@@ -365,6 +365,7 @@ export const getAdvisoryTrucksApi = (params = {}) =>
 export const updateAdvisoryTruckApi = (id, data) =>
   axiosInstance.patch(`/advisory-trucks/${id}`, data);
 
+
 // ---------------- MATERIAL SLIPS (Inward after Unloading / Outward after Loading) ----------------
 export const getInwardSlipPdfApi = (lotId) =>
   axiosInstance.get(`/material-slips/inward/${lotId}`, { responseType: "blob" });
