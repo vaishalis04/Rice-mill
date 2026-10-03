@@ -14,7 +14,10 @@ class PaymentSettlement extends Model {}
 PaymentSettlement.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-    gp_no: { type: DataTypes.STRING(30), allowNull: true }, // "G.P.NO-942" banner
+    gp_no: { type: DataTypes.STRING(30), allowNull: true }, // "G.P.NO-942" banner; for a settlement made against a truck: its Gate Pass no. (e.g. GP-OUT-0042)
+    // The truck (gate entry) this settlement is made against. Optional — a
+    // settlement can still be typed in by hand with no truck, as before.
+    gate_entry_id: { type: DataTypes.BIGINT, allowNull: true, references: { model: "gate_entry", key: "id" } },
     settlement_date: { type: DataTypes.DATEONLY, allowNull: false },
 
     party_name: { type: DataTypes.STRING(150), allowNull: false },
@@ -53,8 +56,14 @@ PaymentSettlement.init(
     // for exactly how this is parsed, verified against the reference
     // image's own printed Commission figure.
     commission_input: { type: DataTypes.STRING(20), allowNull: true, defaultValue: "0" },
+    // The Excel's dropdown beside this row: the same figure is either a broker
+    // "commission" (also shown under Brokerage Details) or a "trade_discount"
+    // (a price reduction — NOT brokerage). Either way it is deducted from the
+    // Net Payable Amount. Existing rows default to "commission" = unchanged.
+    commission_type: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "commission" },
     cd_pct: { type: DataTypes.DECIMAL(6, 3), allowNull: false, defaultValue: 0 },
     less_hammali: { type: DataTypes.DECIMAL(14, 2), allowNull: false, defaultValue: 0 }, // manual flat amount
+    balance_freight: { type: DataTypes.DECIMAL(14, 2), allowNull: false, defaultValue: 0 }, // manual flat amount ("BALANCE FREIGHT" on the Excel form), deducted from Net Payable
     rounded_value: { type: DataTypes.DECIMAL(14, 2), allowNull: false, defaultValue: 0 }, // manual +/- adjustment
 
     // Lorry Freight Payment Details / Brokerage Details block.
@@ -63,6 +72,11 @@ PaymentSettlement.init(
     inward_date: { type: DataTypes.DATEONLY, allowNull: true },
     inward_weight: { type: DataTypes.DECIMAL(14, 3), allowNull: true },
     pending_sauda: { type: DataTypes.STRING(100), allowNull: true },
+    // Every load made against the same order so far — [{ date, weight }] with
+    // weight in kg (the Excel's INWARD DETAILS rows + their total). Older
+    // settlements only have the single inward_date / inward_weight above,
+    // which the PDF still prints when this is empty.
+    inward_details: { type: DataTypes.JSON, allowNull: true },
 
     payment_through: { type: DataTypes.STRING(100), allowNull: true },
     payment_date: { type: DataTypes.DATEONLY, allowNull: true },

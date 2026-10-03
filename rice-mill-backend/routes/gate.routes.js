@@ -1,5 +1,6 @@
 const router = require("express").Router();
 const Controller = require("../controllers/gate.controller");
+const GatePassController = require("../controllers/gatePass.controller");
 const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 const { uploadImage } = require("../helpers/multer.helper");
@@ -17,6 +18,11 @@ router.get("/",     Controller.getAll);
 // Must come before "/:id" — otherwise Express would treat "misc-items" as
 // an :id value for getById.
 router.get("/misc-items", Controller.getMiscItems);
+// Gate Pass (ORIGINAL + ACCOUNTS copies), printable once a truck has checked
+// out. Read-only. Two segments deep, so these can never be mistaken for the
+// "/:id" route below.
+router.get("/:id/gate-pass/data", GatePassController.getData);
+router.get("/:id/gate-pass", GatePassController.pdf);
 router.get("/:id",  Controller.getById);
 router.post("/",    Controller.create);
 router.put("/:id",  Controller.update);

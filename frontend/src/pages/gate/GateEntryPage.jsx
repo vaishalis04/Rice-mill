@@ -10,6 +10,7 @@ import {
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
+import GatePassModal from "../../components/GatePassModal";
 import CameraCapture from "../../components/CameraCapture";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 import VisitorSection from "./VisitorSection";
@@ -64,6 +65,7 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
   const [photoPreview, setPhotoPreview] = useState("");
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoUploadError, setPhotoUploadError] = useState("");
+  const [passRow, setPassRow] = useState(null); // truck whose Gate Pass popup is open
 
   const vehicles = useEntityLookup("vehicle");
   const drivers = useEntityLookup("driver");
@@ -487,6 +489,12 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
                           Check-out
                         </button>
                       )}
+                  {/* Gate Pass: only once the truck has checked out. */}
+                  {row.gate_status === "exited" && ["purchase", "sales", "other"].includes(row.entry_type) && (
+                    <button className="dt-btn" onClick={() => setPassRow(row)}>
+                      Gate Pass
+                    </button>
+                  )}
                 </div>
               ),
             },
@@ -504,12 +512,15 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
             "Purchase trucks flow forward automatically from there: Quality samples and tests it, Weighbridge weighs it, then Warehouse unloads it into a Lot.",
             "Empty/Misc trucks can be weighed on the Weighbridge page if needed, then use 'Send to Warehouse' here (or on the Warehouse page) to close them out — no Lot is created since there's usually no stock to track.",
             "Sales trucks are weighed too, then head to the Loading tab: enter the loaded quantity there, which moves the gate entry to 'loaded' and the Sales Order to 'dispatched'. Only then can the truck check out here.",
+            "After a truck has checked out, a Gate Pass button appears on its row. Purchase and Sales trucks get an item-table pass filled in automatically from the unloading / loading records; Empty/Misc trucks get the store pass. Each pass prints two copies (Original and Accounts) and can be viewed or downloaded; the boxes in the popup are an optional manual override.",
             "Use the tabs above the list to filter by truck type or by status at any stage of the journey.",
           ]}
         />
       </div>
 
       {pageMode === "visitor" && <VisitorSection />}
+
+      {passRow && <GatePassModal entry={passRow} onClose={() => setPassRow(null)} />}
     </div>
   );
 }

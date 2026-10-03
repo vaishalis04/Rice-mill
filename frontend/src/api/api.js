@@ -124,6 +124,13 @@ export const gateCheckoutApi = (id) =>
 export const gateSendToWarehouseApi = (id, extra = {}) =>
   axiosInstance.post("/gate/send-to-warehouse", { id, ...extra });
 
+// Gate Pass (ORIGINAL + ACCOUNTS copies) — only for a truck that has checked
+// out. "data" is what the pass will contain (auto-filled from the database);
+// the PDF endpoint takes the optional manual overrides as query params.
+export const getGatePassDataApi = (id) => axiosInstance.get(`/gate/${id}/gate-pass/data`);
+export const getGatePassPdfApi = (id, params = {}) =>
+  axiosInstance.get(`/gate/${id}/gate-pass`, { params, responseType: "blob" });
+
 // ---------------- VISITOR GATE PASS (role: gate) ----------------
 export const getVisitorsApi = (params = {}) =>
   axiosInstance.get("/visitors", { params });
@@ -391,6 +398,14 @@ export const deletePaymentSettlementApi = (id) =>
 
 export const getPaymentSettlementPdfApi = (id) =>
   axiosInstance.get(`/payment-settlements/${id}/pdf`, { responseType: "blob" });
+
+// Auto-fetch: find the truck (GP No. / SO No. / PO No. / vehicle / party) a
+// settlement is made against, then get everything the system can pre-fill.
+export const searchSettlementSourcesApi = (q = "") =>
+  axiosInstance.get("/payment-settlements/sources", { params: { q } });
+
+export const getSettlementSourceApi = (gateEntryId) =>
+  axiosInstance.get(`/payment-settlements/source/${gateEntryId}`);
 
 export const completePackingApi = (data) =>
   axiosInstance.post("/packing/complete", data);
