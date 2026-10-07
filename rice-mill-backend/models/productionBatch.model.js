@@ -49,6 +49,13 @@ ProductionBatch.init(
       allowNull: false,
       defaultValue: false,
     },
+    // Set when the batch is finalized (productionOutput.controller.js).
+    // destination_warehouse_id is where the accepted output went;
+    // outputs_data keeps what was produced per input material — output
+    // materials, accepted / rejected bags, loss. Both stay null for batches
+    // finalized before this existed. (No FK on purpose.)
+    destination_warehouse_id: { type: DataTypes.BIGINT, allowNull: true },
+    outputs_data: { type: DataTypes.JSON, allowNull: true, defaultValue: null },
   },
   {
     sequelize,

@@ -23,7 +23,12 @@ import ModuleGuide from "../../components/ModuleGuide";
 // quintal — see paymentSettlement.controller.js for the exact formulas.
 // A settlement can still be typed in completely by hand (no truck picked).
 
-const COMMISSION_OPTIONS = ["10/Qntl", "20/Qntl", "1%", "1.5%", "2%"]; // the Excel's dropdown
+// The Commission / Trade Discount value dropdown: the Excel's per-quintal
+// options plus 0.5% to 2.5% in half-percent steps. "Other" lets you type any value.
+const COMMISSION_OPTIONS = ["10/Qntl", "20/Qntl", "0.5%", "1%", "1.5%", "2%", "2.5%"];
+const OTHER = "__other__";
+
+const emptyMiscRow = () => ({ name: "", amount: "", mode: "reduce" });
 
 const emptyItem = (is_return = false) => ({ item_name: is_return ? "Return" : "Rice", bags: "", weight: "", rate: "", is_return });
 
@@ -36,6 +41,7 @@ const makeEmptyForm = () => ({
   tds_amount: "0", less_dana_pct: "0", quality_difference: "0",
   commission_type: "commission", commission_input: "",
   cd_pct: "0", balance_freight: "0", less_hammali: "0", rounded_value: "0",
+  misc_items: [emptyMiscRow()],
   sauda_date: "", sauda: "", inward_details: [], pending_sauda: "",
   payment_through: "", payment_date: "",
   remarks: "THE ABOVE DEDUCTION ARE AS PER BARGAIN CONDITION.\nPLEASE DON'T ACCEPT DRAFT/PAYMENT, IF THE DEDUCTION IS NOT ACCEPTABLE.",
@@ -76,10 +82,20 @@ const computeTotals = (f) => {
   const cdAmount = round2((totalAmount * (Number(f.cd_pct) || 0)) / 100);
   const tds = round2(f.tds_amount), qualityDifference = round2(f.quality_difference);
   const hammali = round2(f.less_hammali), roundedValue = round2(f.rounded_value), balanceFreight = round2(f.balance_freight);
+  // Miscellaneous Amounts: any number of named rows, each typed as a positive figure and
+  // marked Add (+), Reduce (-) or N/A (no effect) on the Net Payable.
+  const miscEffect = round2(
+    (f.misc_items || []).reduce((sum, r) => {
+      const a = round2(r.amount);
+      return sum + (r.mode === "add" ? a : r.mode === "na" ? 0 : -a);
+    }, 0)
+  );
   // Whichever of Commission / Trade Discount is selected is deducted.
-  const netPayableAmount = round2(totalAmount - tds - danaAmount - qualityDifference - commissionAmount - cdAmount - balanceFreight - hammali + roundedValue);
+  const netPayableAmount = round2(
+    totalAmount - tds - danaAmount - qualityDifference - commissionAmount - cdAmount - balanceFreight - hammali + miscEffect + roundedValue
+  );
   const brokerageAmount = f.commission_type === "trade_discount" ? 0 : commissionAmount;
-  return { netWeight, finalNetWeight, items, totalBags, totalWeight, rate, totalAmount, danaAmount, commissionAmount, cdAmount, netPayableAmount, brokerageAmount };
+  return { netWeight, finalNetWeight, items, totalBags, totalWeight, rate, totalAmount, danaAmount, commissionAmount, cdAmount, netPayableAmount, brokerageAmount, miscEffect };
 };
 
 // The Excel's AUTO FETCH / MANUAL ENTRY / AUTO CALCULATE tags, next to each field.
@@ -115,6 +131,8 @@ export default function PaymentSettlementPage() {
   const [query, setQuery] = useState("");
   const [sources, setSources] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [showSettled, setShowSettled] = useState(false); // also list trucks already settled (PDF opened)
+  const [customCommission, setCustomCommission] = useState(false); // commission value typed by hand instead of picked
   const [picked, setPicked] = useState(null); // { gp_no, order_no, entry_type }
   const [notices, setNotices] = useState([]);
   const [fetching, setFetching] = useState(false);
@@ -126,9 +144,9 @@ export default function PaymentSettlementPage() {
       .catch(() => setError("Failed to load payment settlements"))
       .finally(() => setLoading(false));
   };
-  const runSearch = (q = query) => {
+  const runSearch = (q = query, includeSettled = showSettled) => {
     setSearching(true);
-    searchSettlementSourcesApi(q)
+    searchSettlementSourcesApi(q, includeSettled)
       .then((res) => setSources(res.data.data ?? []))
       .catch(() => setError("Couldn't search trucks"))
       .finally(() => setSearching(false));
@@ -150,6 +168,13 @@ export default function PaymentSettlementPage() {
     items[idx] = { ...items[idx], [key]: value };
     setForm({ ...form, items });
   };
+  const setMiscRow = (idx, patch) =>
+    setForm({ ...form, misc_items: form.misc_items.map((r, i) => (i === idx ? { ...r, ...patch } : r)) });
+  const addMiscRow = () => setForm({ ...form, misc_items: [...form.misc_items, emptyMiscRow()] });
+  const removeMiscRow = (idx) => {
+    const rest = form.misc_items.filter((_, i) => i !== idx);
+    setForm({ ...form, misc_items: rest.length ? rest : [emptyMiscRow()] });
+  };
   const addItemRow = () => setForm({ ...form, items: [...form.items, emptyItem(false)] });
   const removeItemRow = (idx) => setForm({ ...form, items: form.items.filter((_, i) => i !== idx) });
 
@@ -158,7 +183,7 @@ export default function PaymentSettlementPage() {
     inward_details[idx] = { ...inward_details[idx], [key]: value };
     setForm({ ...form, inward_details });
   };
-  const addInwardRow = () => setForm({ ...form, inward_details: [...form.inward_details, { date: "", weight: "" }] });
+  const addInwardRow = () => setForm({ ...form, inward_details: [...form.inward_details, { date: "", weight: "", gp_no: "" }] });
   const removeInwardRow = (idx) => setForm({ ...form, inward_details: form.inward_details.filter((_, i) => i !== idx) });
 
   const useSource = async (src) => {
@@ -175,6 +200,7 @@ export default function PaymentSettlementPage() {
       const res = await getSettlementSourceApi(src.gate_entry_id);
       const data = res.data.data ?? res.data;
       setForm({ ...makeEmptyForm(), ...data.form });
+      setCustomCommission(false);
       setPicked({ gp_no: data.form.gp_no, order_no: data.order_no, entry_type: data.entry_type });
       setNotices(data.notices || []);
     } catch (err) {
@@ -187,6 +213,7 @@ export default function PaymentSettlementPage() {
   const clearPicked = () => {
     if (!window.confirm("Clear the fetched details and start a blank settlement?")) return;
     setForm(makeEmptyForm());
+    setCustomCommission(false);
     setPicked(null);
     setNotices([]);
   };
@@ -200,6 +227,7 @@ export default function PaymentSettlementPage() {
       await createPaymentSettlementApi(form);
       setInfo(`Saved settlement for ${form.party_name}${form.gp_no ? ` (${form.gp_no})` : ""}.`);
       setForm(makeEmptyForm());
+      setCustomCommission(false);
       setPicked(null);
       setNotices([]);
       load();
@@ -228,6 +256,8 @@ export default function PaymentSettlementPage() {
       const res = await getPaymentSettlementPdfApi(row.id);
       const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
       setPdfPreview({ url, fileName: `settlement-${row.id}.pdf`, title: `Payment Settlement — ${row.party_name}` });
+      // Opening the PDF marks the truck as settled, so it leaves the list below.
+      runSearch(query);
     } catch {
       setError("Couldn't generate the PDF");
     }
@@ -235,7 +265,10 @@ export default function PaymentSettlementPage() {
 
   const c = computeTotals(form);
   const isTradeDiscount = form.commission_type === "trade_discount";
+  // A value that isn't one of the presets (e.g. an older "15/qtl") shows in the "Other" box.
+  const commissionIsOther = customCommission || (form.commission_input !== "" && !COMMISSION_OPTIONS.includes(form.commission_input));
   const inwardTotal = form.inward_details.reduce((s, r) => s + (Number(r.weight) || 0), 0);
+  const vehicleCount = new Set(form.inward_details.map((r) => (r.gp_no || "").trim()).filter(Boolean)).size;
   const danaGrams = Number(form.less_dana_pct) ? Number((Number(form.less_dana_pct) * 1000).toFixed(2)) : 0;
 
   return (
@@ -273,6 +306,17 @@ export default function PaymentSettlementPage() {
             {searching ? "Searching…" : "Search"}
           </button>
         </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#475569", marginBottom: 6 }}>
+          <input
+            type="checkbox"
+            checked={showSettled}
+            onChange={(e) => {
+              setShowSettled(e.target.checked);
+              runSearch(query, e.target.checked);
+            }}
+          />
+          Also show trucks that are already settled (their PDF has been opened)
+        </label>
 
         {picked && (
           <div className="dt-info" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -309,7 +353,7 @@ export default function PaymentSettlementPage() {
                 </tr>
               ))}
               {!sources.length && !searching && (
-                <tr><td colSpan={7} style={{ color: "#64748b", padding: "8px 0" }}>No checked-out truck matches. Only trucks that have exited the gate (and so have a Gate Pass) can be settled.</td></tr>
+                <tr><td colSpan={7} style={{ color: "#64748b", padding: "8px 0" }}>Nothing to settle: no checked-out truck matches, or it has already been settled (tick the box above to see those). Only trucks that have exited the gate can be settled.</td></tr>
               )}
             </tbody>
           </table>
@@ -382,22 +426,43 @@ export default function PaymentSettlementPage() {
         </div>
         <div className="sf-field"><label>Quality Difference (amount)<Tag kind="manual" /></label><input type="number" step="0.01" {...field("quality_difference")} /></div>
 
-        <div className="sf-field">
+        <div className="sf-field" style={{ gridColumn: "span 2" }}>
           <label>Commission / Trade Discount<Tag kind="calc" /></label>
-          <div style={{ display: "flex", gap: 6 }}>
-            <select value={form.commission_type} onChange={(e) => setForm({ ...form, commission_type: e.target.value })} style={{ flex: "0 0 150px" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <select
+              value={form.commission_type}
+              onChange={(e) => setForm({ ...form, commission_type: e.target.value })}
+              style={{ flex: "1 1 170px", height: 44, fontSize: 15 }}
+            >
               <option value="commission">Commission</option>
               <option value="trade_discount">Trade Discount</option>
             </select>
-            <input
-              list="commission-options"
-              style={{ flex: 1 }}
-              {...field("commission_input")}
-              placeholder='pick or type, e.g. "10/Qntl" or "1%"'
-            />
-            <datalist id="commission-options">
-              {COMMISSION_OPTIONS.map((o) => <option key={o} value={o} />)}
-            </datalist>
+            <select
+              value={commissionIsOther ? OTHER : form.commission_input}
+              onChange={(e) => {
+                if (e.target.value === OTHER) {
+                  setCustomCommission(true);
+                } else {
+                  setCustomCommission(false);
+                  setForm({ ...form, commission_input: e.target.value });
+                }
+              }}
+              style={{ flex: "1 1 170px", height: 44, fontSize: 15 }}
+            >
+              <option value="">— select value —</option>
+              {COMMISSION_OPTIONS.map((o) => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+              <option value={OTHER}>Other (type a value)…</option>
+            </select>
+            {commissionIsOther && (
+              <input
+                style={{ flex: "1 1 150px", height: 44, fontSize: 15 }}
+                {...field("commission_input")}
+                placeholder='e.g. "15/Qntl" or "1.25%"'
+                autoFocus
+              />
+            )}
           </div>
           <div style={hint}>
             {isTradeDiscount ? "Trade Discount" : "Commission"} → Rs {c.commissionAmount}, deducted from Net Payable
@@ -412,6 +477,53 @@ export default function PaymentSettlementPage() {
         </div>
         <div className="sf-field"><label>Balance Freight (amount)<Tag kind="manual" /></label><input type="number" step="0.01" {...field("balance_freight")} /></div>
         <div className="sf-field"><label>Less Hammali (amount)<Tag kind="optional" /></label><input type="number" step="0.01" {...field("less_hammali")} /></div>
+        <div className="sf-field" style={{ gridColumn: "1 / -1" }}>
+          <label>Miscellaneous Amounts<Tag kind="optional" /></label>
+          <div style={hint}>Add as many extra amounts as needed (e.g. Loading Charge). Add (+) puts it on the Net Payable, Reduce (−) takes it off, N/A keeps the row but ignores it.</div>
+          {(form.misc_items || []).map((row, idx) => {
+            const amt = round2(row.amount);
+            return (
+              <div key={idx} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+                <span style={{ width: 22, color: "#64748b", fontSize: 12 }}>{idx + 1}.</span>
+                <input
+                  type="text"
+                  placeholder="Name (e.g. Loading Charge)"
+                  maxLength={100}
+                  style={{ flex: "2 1 220px" }}
+                  value={row.name}
+                  onChange={(e) => setMiscRow(idx, { name: e.target.value })}
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Amount"
+                  style={{ flex: "1 1 120px" }}
+                  value={row.amount}
+                  onChange={(e) => setMiscRow(idx, { amount: e.target.value })}
+                />
+                <select value={row.mode} onChange={(e) => setMiscRow(idx, { mode: e.target.value })} style={{ flex: "0 0 130px" }}>
+                  <option value="add">Add (+)</option>
+                  <option value="reduce">Reduce (−)</option>
+                  <option value="na">N/A</option>
+                </select>
+                <button type="button" className="dt-btn" onClick={() => removeMiscRow(idx)} title="Remove this row">x</button>
+                {amt > 0 && row.mode !== "na" && (
+                  <span style={{ ...hint, marginTop: 0 }}>{row.mode === "add" ? "+" : "−"} Rs {amt}</span>
+                )}
+                {amt > 0 && row.mode === "na" && <span style={{ ...hint, marginTop: 0 }}>not applied</span>}
+              </div>
+            );
+          })}
+          <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10 }}>
+            <button type="button" className="dt-btn" onClick={addMiscRow}>+ Add Miscellaneous Row</button>
+            {c.miscEffect !== 0 && (
+              <span style={hint}>
+                Net effect on Net Payable: {c.miscEffect > 0 ? "+" : "−"} Rs {Math.abs(c.miscEffect)}
+              </span>
+            )}
+          </div>
+        </div>
         <div className="sf-field"><label>Rounded Value (+/-)<Tag kind="optional" /></label><input type="number" step="0.01" {...field("rounded_value")} /></div>
 
         <div className="sf-field">
@@ -432,24 +544,26 @@ export default function PaymentSettlementPage() {
           <label>Pending Sauda<Tag kind="auto" /></label>
           <input {...field("pending_sauda")} placeholder={fromAuto ? "empty = order fully loaded" : "e.g. 3.45MT"} />
           {form.pending_sauda && <div style={hint}>The order is only partly loaded.</div>}
+          {vehicleCount > 1 && <div style={hint}>{vehicleCount} vehicles were used — their GP numbers print under Pending Sauda.</div>}
         </div>
 
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ fontWeight: 600 }}>Inward Details<Tag kind="auto" /></label>
           <table style={{ marginTop: 4, marginBottom: 6 }}>
             <thead>
-              <tr style={{ textAlign: "left", fontSize: 12, color: "#666" }}><th>Date</th><th>Weight (kg)</th><th></th></tr>
+              <tr style={{ textAlign: "left", fontSize: 12, color: "#666" }}><th>Date</th><th>Weight (kg)</th><th>Vehicle GP No.</th><th></th></tr>
             </thead>
             <tbody>
               {form.inward_details.map((r, idx) => (
                 <tr key={idx}>
                   <td><input type="date" value={r.date || ""} onChange={(e) => updateInward(idx, "date", e.target.value)} /></td>
                   <td><input type="number" step="0.01" value={r.weight} onChange={(e) => updateInward(idx, "weight", e.target.value)} style={{ width: 120 }} /></td>
+                  <td><input value={r.gp_no || ""} onChange={(e) => updateInward(idx, "gp_no", e.target.value)} placeholder="GP-OUT-0001" style={{ width: 150 }} /></td>
                   <td><button type="button" className="dt-btn" onClick={() => removeInwardRow(idx)}>x</button></td>
                 </tr>
               ))}
               {form.inward_details.length > 0 && (
-                <tr style={{ fontWeight: 600 }}><td>TOTAL</td><td>{inwardTotal}</td><td></td></tr>
+                <tr style={{ fontWeight: 600 }}><td>TOTAL</td><td>{inwardTotal}</td><td></td><td></td></tr>
               )}
             </tbody>
           </table>
@@ -507,7 +621,9 @@ export default function PaymentSettlementPage() {
           "Search for the truck by GP No., SO No., PO No., vehicle or party and click Use — the party, GST, lorry, weights, items, rate and the Sauda / Inward / Pending block fill in automatically. Only trucks that have checked out (and so have a Gate Pass) are listed.",
           "Fields are tagged like the mill's Excel: AUTO (from the truck), AUTO CALC (worked out for you), MANUAL (you enter it) and OPTIONAL (only if needed). You can overwrite any auto-filled value.",
           "If the order was only partly loaded, Pending Sauda shows what is still to be loaded, and Inward Details lists every load made against the order so far.",
-          "Pick Commission or Trade Discount from the dropdown (one at a time) and a value like 10/Qntl, 1% or 2%. Whichever you choose is deducted from the Net Payable Amount; only Commission also appears under Brokerage Details.",
+          "Pick Commission or Trade Discount from the dropdown (one at a time) and a value from 10/Qntl, 20/Qntl or 0.5% to 2.5% (or choose Other and type your own). Whichever you choose is deducted from the Net Payable Amount; only Commission also appears under Brokerage Details.",
+          "Miscellaneous Amounts are optional: add a row for each extra amount (for example Loading Charge), type its amount and choose Add (+), Reduce (−) or N/A. Every Add / Reduce row changes the Net Payable Amount and is printed on the PDF under its own name; N/A rows are ignored.",
+          "Once a settlement's PDF has been opened or downloaded, that truck is treated as settled and disappears from the list above. Tick \"Also show trucks that are already settled\" to see it again.",
           "Net Payable Amount updates live as you type, exactly matching the printed PDF. Save, then click View on that row to open or download it.",
           "You can still type a settlement in completely by hand without picking a truck.",
         ]}

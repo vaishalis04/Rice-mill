@@ -1,5 +1,6 @@
 const router = require("express").Router();
 const Controller = require("../controllers/inventory.controller");
+const ReportController = require("../controllers/inventoryReport.controller");
 const { attachUser, authorize, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
@@ -12,6 +13,9 @@ router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["warehouse","pr
 // the literal string "stock-summary").
 router.get("/",     Controller.getAll);
 router.get("/stock-summary", Controller.getStockSummary);
+// Inventory reports (PDF) — also before "/:id".
+router.get("/report-filters", ReportController.filters);
+router.get("/report-pdf", ReportController.reportPdf);
 router.get("/:id",  Controller.getById);
 router.post("/",    Controller.create);
 router.put("/:id",  Controller.update);

@@ -64,6 +64,21 @@ PaymentSettlement.init(
     cd_pct: { type: DataTypes.DECIMAL(6, 3), allowNull: false, defaultValue: 0 },
     less_hammali: { type: DataTypes.DECIMAL(14, 2), allowNull: false, defaultValue: 0 }, // manual flat amount
     balance_freight: { type: DataTypes.DECIMAL(14, 2), allowNull: false, defaultValue: 0 }, // manual flat amount ("BALANCE FREIGHT" on the Excel form), deducted from Net Payable
+    // Miscellaneous Amounts: any number of named rows [{ name, amount, mode }] with
+    // mode "add" (+ Net Payable), "reduce" (- Net Payable) or "na" (no effect, not
+    // printed). Replaces the single misc_amount below, which older settlements still use.
+    misc_items: { type: DataTypes.JSON, allowNull: true },
+    // Legacy single optional amounts (older settlements). Entered as a positive
+    // figure plus a mode: "reduce" takes it off the Net Payable Amount (the
+    // default), "add" puts it on. The form no longer writes these.
+    misc_amount: { type: DataTypes.DECIMAL(14, 2), allowNull: false, defaultValue: 0 },
+    misc_mode: { type: DataTypes.STRING(10), allowNull: false, defaultValue: "reduce" },
+    receiving_pending: { type: DataTypes.DECIMAL(14, 2), allowNull: false, defaultValue: 0 },
+    receiving_pending_mode: { type: DataTypes.STRING(10), allowNull: false, defaultValue: "reduce" },
+    // Stamped the first time this advice's PDF is opened / downloaded. A truck
+    // whose settlement has had its PDF produced counts as fully settled and
+    // is hidden from the "find the truck" list (see settlementSource.helper.js).
+    pdf_generated_at: { type: DataTypes.DATE, allowNull: true },
     rounded_value: { type: DataTypes.DECIMAL(14, 2), allowNull: false, defaultValue: 0 }, // manual +/- adjustment
 
     // Lorry Freight Payment Details / Brokerage Details block.
@@ -73,7 +88,8 @@ PaymentSettlement.init(
     inward_weight: { type: DataTypes.DECIMAL(14, 3), allowNull: true },
     pending_sauda: { type: DataTypes.STRING(100), allowNull: true },
     // Every load made against the same order so far — [{ date, weight }] with
-    // weight in kg (the Excel's INWARD DETAILS rows + their total). Older
+    // weight in kg and gp_no the Gate Pass of the vehicle that made that load
+    // (the Excel's INWARD DETAILS rows + their total). Older
     // settlements only have the single inward_date / inward_weight above,
     // which the PDF still prints when this is empty.
     inward_details: { type: DataTypes.JSON, allowNull: true },

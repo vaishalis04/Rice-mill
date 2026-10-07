@@ -75,7 +75,13 @@ const SETTLEABLE_TYPES = ["purchase", "sales", "other"];
 
 // Candidate trucks (exited ones only — that's when a GP exists) matching text
 // typed as a GP No., SO No., PO No., vehicle, token or party name.
-const searchSources = async (rawQuery) => {
+//
+// A truck is HIDDEN once it has been settled AND that settlement's PDF has
+// been opened / downloaded (pdf_generated_at is set). A truck that has only
+// been saved — no PDF yet — still shows, flagged "Settled #n", so the advice
+// can't be forgotten half-way. `includeSettled` brings the hidden ones back
+// (e.g. to issue a second settlement for the same GP).
+const searchSources = async (rawQuery, { includeSettled = false } = {}) => {
   const q = String(rawQuery || "").trim().slice(0, 60);
   const base = { is_deleted: false, gate_status: "exited", entry_type: { [Op.in]: SETTLEABLE_TYPES } };
   let where = base;
@@ -119,6 +125,15 @@ const searchSources = async (rawQuery) => {
       }
       where = { ...base, id: { [Op.in]: ids.size ? [...ids] : [0] } };
     }
+  }
+
+  if (!includeSettled) {
+    const done = await PaymentSettlement.findAll({
+      where: { is_deleted: false, gate_entry_id: { [Op.ne]: null }, pdf_generated_at: { [Op.ne]: null } },
+      attributes: ["gate_entry_id"],
+    });
+    const hiddenIds = [...new Set(done.map((r) => Number(r.gate_entry_id)))];
+    if (hiddenIds.length) where = { [Op.and]: [where, { id: { [Op.notIn]: hiddenIds } }] };
   }
 
   const entries = await GateEntry.findAll({
@@ -253,7 +268,11 @@ const salesSauda = async (entry, loadings, soById) => {
     const mine = items.filter((i) => Number(i.so_id) === Number(so.id));
     return mine.length ? mine.reduce((s, i) => s + (toNum(i.qty) || 0), 0) : toNum(l.loaded_qty) || 0;
   };
-  const inward = allLoads.map((l) => ({ date: ymd(l.loaded_at), weight: Math.round(qtyForSo(l) * KG_PER_ORDER_QTL) }));
+  const inward = allLoads.map((l) => ({
+    date: ymd(l.loaded_at),
+    weight: Math.round(qtyForSo(l) * KG_PER_ORDER_QTL),
+    gp_no: gpNoFor("sales", l.gate_entry_id), // the vehicle that made this load
+  }));
   const loaded = allLoads.reduce((s, l) => s + qtyForSo(l), 0);
   const pending = total - loaded;
 
@@ -326,7 +345,11 @@ const purchaseSauda = async (entry, purchases) => {
     order: [["purchase_date", "ASC"], ["id", "ASC"]],
   });
   // Purchase.final_qty is the weighbridge net weight in kg.
-  const inward = allReceipts.map((p) => ({ date: ymd(p.purchase_date), weight: Math.round(Number(p.final_qty) || 0) }));
+  const inward = allReceipts.map((p) => ({
+    date: ymd(p.purchase_date),
+    weight: Math.round(Number(p.final_qty) || 0),
+    gp_no: gpNoFor("purchase", p.gate_entry_id), // the vehicle that made this delivery
+  }));
   const receivedMt = allReceipts.reduce((s, p) => s + (Number(p.final_qty) || 0), 0) / KG_PER_ORDER_QTL;
   const pending = total - receivedMt;
 

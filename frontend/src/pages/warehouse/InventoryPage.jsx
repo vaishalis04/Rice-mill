@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { getInventoryStockSummaryApi } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import ModuleGuide from "../../components/ModuleGuide";
+import InventoryReportPanel from "../../components/InventoryReportPanel";
 
 function formatIdleLabel(row) {
   if (row.idle_days == null) return "No movement recorded";
@@ -63,6 +64,8 @@ export default function InventoryPage() {
     <div>
       <h2 style={{ marginTop: 0 }}>Inventory</h2>
       {error && <div className="dt-error">{error}</div>}
+
+      <InventoryReportPanel />
 
       <div
         style={{
@@ -154,6 +157,7 @@ export default function InventoryPage() {
           "Packed material is grouped by its actual pack size, with the total bag count and Qtl for that group.",
           "'Last Movement' reflects the most recent stock change for that group — a raw stock deduction/addition, or a packing/dispatch update for packed stock.",
           "Use the three search boxes to narrow down by item name, warehouse, or bag size.",
+          "Click Reports (PDF) to view or download an Inventory report: Stock Movement for a date range, or Current Stock — filter by warehouse, item, stock type and pack size.",
         ]}
       />
     </div>

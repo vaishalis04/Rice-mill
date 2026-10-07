@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   getSalesOrdersGroupedApi,
   createSalesOrderBulkApi,
@@ -11,6 +11,8 @@ import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
+import axiosInstance from "../../api/axiosInstance";
+import { StatusChip, StatusTabs, SO_TABS, orderStatusOf, lineStatusOf, statusLabel } from "../../components/SalesOrderStatus";
 
 // A Sales Order now stores all materials as a JSON array in a single record
 // The UI treats a so_no as ONE order: one row in the list, one edit panel
@@ -18,12 +20,10 @@ import { useEntityLookup } from "../../hooks/useEntityLookup";
 const emptyHeader = { customer_id: "", order_type: "fg", order_date: "" };
 const emptyItem = { material_id: "", qty: "", rate: "" };
 
-const STATUS_FILTERS = ["", "confirmed", "dispatched", "closed", "cancelled"];
-
 export default function SalesOrdersPage() {
   const [orders, setOrders] = useState([]); // [{ so_no, customer_id, customer, order_type, order_date, items:[...] }]
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all"); // tab key - see SO_TABS
   const customers = useEntityLookup("customer");
   const materials = useEntityLookup("material");
 
@@ -42,11 +42,9 @@ export default function SalesOrdersPage() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
-  const load = (so_status = statusFilter) => {
+  const load = () => {
     setLoading(true);
-    const params = {};
-    if (so_status) params.so_status = so_status;
-    getSalesOrdersGroupedApi(params)
+    return getSalesOrdersGroupedApi({})
       .then((res) => {
         const data = res.data.data ?? res.data;
         // Ensure items is always an array
@@ -60,7 +58,17 @@ export default function SalesOrdersPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Tab counts and the rows of the selected tab, by each order's real status.
+  const counts = useMemo(
+    () => Object.fromEntries(SO_TABS.map((t) => [t.key, orders.filter((o) => t.match(orderStatusOf(o))).length])),
+    [orders]
+  );
+  const visibleOrders = useMemo(() => {
+    const tab = SO_TABS.find((t) => t.key === statusFilter) || SO_TABS[0];
+    return orders.filter((o) => tab.match(orderStatusOf(o)));
+  }, [orders, statusFilter]);
 
   const handleHeaderChange = (e) => setHeader({ ...header, [e.target.name]: e.target.value });
   const handleItemChange = (e) => setCurrentItem({ ...currentItem, [e.target.name]: e.target.value });
@@ -138,7 +146,7 @@ export default function SalesOrdersPage() {
         material_id: item.material_id || "",
         qty: item.qty || 0,
         rate: item.rate || 0,
-        so_status: item.so_status || "confirmed",
+        so_status: lineStatusOf(item, so),
       }))
     );
     setNewItem(emptyItem);
@@ -315,42 +323,47 @@ export default function SalesOrdersPage() {
     if (so) handleDeleteWholeSo(so);
   };
 
-  const handleStatusChange = async (item, so, newStatus) => {
-    const verb = newStatus === "cancelled" ? "cancel" : "close";
-    if (!window.confirm(`Are you sure you want to ${verb} the ${materialLabel(item.material_id)} line on ${so.so_no}?`)) return;
-    setError("");
-    try {
-      // Update the specific item's status in the items array
-      const updatedItems = so.items.map((it) => {
-        if (it.material_id === item.material_id) {
-          return { ...it, so_status: newStatus };
-        }
-        return it;
-      });
+  // Close / cancel ONE material line (item given) or the WHOLE sales order
+  // (item omitted). The server keeps the order's own status in step, so a
+  // closed / cancelled order lands in the Closed / Cancelled tab.
+  const applyStatus = async (so, status, item) => {
+    let question;
+    if (item) {
+      question =
+        status === "cancelled"
+          ? `Cancel the ${materialLabel(item.material_id)} line on ${so.so_no}?`
+          : `Close the ${materialLabel(item.material_id)} line on ${so.so_no}?`;
+    } else if (status === "cancelled") {
+      const loaded = (so.items || []).reduce((sum, i) => sum + Number(i.dispatched_qty || 0), 0);
+      question =
+        `Cancel the whole Sales Order ${so.so_no}?\n\n` +
+        `Every material on it will be cancelled, at whatever stage it is.` +
+        (loaded > 0 ? `\n${loaded} Qtl already loaded stays on record.` : "") +
+        `\nThis can't be undone.`;
+    } else {
+      question = `Close Sales Order ${so.so_no}? All of its materials are completed.`;
+    }
+    if (!window.confirm(question)) return;
 
-      await updateSalesOrderApi(so.id, {
-        items: updatedItems,
+    setError("");
+    setInfo("");
+    try {
+      const res = await axiosInstance.patch(`/sales-orders/so/${encodeURIComponent(so.so_no)}/status`, {
+        status,
+        ...(item ? { material_id: item.material_id } : {}),
       });
-      
-      setInfo(`${so.so_no} — ${materialLabel(item.material_id)} marked ${newStatus}.`);
-      load();
+      const landed = res.data?.data ? orderStatusOf(res.data.data) : null;
+      const where = ["closed", "cancelled"].includes(landed) ? ` It's now under the ${statusLabel(landed)} tab.` : "";
+      setInfo(`${res.data?.msg || "Updated"}.${where}${res.data?.warning ? ` ${res.data.warning}` : ""}`);
+      await load();
     } catch (err) {
-      setError(err.response?.data?.message || `Failed to mark line item ${newStatus}`);
+      setError(err.response?.data?.message || err.response?.data?.msg || `Could not mark it ${status}`);
     }
   };
+  const handleCancelSo = (so) => applyStatus(so, "cancelled");
+  const handleCloseSo = (so) => applyStatus(so, "closed");
 
   const materialLabel = (id) => materials.getLabel(id);
-
-  // Helper to get status badge color
-  const getStatusColor = (status) => {
-    switch(status) {
-      case 'confirmed': return '#4CAF50';
-      case 'dispatched': return '#2196F3';
-      case 'closed': return '#9E9E9E';
-      case 'cancelled': return '#f44336';
-      default: return '#FF9800';
-    }
-  };
 
   return (
     <div>
@@ -432,9 +445,7 @@ export default function SalesOrdersPage() {
                       />
                     </td>
                     <td>
-                      <span className="dt-badge" style={{ backgroundColor: getStatusColor(item.so_status) }}>
-                        {item.so_status || "confirmed"}
-                      </span>
+                      <StatusChip status={item.so_status || "confirmed"} />
                     </td>
                     <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       <button className="dt-btn" onClick={() => handleSaveItem(index)}>Save</button>
@@ -558,24 +569,26 @@ export default function SalesOrdersPage() {
         </>
       )}
 
-      <div className="section-tabs">
-        {STATUS_FILTERS.map((s) => (
-          <button
-            key={s}
-            className={`section-tab ${statusFilter === s ? "active" : ""}`}
-            onClick={() => {
-              setStatusFilter(s);
-              load(s);
-            }}
-          >
-            {s || "All"}
-          </button>
-        ))}
-      </div>
+      <StatusTabs active={statusFilter} counts={counts} onChange={setStatusFilter} />
 
+      {!loading && orders.length > 0 && visibleOrders.length === 0 ? (
+        <div
+          style={{
+            padding: "28px 16px",
+            textAlign: "center",
+            color: "#64748b",
+            background: "#fff",
+            border: "1px dashed #cbd5e1",
+            borderRadius: 10,
+            fontSize: 14,
+          }}
+        >
+          No {(SO_TABS.find((t) => t.key === statusFilter) || SO_TABS[0]).label.toLowerCase()} sales orders.
+        </div>
+      ) : (
       <DataTable
         loading={loading}
-        rows={orders}
+        rows={visibleOrders}
         onEdit={handleEditSo}
         onDelete={handleDeleteWholeSoById}
         columns={[
@@ -589,27 +602,35 @@ export default function SalesOrdersPage() {
             key: "materials",
             label: "Materials",
             render: (row) => (
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {(row.items || []).map((item, index) => (
-                  <div key={index} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <span>
-                      {materialLabel(item.material_id)} — {item.qty} @ ₹{item.rate}
-                    </span>
-                    <span className="dt-badge" style={{ backgroundColor: getStatusColor(item.so_status) }}>
-                      {item.so_status || "confirmed"}
-                    </span>
-                    {["pending", "confirmed"].includes(item.so_status || "confirmed") && (
-                      <button className="dt-btn" onClick={() => handleStatusChange(item, row, "cancelled")}>
-                        Cancel
-                      </button>
-                    )}
-                    {item.so_status === "dispatched" && (
-                      <button className="dt-btn" onClick={() => handleStatusChange(item, row, "closed")}>
-                        Close
-                      </button>
-                    )}
-                  </div>
-                ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(row.items || []).map((item, index) => {
+                  const st = lineStatusOf(item, row);
+                  const done = Number(item.dispatched_qty || 0);
+                  const stopped = st === "cancelled";
+                  return (
+                    <div key={index} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ textDecoration: stopped ? "line-through" : "none", color: stopped ? "#94a3b8" : "inherit" }}>
+                        {materialLabel(item.material_id)} — {item.qty} @ ₹{item.rate}
+                      </span>
+                      <StatusChip status={st} small />
+                      {done > 0 && done < Number(item.qty) && (
+                        <span style={{ fontSize: 11, color: "#64748b" }}>
+                          {done} / {item.qty} Qtl loaded
+                        </span>
+                      )}
+                      {["pending", "confirmed", "allocated"].includes(st) && (
+                        <button className="dt-btn" onClick={() => applyStatus(row, "cancelled", item)}>
+                          Cancel
+                        </button>
+                      )}
+                      {st === "dispatched" && (
+                        <button className="dt-btn" onClick={() => applyStatus(row, "closed", item)}>
+                          Close
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ),
           },
@@ -619,8 +640,34 @@ export default function SalesOrdersPage() {
             render: (row) => (row.items || []).reduce((s, i) => s + Number(i.qty), 0),
           },
           { key: "order_date", label: "Order Date" },
+          {
+            key: "status",
+            label: "Status",
+            render: (row) => {
+              const st = orderStatusOf(row);
+              const live = !["closed", "cancelled"].includes(st);
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>
+                  <StatusChip status={st} />
+                  {live && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {st === "dispatched" && (
+                        <button className="dt-btn" onClick={() => handleCloseSo(row)}>
+                          Close SO
+                        </button>
+                      )}
+                      <button className="dt-btn dt-btn-danger" onClick={() => handleCancelSo(row)}>
+                        Cancel SO
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            },
+          },
         ]}
       />
+      )}
 
       <ModuleGuide
         title="multi-item Sales Orders"
@@ -630,7 +677,9 @@ export default function SalesOrdersPage() {
           "The list below shows ONE row per SO, with all its materials listed together — not one confusing duplicate row per material.",
           "Edit opens that SO's full details: change customer/order type/date once for the whole order, edit or remove any existing material line, and add more materials to it at any time.",
           "Each material line still moves through Gate → Loading independently, since each is its own material with its own quantity and status.",
-          "Cancel/Close apply per material line, since different materials on the same SO can be at different stages of delivery.",
+          "Cancel/Close apply per material line, since different materials on the same SO can be at different stages of delivery. A line shows Completed once it is fully loaded; Close then finishes it. Once every line is closed or cancelled, the whole SO moves to the Closed / Cancelled tab.",
+          "Cancel SO (Status column) cancels the whole order at whatever stage it is - nothing more can be loaded against it and it moves to the Cancelled tab. Quantities already loaded stay on record. Close SO appears once every material is Completed.",
+          "Tabs: Confirmed = open orders (including part-loaded ones), Completed = fully loaded, Closed, Cancelled - each with a live count.",
         ]}
       />
     </div>

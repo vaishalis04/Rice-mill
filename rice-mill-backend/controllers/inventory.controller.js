@@ -73,16 +73,33 @@ module.exports = {
   getStockSummary: async (req, res, next) => {
     try {
       const rowsByKey = new Map();
+      const addRow = ({ stage, materialId, materialName, materialCode, warehouseId, warehouseName, bagSize, qty, movedAt }) => {
+        const key = `${stage}|${materialId}|${warehouseId}|${bagSize}`;
+        const existing = rowsByKey.get(key) || {
+          stage,
+          material_id: materialId,
+          material_name: materialName || `Material ${materialId}`,
+          material_code: materialCode || null,
+          warehouse_id: warehouseId,
+          warehouse_name: warehouseName || null,
+          bag_size: bagSize,
+          bag_count: bagSize ? 0 : null,
+          qty_Qtl: 0,
+          last_movement: null,
+        };
+        const balance = Number(qty || 0);
+        existing.qty_Qtl += balance;
+        if (bagSize) existing.bag_count += Math.floor((balance * 1000) / bagSize + 0.0001);
+        const moved = movedAt ? new Date(movedAt) : null;
+        if (moved && (!existing.last_movement || moved > existing.last_movement)) existing.last_movement = moved;
+        rowsByKey.set(key, existing);
+      };
 
-      // ---- Raw / bulk stock ----
-      // Grouped by material + warehouse + bag size where the unloaded lot
-      // recorded one (Lot.bag_size, set at "complete unloading" time).
-      // bag_count is a DERIVED estimate (remaining Qtl / bag size) —
-      // production consumption only reduces Inventory.balance_qty in Qtl,
-      // it never decrements a bag count, so this isn't a literal untouched
-      // count once any of that lot has been drawn on.
-        const inventoryRows = await Inventory.findAll({
-          where: { is_deleted: false, stage: { [Op.in]: ["raw", "fg"] }, balance_qty: { [Op.gt]: 0 } },
+      // Raw stock comes from the Inventory ledger. Packed stock comes from
+      // live FinishedGoods, the same physical source used by Warehouse/Stock;
+      // legacy Inventory(fg) rows are not counted as an additional balance.
+      const inventoryRows = await Inventory.findAll({
+        where: { is_deleted: false, stage: "raw", balance_qty: { [Op.gt]: 0 } },
         include: [
           { model: MaterialMaster, as: "material", attributes: ["id", "name", "material_code"] },
           { model: WarehouseMaster, as: "warehouse", attributes: ["id", "name"] },
@@ -92,40 +109,72 @@ module.exports = {
 
       for (const row of inventoryRows) {
         const bagSize = row.lot?.bag_size != null ? Number(row.lot.bag_size) : null;
-        const balance = Number(row.balance_qty || 0);
-          const key = `${row.stage}|${row.material_id}|${row.warehouse_id}|${bagSize}`;
-        const lastMoved = row.as_of ? new Date(row.as_of) : null;
-        const existing = rowsByKey.get(key) || {
-          material_id: row.material_id,
-          material_name: row.material?.name || `Material ${row.material_id}`,
-          material_code: row.material?.material_code || null,
-          warehouse_id: row.warehouse_id,
-          warehouse_name: row.warehouse?.name || null,
-          bag_size: bagSize,
-          bag_count: bagSize ? 0 : null,
-          qty_Qtl: 0,
-          last_movement: null,
-        };
-        existing.qty_Qtl += balance;
-        if (bagSize) existing.bag_count += Math.floor((balance * 1000) / bagSize + 0.0001);
-        if (lastMoved && (!existing.last_movement || lastMoved > existing.last_movement)) {
-          existing.last_movement = lastMoved;
-        }
-        rowsByKey.set(key, existing);
+        addRow({
+          stage: "raw",
+          materialId: Number(row.material_id),
+          materialName: row.material?.name,
+          materialCode: row.material?.material_code,
+          warehouseId: row.warehouse_id,
+          warehouseName: row.warehouse?.name,
+          bagSize,
+          qty: row.balance_qty,
+          movedAt: row.as_of,
+        });
       }
 
-      // ---- Packed stock, grouped by material + warehouse + pack size ----
-      // (Packing has no material_id column of its own — its material is
-      // whatever material its lot was for: Packing.lot_id -> Lot.material_id.)
+      const finishedGoods = await FinishedGoods.findAll({
+        where: { is_deleted: false, fg_status: { [Op.ne]: "dispatched" }, qty: { [Op.gt]: 0 } },
+        attributes: ["id", "packing_id", "warehouse_id", "qty", "ready_since", "updated_at"],
+      });
+      const packingIds = [...new Set(finishedGoods.map((row) => Number(row.packing_id)).filter(Boolean))];
+      const packings = packingIds.length
+        ? await Packing.findAll({ where: { id: { [Op.in]: packingIds }, is_deleted: false }, attributes: ["id", "lot_id", "material_id", "pack_size", "bag_count"] })
+        : [];
+      const packingById = new Map(packings.map((row) => [Number(row.id), row]));
+      const lotIds = [...new Set(packings.map((row) => Number(row.lot_id)).filter(Boolean))];
+      const lots = lotIds.length
+        ? await Lot.findAll({ where: { id: { [Op.in]: lotIds } }, attributes: ["id", "material_id"] })
+        : [];
+      const materialIdByLot = new Map(lots.map((row) => [Number(row.id), Number(row.material_id)]));
+      const materialIds = [...new Set(packings.map((row) => Number(row.material_id || materialIdByLot.get(Number(row.lot_id)))).filter(Boolean))];
+      const [materials, warehouses] = await Promise.all([
+        materialIds.length ? MaterialMaster.findAll({ where: { id: { [Op.in]: materialIds } }, attributes: ["id", "name", "material_code"] }) : [],
+        WarehouseMaster.findAll({ attributes: ["id", "name"] }),
+      ]);
+      const materialById = new Map(materials.map((row) => [Number(row.id), row]));
+      const warehouseById = new Map(warehouses.map((row) => [Number(row.id), row.name]));
+      for (const row of finishedGoods) {
+        const packing = packingById.get(Number(row.packing_id));
+        if (!packing) continue;
+        const materialId = Number(packing.material_id || materialIdByLot.get(Number(packing.lot_id)));
+        if (!materialId) continue;
+        const material = materialById.get(materialId);
+        const bagSize = packing.pack_size != null ? Number(packing.pack_size) : null;
+        const qtyQtl = Number(row.qty || 0) / 1000;
+        addRow({
+          stage: "fg",
+          materialId,
+          materialName: material?.name,
+          materialCode: material?.material_code,
+          warehouseId: row.warehouse_id,
+          warehouseName: warehouseById.get(Number(row.warehouse_id)),
+          bagSize,
+          qty: qtyQtl,
+          movedAt: row.ready_since || row.updated_at,
+        });
+      }
 
       const now = Date.now();
       const data = Array.from(rowsByKey.values())
         .map((r) => ({
           ...r,
           qty_Qtl: Math.round(r.qty_Qtl * 1000) / 1000,
-          // Bag counts are physical whole bags. Partial weight remains in
-          // qty_Qtl and is not displayed as a fractional bag.
-          bag_count: r.bag_count != null ? Math.floor(r.bag_count) : null,
+          // Raw stock bag counts are derived estimates. Packed counts reflect
+          // remaining weight so dispatched/partially consumed bags do not
+          // remain counted as if all original bags were still present.
+          bag_count: r.stage === "fg" && r.bag_size
+            ? Math.floor((r.qty_Qtl * 1000) / r.bag_size + 0.0001)
+            : r.bag_count != null ? Math.floor(r.bag_count) : null,
           last_movement: r.last_movement ? r.last_movement.toISOString() : null,
           idle_days: r.last_movement ? Math.floor((now - r.last_movement.getTime()) / 86400000) : null,
         }))

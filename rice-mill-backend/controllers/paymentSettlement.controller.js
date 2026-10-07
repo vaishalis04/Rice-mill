@@ -17,7 +17,8 @@ const { searchSources, buildSource } = require("../helpers/settlementSource.help
 //   CD                      = total_amount x (cd% / 100)
 //   NET PAYABLE (G31)       = total_amount - tds - dana - quality_diff
 //                             - commission/trade discount - cd - balance_freight
-//                             - hammali + rounded_value
+//                             - hammali (+/-) every Miscellaneous row (Add / Reduce / N/A)
+//                             + rounded_value
 //   Brokerage amount (H34)  = commission amount (paid to the broker) — only
 //                             when the row is "Commission", not "Trade Discount"
 //
@@ -62,6 +63,29 @@ const computeCommission = (input, totalWeightKg, totalAmount) => {
 const COMMISSION_TYPES = { commission: "Commission", trade_discount: "Trade Discount" };
 const normaliseCommissionType = (t) => (t === "trade_discount" ? "trade_discount" : "commission");
 
+// Miscellaneous Amount and Receiving Pending: optional figures the user types,
+// each either taken off ("reduce", the default) or put on ("add") the Net Payable.
+const AMOUNT_MODES = ["reduce", "add"];
+const normaliseAmountMode = (m) => (m === "add" ? "add" : "reduce");
+
+// Miscellaneous Amounts: any number of named rows, e.g. "LOADING CHARGE - 500 - Reduce".
+// Each row is { name, amount, mode } with amount typed as a positive figure and mode
+//   "add"    -> put on the Net Payable (+)
+//   "reduce" -> taken off the Net Payable (-)
+//   "na"     -> not applicable: kept on the form but no effect on the Net Payable and not printed
+// (Receiving Pending was removed from the form; a value saved on an older settlement is
+// still honoured below so that settlement's printed Net Payable never changes.)
+const MISC_MODES = ["add", "reduce", "na"];
+const cleanMiscItems = (rows) =>
+  (Array.isArray(rows) ? rows : [])
+    .map((r) => ({
+      name: r && r.name ? String(r.name).trim().slice(0, 100) : "",
+      amount: round2(r && r.amount),
+      mode: r && MISC_MODES.includes(r.mode) ? r.mode : "reduce",
+    }))
+    .filter((r) => r.name || r.amount);
+const miscEffectOf = (r) => (r.mode === "add" ? r.amount : r.mode === "reduce" ? -r.amount : 0);
+
 const computeTotals = (data) => {
   const netWeight = round3(Number(data.load_weight) - Number(data.empty_weight));
   const finalNetWeight = round3(
@@ -103,11 +127,23 @@ const computeTotals = (data) => {
   const balanceFreight = round2(data.balance_freight);
   const roundedValue = round2(data.rounded_value);
   const commissionType = normaliseCommissionType(data.commission_type);
+  // The new rows; a settlement saved before they existed carries one legacy misc_amount instead.
+  let miscItems = cleanMiscItems(data.misc_items);
+  if (!miscItems.length && round2(data.misc_amount)) {
+    miscItems = [{ name: "Miscellaneous Amount", amount: round2(data.misc_amount), mode: normaliseAmountMode(data.misc_mode) }];
+  }
+  const miscAmount = round2(miscItems.reduce((sum, r) => sum + (r.mode === "na" ? 0 : r.amount), 0));
+  const miscMode = normaliseAmountMode(data.misc_mode);
+  const miscEffect = round2(miscItems.reduce((sum, r) => sum + miscEffectOf(r), 0));
+  const receivingPending = round2(data.receiving_pending);
+  const receivingPendingMode = normaliseAmountMode(data.receiving_pending_mode);
+  const receivingPendingEffect = receivingPendingMode === "add" ? receivingPending : -receivingPending;
 
   // Whichever of Commission / Trade Discount is selected is deducted (see the
   // header comment for why this differs from the Excel's SUMIFS-by-label).
   const netPayableAmount = round2(
-    totalAmount - tds - danaAmount - qualityDifference - commissionAmount - cdAmount - balanceFreight - hammali + roundedValue
+    totalAmount - tds - danaAmount - qualityDifference - commissionAmount - cdAmount - balanceFreight - hammali
+      + miscEffect + receivingPendingEffect + roundedValue
   );
 
   return {
@@ -116,6 +152,7 @@ const computeTotals = (data) => {
     danaAmount, commissionAmount, cdAmount,
     commissionType, commissionLabel: COMMISSION_TYPES[commissionType],
     tds, qualityDifference, hammali, balanceFreight, roundedValue,
+    miscItems, miscAmount, miscMode, miscEffect, receivingPending, receivingPendingMode,
     netPayableAmount,
     // H34 = G27 x 1 — but only a real Commission is brokerage; a Trade
     // Discount is a price reduction, not money owed to the broker.
@@ -131,6 +168,23 @@ const validate = (data) => {
   if (data.commission_type !== undefined && data.commission_type !== null && !COMMISSION_TYPES[data.commission_type]) {
     throw createError(400, 'Commission type must be "commission" or "trade_discount"');
   }
+  ["misc_mode", "receiving_pending_mode"].forEach((k) => {
+    if (data[k] !== undefined && data[k] !== null && data[k] !== "" && !AMOUNT_MODES.includes(data[k])) {
+      throw createError(400, `${k} must be "add" or "reduce"`);
+    }
+  });
+  if (data.misc_items !== undefined && data.misc_items !== null && !Array.isArray(data.misc_items)) {
+    throw createError(400, "Miscellaneous amounts must be a list");
+  }
+  (Array.isArray(data.misc_items) ? data.misc_items : []).forEach((r, i) => {
+    const amount = Number(r && r.amount);
+    const hasAmount = r && r.amount !== "" && r.amount != null;
+    const hasName = !!(r && r.name && String(r.name).trim());
+    if (!hasName && !hasAmount) return; // an untouched blank row is simply dropped
+    if (!hasName) throw createError(400, `Miscellaneous row ${i + 1}: please enter a name for the amount`);
+    if (hasAmount && (Number.isNaN(amount) || amount < 0)) throw createError(400, `Miscellaneous row ${i + 1} ("${String(r.name).trim()}"): the amount must be 0 or more`);
+    if (r.mode !== undefined && r.mode !== "" && !MISC_MODES.includes(r.mode)) throw createError(400, `Miscellaneous row ${i + 1}: choose Add, Reduce or N/A`);
+  });
 };
 
 const ALLOWED_FIELDS = [
@@ -141,18 +195,21 @@ const ALLOWED_FIELDS = [
   "less_hammali", "rounded_value", "sauda_date", "sauda", "inward_date", "inward_weight",
   "pending_sauda", "payment_through", "payment_date", "remarks", "plant_id",
   "gate_entry_id", "commission_type", "balance_freight", "inward_details",
+  "misc_items",
 ];
 // Optional DATEONLY columns — the form's <input type="date"> sends "" when
 // left blank, and MySQL rejects "" for a date column outright ("Incorrect
 // date value: 'Invalid date'"). Only settlement_date is required; these
 // three must become null, not "", when empty.
 const DATE_FIELDS = ["sauda_date", "inward_date", "payment_date"];
-// [{ date, weight }] — drop blank rows, keep weight as a number (kg).
+// [{ date, weight, gp_no }] — drop blank rows, keep weight as a number (kg).
+// gp_no is the Gate Pass of the vehicle that made the load.
 const cleanInwardDetails = (rows) =>
   (Array.isArray(rows) ? rows : [])
     .map((r) => ({
       date: r && r.date ? String(r.date).slice(0, 10) : "",
       weight: r && r.weight !== "" && r.weight != null && !Number.isNaN(Number(r.weight)) ? Number(r.weight) : null,
+      gp_no: r && r.gp_no ? String(r.gp_no).trim().slice(0, 30) : "",
     }))
     .filter((r) => r.date || r.weight !== null);
 
@@ -165,6 +222,11 @@ const pickFields = (body) => {
   );
   if (out.gate_entry_id === "" || out.gate_entry_id === 0) out.gate_entry_id = null;
   if (out.balance_freight === "" || out.balance_freight === null) out.balance_freight = 0;
+  if (out.misc_items !== undefined) {
+    out.misc_items = cleanMiscItems(out.misc_items);
+    // the new rows replace the old single Miscellaneous figure, so it must not be counted twice
+    out.misc_amount = 0;
+  }
   if (out.inward_details !== undefined) {
     out.inward_details = cleanInwardDetails(out.inward_details);
     // Keep the older single inward date / weight columns pointing at the
@@ -186,7 +248,8 @@ module.exports = {
   // SO No., PO No., vehicle, token or party — what a settlement is made against.
   sources: async (req, res, next) => {
     try {
-      const data = await searchSources(req.query.q);
+      const includeSettled = ["1", "true"].includes(String(req.query.include_settled || "").toLowerCase());
+      const data = await searchSources(req.query.q, { includeSettled });
       res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
@@ -293,6 +356,16 @@ module.exports = {
         include: [{ model: PlantMaster, as: "plant", attributes: ["id", "name", "address"] }],
       });
       if (!row) throw createError(404, "Payment settlement not found");
+      // First time this advice's PDF is opened / downloaded = it is settled:
+      // the truck then drops out of the "find the truck" list. Best effort —
+      // a failure here must never stop the PDF from being served.
+      if (!row.pdf_generated_at) {
+        try {
+          await row.update({ pdf_generated_at: new Date() });
+        } catch (e) {
+          /* ignore */
+        }
+      }
       const d = row.get({ plain: true });
       const c = computeTotals(d);
       const plant = d.plant || (await PlantMaster.findOne({ where: { is_deleted: false }, order: [["id", "ASC"]] }));
@@ -370,11 +443,17 @@ module.exports = {
       // shrink the row heights (never spill onto a second page) ----
       const itemRowsN = Math.max(3, c.items.length);
       const baseItemRh = itemRowsN > 9 ? 12.5 : itemRowsN > 6 ? 14.5 : 16;
-      const dRowsN = 8 + (Number(c.hammali) ? 1 : 0); // TOTAL, TDS, DANA, QD, COMM/TD, CD, BAL. FREIGHT, ROUNDED (+ HAMMALI)
+      // TOTAL, TDS, DANA, QD, COMM/TD, CD, BAL. FREIGHT, ROUNDED (+ HAMMALI / MISC / RECEIVING PENDING when entered)
+      const miscPrint = c.miscItems.filter((r) => r.mode !== "na" && Number(r.amount)); // N/A rows and zero amounts are not printed
+      const dRowsN = 8 + (Number(c.hammali) ? 1 : 0) + miscPrint.length + (Number(c.receivingPending) ? 1 : 0);
       const MAX_INWARD = 4;
       const inwardShown = inward.length > MAX_INWARD ? inward.slice(0, MAX_INWARD - 1) : inward;
       const inwardExtra = inward.length - inwardShown.length;
-      const freightRowsN = Math.max(2, inwardShown.length + (inwardExtra > 0 ? 1 : 0) + (inward.length ? 1 : 0));
+      // When more than one vehicle (Gate Pass) was used to complete the order,
+      // the Pending Sauda column also lists their GP numbers.
+      const inwardGps = [...new Set(inward.map((r) => (r && r.gp_no ? String(r.gp_no).trim() : "")).filter(Boolean))];
+      const multiVehicle = inwardGps.length > 1;
+      const freightRowsN = Math.max(multiVehicle ? 3 : 2, inwardShown.length + (inwardExtra > 0 ? 1 : 0) + (inward.length ? 1 : 0));
       const remarkLines = (d.remarks || "").split("\n").map((t) => t.trim()).filter(Boolean).slice(0, 6);
       const remarkN = Math.max(2, remarkLines.length);
       // letterhead 50 + title 22 + party 44 + info 51 + weights 40 + item header/total/gap 42
@@ -503,6 +582,8 @@ module.exports = {
       drawDed(`CD ${Number(d.cd_pct) ? num(d.cd_pct) : 1}%`, blankIfZero(c.cdAmount));
       drawDed("BALANCE FREIGHT", blankIfZero(c.balanceFreight));
       if (Number(c.hammali)) drawDed("LESS HAMMALI", num(c.hammali));
+      miscPrint.forEach((r) => drawDed(`${r.mode === "add" ? "ADD" : "LESS"} ${r.name.toUpperCase()}`, num(r.amount)));
+      if (Number(c.receivingPending)) drawDed(`${c.receivingPendingMode === "add" ? "ADD" : "LESS"} RECEIVING PENDING`, num(c.receivingPending));
       drawDed("ROUNDED VALUE", blankIfZero(c.roundedValue));
       box(M, y, W, 26, { fill: NAVY, stroke: false });
       put("NET PAYABLE AMOUNT", M + 10, y, W - amtW - 20, 26, { size: 11, bold: true, color: "#fff" });
@@ -543,11 +624,12 @@ module.exports = {
       const dataTop = y;
       for (let i = 0; i < dataRows; i++) {
         const ry = dataTop + i * dH;
-        fX.forEach((x, k) => box(x, ry, fCols[k], dH));
+        fX.forEach((x, k) => {
+          if (k !== 4) box(x, ry, fCols[k], dH); // the Pending Sauda column is drawn once, as one tall cell, below
+        });
         if (i === 0) {
           put(fmtDate(d.sauda_date), fX[0] + 4, ry, fCols[0] - 8, dH, { size: Math.min(8.5, dH * 0.7), align: "center" });
           put(d.sauda || "", fX[1] + 4, ry, fCols[1] - 8, dH, { size: Math.min(8.5, dH * 0.7), align: "center" });
-          put(d.pending_sauda || "", fX[4] + 4, ry, fCols[4] - 8, dH, { size: Math.min(8.5, dH * 0.7), bold: true, align: "center" });
         }
         const isTotalRow = inward.length && i === shown.length + (extra > 0 ? 1 : 0);
         if (i < shown.length) {
@@ -560,6 +642,26 @@ module.exports = {
           put(num(inwardTotal, 3), fX[3] + 4, ry, fCols[3] - 8, dH, { size: Math.min(8.5, dH * 0.7), bold: true, align: "center" });
         }
       }
+      // Pending Sauda: one tall cell — the pending quantity on top and, when
+      // several vehicles were used to complete the order, their GP numbers.
+      box(fX[4], dataTop, fCols[4], dataRows * dH);
+      put(d.pending_sauda || "", fX[4] + 4, dataTop, fCols[4] - 8, dH, { size: Math.min(8.5, dH * 0.7), bold: true, align: "center" });
+      if (multiVehicle) {
+        const maxGp = 5;
+        const gpLines = inwardGps.length > maxGp ? [...inwardGps.slice(0, maxGp - 1), `+ ${inwardGps.length - (maxGp - 1)} more`] : inwardGps;
+        const lines = ["VEHICLES (GP NO.)", ...gpLines];
+        const room = dataRows * dH - dH - 2;
+        const lh = Math.min(9, room / lines.length);
+        lines.forEach((t, i2) =>
+          put(t, fX[4] + 3, dataTop + dH + i2 * lh, fCols[4] - 6, lh, {
+            size: Math.min(i2 === 0 ? 5.8 : 7.2, lh * 0.82),
+            bold: i2 > 0 && !t.startsWith("+"),
+            color: i2 === 0 ? MUTED : INK,
+            align: "center",
+          })
+        );
+      }
+
       // brokerage box
       const bTop = dataTop;
       const bH = dataRows * dH;

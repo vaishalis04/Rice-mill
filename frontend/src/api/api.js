@@ -338,11 +338,22 @@ export const getGateRegisterReportApi = (params = {}) =>
     responseType: params.format === "csv" ? "blob" : "json",
   });
 
+// format: "csv" or "pdf" come back as a file (blob); anything else is JSON.
 export const getProductionSummaryReportApi = (params = {}) =>
   axiosInstance.get("/reports/production-summary", {
     params,
-    responseType: params.format === "csv" ? "blob" : "json",
+    responseType: params.format === "csv" || params.format === "pdf" ? "blob" : "json",
   });
+
+// One batch's stock movement: materials USED FROM its source warehouse, what was
+// TRANSFERRED INTO which warehouse, and the stock before / after / now.
+export const getProductionBatchMovementApi = (batchId) =>
+  axiosInstance.get(`/reports/production-batch/${batchId}/movement`);
+
+// Vehicles still inside the mill, arranged for the Gate Summary tabs
+// (PO / SO / Lab Analysis / Loading / Unloading / Gate Pass Pending).
+export const getGateSummaryReportApi = (params = {}) =>
+  axiosInstance.get("/reports/gate-summary", { params });
 
 export const getMaterialFlowReportApi = (params = {}) =>
   axiosInstance.get("/reports/material-flow", {
@@ -401,8 +412,10 @@ export const getPaymentSettlementPdfApi = (id) =>
 
 // Auto-fetch: find the truck (GP No. / SO No. / PO No. / vehicle / party) a
 // settlement is made against, then get everything the system can pre-fill.
-export const searchSettlementSourcesApi = (q = "") =>
-  axiosInstance.get("/payment-settlements/sources", { params: { q } });
+// Trucks whose settlement PDF has already been opened are hidden unless
+// includeSettled is true.
+export const searchSettlementSourcesApi = (q = "", includeSettled = false) =>
+  axiosInstance.get("/payment-settlements/sources", { params: { q, ...(includeSettled ? { include_settled: 1 } : {}) } });
 
 export const getSettlementSourceApi = (gateEntryId) =>
   axiosInstance.get(`/payment-settlements/source/${gateEntryId}`);

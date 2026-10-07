@@ -1,6 +1,6 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
-const { ProductionBatch, Lot, MaterialMaster, Inventory, Packing } = require("../models/index");
+const { ProductionBatch, Lot, MaterialMaster, Inventory, Packing, FinishedGoods } = require("../models/index");
 const { generateBatchNo } = require("../helpers/helperFunction");
 
 // Simplified production flow (Module 11):
@@ -33,23 +33,87 @@ const getBatchMaterialLines = (batch) => {
   return [];
 };
 
-// Raw inventory for a material in a warehouse, minus whatever is already
-// reserved by OTHER pending (not-yet-packed) batches in that same
-// warehouse. Pending batches don't touch Inventory yet, so without this
-// subtraction two different batches could each reserve the same stock.
-const getAvailableWarehouseStock = async ({ warehouse_id, material_id, excludeBatchId } = {}) => {
-  if (!warehouse_id || !material_id) return 0;
+// Warehouse stock is raw Inventory plus live FinishedGoods. Inventory's
+// legacy "fg" rows are only a shadow ledger and can be out of sync with
+// FinishedGoods, so never count them as a second source of physical stock.
+const getWarehousePhysicalRows = async ({ warehouse_id, material_id, transaction, lock } = {}) => {
+  if (!warehouse_id || !material_id) return [];
 
-  const rows = await Inventory.findAll({
+  const rawRows = await Inventory.findAll({
     where: {
       is_deleted: false,
       warehouse_id,
       material_id,
       balance_qty: { [Op.gt]: 0 },
-      stage: { [Op.in]: ["raw", "fg"] },
+      stage: "raw",
     },
+    include: [{ model: Lot, as: "lot", attributes: ["id", "bag_size"] }],
+    transaction,
+    ...(lock ? { lock } : {}),
   });
-  const total = rows.reduce((sum, row) => sum + Number(row.balance_qty || 0), 0);
+  const fgRows = await FinishedGoods.findAll({
+    where: {
+      is_deleted: false,
+      warehouse_id,
+      qty: { [Op.gt]: 0 },
+      fg_status: { [Op.ne]: "dispatched" },
+    },
+    transaction,
+    ...(lock ? { lock } : {}),
+  });
+  const packingIds = [...new Set(fgRows.map((row) => Number(row.packing_id)).filter(Boolean))];
+  const packings = packingIds.length
+    ? await Packing.findAll({
+        where: { id: { [Op.in]: packingIds }, is_deleted: false },
+        attributes: ["id", "lot_id", "material_id", "pack_size"],
+        transaction,
+      })
+    : [];
+  const packingById = new Map(packings.map((row) => [String(row.id), row]));
+  const lotIds = [...new Set(packings.map((row) => Number(row.lot_id)).filter(Boolean))];
+  const lots = lotIds.length
+    ? await Lot.findAll({
+        where: { id: { [Op.in]: lotIds }, is_deleted: false },
+        attributes: ["id", "material_id", "bag_size"],
+        transaction,
+      })
+    : [];
+  const lotById = new Map(lots.map((row) => [String(row.id), row]));
+
+  const physicalRows = rawRows.map((row) => ({
+    kind: "raw",
+    material_id: Number(row.material_id),
+    lot_id: row.lot_id,
+    bag_size: row.lot?.bag_size != null ? Number(row.lot.bag_size) : null,
+    qty_qtl: Number(row.balance_qty || 0),
+    as_of: row.as_of,
+    inventory: row,
+  }));
+  for (const row of fgRows) {
+    const packing = packingById.get(String(row.packing_id));
+    const lot = packing ? lotById.get(String(packing.lot_id)) : null;
+    const rowMaterialId = Number(packing?.material_id || lot?.material_id);
+    if (rowMaterialId !== Number(material_id)) continue;
+    physicalRows.push({
+      kind: "fg",
+      material_id: rowMaterialId,
+      lot_id: lot?.id || packing?.lot_id || null,
+      bag_size: packing?.pack_size != null ? Number(packing.pack_size) : null,
+      qty_qtl: Number(row.qty || 0) / 1000,
+      as_of: row.ready_since,
+      finishedGoods: row,
+    });
+  }
+  return physicalRows;
+};
+
+// Pending batches reserve stock without changing the physical warehouse
+// balance. Subtract their reservations only for production availability.
+const getAvailableWarehouseStock = async ({ warehouse_id, material_id, excludeBatchId } = {}) => {
+  if (!warehouse_id || !material_id) return 0;
+
+  const rows = await getWarehousePhysicalRows({ warehouse_id, material_id });
+  const total = rows.reduce((sum, row) => sum + row.qty_qtl, 0);
 
   const pendingWhere = { warehouse_id, batch_status: "pending", is_deleted: false };
   if (excludeBatchId) pendingWhere.id = { [Op.ne]: excludeBatchId };
@@ -70,33 +134,12 @@ const getAvailableWarehouseStock = async ({ warehouse_id, material_id, excludeBa
 };
 
 const getAvailableWarehouseBags = async ({ warehouse_id, material_id, pack_size, excludeBatchId } = {}) => {
-  const rows = await Inventory.findAll({
-    where: {
-      is_deleted: false,
-      warehouse_id,
-      material_id,
-      balance_qty: { [Op.gt]: 0 },
-      stage: { [Op.in]: ["raw", "fg"] },
-    },
-    include: [{ model: Lot, as: "lot", attributes: ["id", "bag_size"] }],
-  });
   const size = Number(pack_size);
-  const fgLotIds = rows.filter((row) => row.stage === "fg").map((row) => row.lot_id).filter(Boolean);
-  const fgPackings = fgLotIds.length
-    ? await Packing.findAll({
-        where: {
-          lot_id: { [Op.in]: fgLotIds },
-          is_deleted: false,
-          [Op.or]: [{ material_id }, { material_id: null }],
-        },
-        attributes: ["lot_id", "material_id", "pack_size"],
-      })
-    : [];
-  let available = rows.reduce((sum, row) => {
-    const packing = fgPackings.find((candidate) => Number(candidate.lot_id) === Number(row.lot_id));
-    const bagSize = row.stage === "fg" ? Number(packing?.pack_size) : Number(row.lot?.bag_size);
-    return bagSize === size ? sum + Math.floor((Number(row.balance_qty || 0) * 1000) / size + 0.0001) : sum;
-  }, 0);
+  const rows = await getWarehousePhysicalRows({ warehouse_id, material_id });
+  let available = rows.reduce((sum, row) =>
+    Number(row.bag_size) === size
+      ? sum + Math.floor((Number(row.qty_qtl || 0) * 1000) / size + 0.0001)
+      : sum, 0);
 
   const pendingWhere = { warehouse_id, batch_status: "pending", is_deleted: false };
   if (excludeBatchId) pendingWhere.id = { [Op.ne]: excludeBatchId };
@@ -229,18 +272,13 @@ module.exports = {
           throw createError(400, `${material?.name || item.material_id}: requested ${requestedQty.toFixed(3)} Qtl exceeds available stock (${roundedAvailable.toFixed(3)} Qtl)`);
         }
 
-        const stockRows = await Inventory.findAll({
-          where: {
-            warehouse_id: Number(warehouse_id),
-            material_id: item.material_id,
-            is_deleted: false,
-            balance_qty: { [Op.gt]: 0 },
-            stage: { [Op.in]: ["raw", "fg"] },
-          },
-          order: [["as_of", "ASC"]],
+        const sourceRows = await getWarehousePhysicalRows({
+          warehouse_id: Number(warehouse_id),
+          material_id: item.material_id,
         });
-        const lot = stockRows[0]?.lot_id
-          ? await Lot.findOne({ where: { id: stockRows[0].lot_id, is_deleted: false } })
+        sourceRows.sort((a, b) => new Date(a.as_of || 0) - new Date(b.as_of || 0));
+        const lot = sourceRows[0]?.lot_id
+          ? await Lot.findOne({ where: { id: sourceRows[0].lot_id, is_deleted: false } })
           : null;
 
         if (!lot) {
@@ -360,16 +398,33 @@ module.exports = {
         );
       }
 
-      const lot = await Lot.findOne({
+      // Find the lot the same way create() does — from this warehouse's own
+      // stock rows — so a material that create() accepts (including packed /
+      // repacked stock, whose lot may not be "in" this warehouse any more) can
+      // be added to a pending batch too. Falls back to the old lot lookup.
+      const stockRows = await Inventory.findAll({
         where: {
           warehouse_id: batch.warehouse_id,
           material_id: materialIdNum,
           is_deleted: false,
-          unloading_status: "completed",
-          qty: { [Op.gt]: 0.001 },
+          balance_qty: { [Op.gt]: 0 },
+          stage: { [Op.in]: ["raw", "fg"] },
         },
-        order: [["created_at", "DESC"]],
+        order: [["as_of", "ASC"]],
       });
+      let lot = stockRows[0]?.lot_id ? await Lot.findOne({ where: { id: stockRows[0].lot_id, is_deleted: false } }) : null;
+      if (!lot) {
+        lot = await Lot.findOne({
+          where: {
+            warehouse_id: batch.warehouse_id,
+            material_id: materialIdNum,
+            is_deleted: false,
+            unloading_status: "completed",
+            qty: { [Op.gt]: 0.001 },
+          },
+          order: [["created_at", "DESC"]],
+        });
+      }
       if (!lot) {
         const material = await MaterialMaster.findByPk(materialIdNum);
         throw createError(404, `No completed stock found for material ${material?.name || materialIdNum} in this batch's warehouse`);

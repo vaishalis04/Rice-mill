@@ -150,18 +150,22 @@ module.exports = {
       if (!warehouse) throw createError(404, "Warehouse not found");
 
       const inventoryRows = await Inventory.findAll({
-        where: { warehouse_id: warehouse.id, is_deleted: false },
+        where: {
+          warehouse_id: warehouse.id,
+          is_deleted: false,
+          stage: "raw",
+          balance_qty: { [Op.gt]: 0 },
+        },
         include: [
           { model: MaterialMaster, as: "material", attributes: ["id", "name", "material_code"] },
           { model: Lot, as: "lot", attributes: ["id", "bag_size"] },
         ],
       });
 
-      // Bag-size breakdown per material, shown alongside the reservation
-      // total below purely as a "what's actually in bags" reference for
-      // whoever is creating the batch — it does NOT feed the qty/available
-      // math, which stays exactly as it was (raw+fg Inventory balance,
-      // minus pending-batch reservations).
+      // The warehouse stock screen treats raw Inventory and live
+      // FinishedGoods as physical stock. Use those same sources here;
+      // Inventory's legacy fg rows can be out of sync after dispatches or
+      // older packing flows.
       const bagsByMaterial = new Map(); // material_id -> Map(sizeKey -> {bag_size, bag_count, qty})
       const addBagLine = (materialId, bagSize, bagCount, qty) => {
         if (!bagsByMaterial.has(materialId)) bagsByMaterial.set(materialId, new Map());
@@ -186,41 +190,62 @@ module.exports = {
         existing.qty += balance;
         byMaterial.set(key, existing);
 
-        // Inventory is the stock ledger of record. Use its balance for the
-        // displayed bag quantity so bag lines and total Qtl cannot diverge.
-        if (row.stage === "raw") {
-          const bagSize = row.lot?.bag_size != null ? Number(row.lot.bag_size) : null;
-          const wholeBags = bagSize ? Math.floor((balance * 1000) / bagSize + 0.0001) : null;
-          const bagQty = bagSize && wholeBags != null ? (wholeBags * bagSize) / 1000 : balance;
-          addBagLine(key, bagSize, wholeBags, bagQty);
-        }
+        const bagSize = row.lot?.bag_size != null ? Number(row.lot.bag_size) : null;
+        const wholeBags = bagSize ? Math.floor((balance * 1000) / bagSize + 0.0001) : null;
+        const bagQty = bagSize && wholeBags != null ? (wholeBags * bagSize) / 1000 : balance;
+        addBagLine(key, bagSize, wholeBags, bagQty);
       }
 
-      // Packed stock is already represented by FG Inventory rows above.
-      // Read pack size only as a label; use the Inventory balance for both
-      // the displayed Qtl and the derived bag count.
-      const fgInventoryRows = inventoryRows.filter(
-        (row) => row.stage === "fg" && Number(row.balance_qty || 0) > 0,
-      );
-      const fgLotIds = [...new Set(fgInventoryRows.map((row) => row.lot_id).filter(Boolean))];
-      const packingRows = fgLotIds.length
+      const finishedGoodsRows = await FinishedGoods.findAll({
+        where: {
+          warehouse_id: warehouse.id,
+          is_deleted: false,
+          fg_status: { [Op.ne]: "dispatched" },
+          qty: { [Op.gt]: 0 },
+        },
+        attributes: ["id", "packing_id", "qty"],
+      });
+      const packingIds = [...new Set(finishedGoodsRows.map((row) => Number(row.packing_id)).filter(Boolean))];
+      const packingRows = packingIds.length
         ? await Packing.findAll({
-            where: { lot_id: { [Op.in]: fgLotIds }, is_deleted: false },
+            where: { id: { [Op.in]: packingIds }, is_deleted: false },
             attributes: ["id", "lot_id", "material_id", "pack_size"],
           })
         : [];
+      const packingById = new Map(packingRows.map((row) => [String(row.id), row]));
+      const fgLotIds = [...new Set(packingRows.map((row) => Number(row.lot_id)).filter(Boolean))];
+      const fgLots = fgLotIds.length
+        ? await Lot.findAll({ where: { id: { [Op.in]: fgLotIds } }, attributes: ["id", "material_id"] })
+        : [];
+      const materialByLotId = new Map(fgLots.map((lot) => [String(lot.id), Number(lot.material_id)]));
+      const fgMaterialIds = [...new Set(packingRows.map((packing) =>
+        Number(packing.material_id || materialByLotId.get(String(packing.lot_id)))
+      ).filter(Boolean))];
+      const fgMaterials = fgMaterialIds.length
+        ? await MaterialMaster.findAll({ where: { id: { [Op.in]: fgMaterialIds } }, attributes: ["id", "name", "material_code"] })
+        : [];
+      const fgMaterialById = new Map(fgMaterials.map((material) => [Number(material.id), material]));
 
-      for (const row of fgInventoryRows) {
-        const packing = packingRows.find(
-          (candidate) =>
-            Number(candidate.lot_id) === Number(row.lot_id) &&
-            (!candidate.material_id || Number(candidate.material_id) === Number(row.material_id)),
-        );
-        const packSize = packing?.pack_size != null ? Number(packing.pack_size) : null;
-        const balance = Number(row.balance_qty);
+      for (const row of finishedGoodsRows) {
+        const packing = packingById.get(String(row.packing_id));
+        if (!packing) continue;
+        const materialId = Number(packing.material_id || materialByLotId.get(String(packing.lot_id)));
+        if (!materialId) continue;
+        const material = fgMaterialById.get(materialId);
+        const existing = byMaterial.get(materialId) || {
+          material_id: materialId,
+          material_name: material?.name || `Material ${materialId}`,
+          material_code: material?.material_code || null,
+          qty: 0,
+        };
+        const balance = Number(row.qty || 0) / 1000;
+        existing.qty += balance;
+        byMaterial.set(materialId, existing);
+
+        const packSize = packing.pack_size != null ? Number(packing.pack_size) : null;
         const wholeBags = packSize ? Math.floor((balance * 1000) / packSize + 0.0001) : null;
         const bagQty = packSize && wholeBags != null ? (wholeBags * packSize) / 1000 : balance;
-        addBagLine(Number(row.material_id), packSize, wholeBags, bagQty);
+        addBagLine(materialId, packSize, wholeBags, bagQty);
       }
 
       // Subtract what pending production batches have already reserved.
@@ -228,6 +253,7 @@ module.exports = {
         where: { warehouse_id: warehouse.id, batch_status: "pending", is_deleted: false },
         attributes: ["id", "material_id", "input_qty", "materials_data"],
       });
+      const reservedByMaterial = new Map();
       for (const batch of pendingBatches) {
         const lines = Array.isArray(batch.materials_data) && batch.materials_data.length > 0
           ? batch.materials_data
@@ -236,17 +262,17 @@ module.exports = {
           : [];
         for (const line of lines) {
           const key = Number(line.material_id);
-          const existing = byMaterial.get(key);
-          if (existing) existing.qty -= Number(line.input_qty || 0);
+          reservedByMaterial.set(
+            key,
+            (reservedByMaterial.get(key) || 0) + Number(line.input_qty || 0),
+          );
         }
       }
 
       const materials = Array.from(byMaterial.values())
         .map((m) => {
           const bagMap = bagsByMaterial.get(m.material_id);
-          const bagQtyTotal = bagMap
-            ? Array.from(bagMap.values()).reduce((sum, bag) => sum + Number(bag.qty || 0), 0)
-            : null;
+          const reservedQty = reservedByMaterial.get(Number(m.material_id)) || 0;
           const bags = bagMap
             ? Array.from(bagMap.values())
                 .map((b) => ({
@@ -260,8 +286,14 @@ module.exports = {
                 .filter((b) => b.qty > 0.001)
                 .sort((a, b) => (a.bag_size ?? -1) - (b.bag_size ?? -1))
             : [];
-          const usableQty = bagQtyTotal != null ? Math.min(m.qty, bagQtyTotal) : m.qty;
-          return { ...m, qty: Math.round(usableQty * 1000) / 1000, bags };
+          const physicalQty = Math.round(m.qty * 1000) / 1000;
+          return {
+            ...m,
+            qty: physicalQty,
+            reserved_qty: Math.round(reservedQty * 1000) / 1000,
+            available_qty: Math.round(Math.max(physicalQty - reservedQty, 0) * 1000) / 1000,
+            bags,
+          };
         })
         .filter((m) => m.qty > 0.001)
         .sort((a, b) => b.qty - a.qty);
@@ -415,8 +447,8 @@ module.exports = {
             bag_count: 0,
             qty_kg: 0,
           };
-          existing.bag_count += Number(packing.bag_count || 0);
           existing.qty_kg += Number(fg.qty || 0);
+          existing.bag_count = packSize > 0 ? Math.floor(existing.qty_kg / packSize + 0.0001) : 0;
           packedMap.set(key, existing);
         }
         packedStock = Array.from(packedMap.values())

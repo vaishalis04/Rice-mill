@@ -1,7 +1,7 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
 const sequelize = require("../config/db");
-const { SalesOrder, Customer, MaterialMaster } = require("../models/index");
+const { SalesOrder, Customer, MaterialMaster, GateEntry, GateEntrySalesOrder } = require("../models/index");
 const { generateSoNo } = require("../helpers/helperFunction");
 
 // Order booking, allocation (Module 18)
@@ -40,6 +40,53 @@ const parseItemsField = (value) => {
   return [];
 };
 
+// ---------------------------------------------------------------------------
+// Status model
+// ---------------------------------------------------------------------------
+// SalesOrder.so_status is the ORDER's status (pending / confirmed / allocated /
+// dispatched / closed / cancelled). Each line in `items` can additionally be
+// closed or cancelled on its own (stored as item.so_status). "dispatched" is
+// what the screens call COMPLETED — every material fully loaded.
+//
+// The list used to stamp the order's status onto every line and ignore a
+// line's own closed/cancelled — so closing a line (which only edits that line)
+// never reached the Closed tab. line_status / order_status below carry the
+// real picture; so_status is left exactly as before for every other screen.
+const LINE_TERMINAL = ["closed", "cancelled"];
+
+const lineStatusOf = (item, orderStatus) => {
+  if (LINE_TERMINAL.includes(item?.so_status)) return item.so_status;
+  if (LINE_TERMINAL.includes(orderStatus)) return orderStatus;
+  const qty = Number(item?.qty || 0);
+  const done = Number(item?.dispatched_qty || 0);
+  if (qty > 0 && done >= qty) return "dispatched";
+  if (orderStatus === "dispatched") return "dispatched";
+  return ["pending", "allocated"].includes(orderStatus) ? orderStatus : "confirmed";
+};
+
+// The order's effective status: its stored status, unless every line has been
+// closed / cancelled individually (then the order is closed / cancelled too).
+const orderStatusOf = (orderStatus, lineStatuses) => {
+  if (LINE_TERMINAL.includes(orderStatus)) return orderStatus;
+  if (lineStatuses.length) {
+    if (lineStatuses.every((st) => st === "cancelled")) return "cancelled";
+    if (lineStatuses.every((st) => LINE_TERMINAL.includes(st))) return "closed";
+  }
+  return orderStatus;
+};
+
+// Trucks still at the gate (not exited / rejected) against this SO.
+const countActiveTrucks = async (soId) => {
+  const linked = await GateEntrySalesOrder.findAll({ where: { so_id: soId, is_deleted: false }, attributes: ["gate_entry_id"] });
+  const ids = new Set(linked.map((l) => Number(l.gate_entry_id)));
+  const direct = await GateEntry.findAll({ where: { so_id: soId, is_deleted: false }, attributes: ["id"] });
+  direct.forEach((g) => ids.add(Number(g.id)));
+  if (!ids.size) return 0;
+  return GateEntry.count({
+    where: { id: { [Op.in]: [...ids] }, is_deleted: false, gate_status: { [Op.notIn]: ["exited", "rejected"] } },
+  });
+};
+
 // Turns raw SalesOrder rows into the shape every consumer (SO Approval,
 // SO list, Loading) expects: parsed `items` with each material's name
 // looked up and its *real* dispatched_qty carried through — not hardcoded
@@ -73,10 +120,12 @@ const enrichSoRows = async (rows) => {
       rate: Number(item.rate || 0),
       dispatched_qty: Number(item.dispatched_qty || 0),
       so_status: plain.so_status,
+      line_status: lineStatusOf(items[i], plain.so_status),
     }));
 
     return {
       ...plain,
+      order_status: orderStatusOf(plain.so_status, formattedItems.map((fi) => fi.line_status)),
       items: formattedItems,
       item_count: formattedItems.length,
       total_qty: formattedItems.reduce((sum, item) => sum + item.qty, 0),
@@ -814,12 +863,21 @@ bulkCreate: async (req, res, next) => {
 
       let nextItems = items;
       if (Array.isArray(nextItems)) {
-        const normalizedItems = nextItems.map((item) => ({
-          material_id: Number(item.material_id),
-          qty: Number(item.qty),
-          rate: Number(item.rate),
-          so_status: item.so_status || "confirmed",
-        }));
+        // Editing a line must not wipe what Loading has already recorded
+        // against it (dispatched_qty), or reopen a line that was closed /
+        // cancelled — those are carried over from the stored line.
+        const existingByMaterial = new Map(parseItemsField(so.items).map((it) => [Number(it.material_id), it]));
+        const normalizedItems = nextItems.map((item) => {
+          const prev = existingByMaterial.get(Number(item.material_id));
+          const prevStatus = LINE_TERMINAL.includes(prev?.so_status) ? prev.so_status : null;
+          return {
+            material_id: Number(item.material_id),
+            qty: Number(item.qty),
+            rate: Number(item.rate),
+            so_status: prevStatus || (LINE_TERMINAL.includes(item.so_status) ? item.so_status : "confirmed"),
+            dispatched_qty: Number(prev?.dispatched_qty || 0),
+          };
+        });
 
         const seen = new Set();
         for (const item of normalizedItems) {
@@ -848,12 +906,19 @@ bulkCreate: async (req, res, next) => {
         if (!material) throw createError(400, "Invalid material_id");
       }
 
+      // If the edit left every line closed / cancelled, the order is too.
+      let nextOrderStatus = so_status;
+      if (nextOrderStatus === undefined && Array.isArray(nextItems) && nextItems.length) {
+        const derived = orderStatusOf(so.so_status, nextItems.map((it) => lineStatusOf(it, so.so_status)));
+        if (derived !== so.so_status) nextOrderStatus = derived;
+      }
+
       const updates = {
         material_id,
         qty,
         rate,
         order_date,
-        so_status,
+        so_status: nextOrderStatus,
         plant_id,
         ...(Array.isArray(nextItems) ? { items: nextItems } : {}),
       };
@@ -864,6 +929,81 @@ bulkCreate: async (req, res, next) => {
 
       const updated = await SalesOrder.findByPk(so.id, { include: detailIncludes });
       res.status(200).json({ success: true, msg: "Sales order updated", data: updated });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // PATCH /api/sales-orders/so/:so_no/status
+  // body: { status: "closed" | "cancelled", material_id? }
+  //   with material_id -> that material line only
+  //   without          -> the WHOLE sales order, at whatever stage it is
+  // Keeps the order's own status in step, so a closed / cancelled order lands
+  // in the Closed / Cancelled tab. Loaded quantities are never touched.
+  setStatus: async (req, res, next) => {
+    try {
+      const { status, material_id } = req.body || {};
+      if (!["closed", "cancelled"].includes(status)) {
+        throw createError(400, "status must be 'closed' or 'cancelled'");
+      }
+      const so = await SalesOrder.findOne({ where: { so_no: req.params.so_no, is_deleted: false } });
+      if (!so) throw createError(404, "Sales order not found");
+      if (LINE_TERMINAL.includes(so.so_status)) {
+        throw createError(400, `Sales Order ${so.so_no} is already ${so.so_status}`);
+      }
+
+      const items = parseItemsField(so.items).map((it) => ({ ...it }));
+      const orderStatus = so.so_status;
+      let nextOrderStatus = orderStatus;
+      let msg;
+      let warning = null;
+
+      if (material_id !== undefined && material_id !== null && material_id !== "") {
+        // ---- one material line ----
+        const idx = items.findIndex((it) => Number(it.material_id) === Number(material_id));
+        if (idx < 0) throw createError(404, "That material isn't on this Sales Order");
+        const current = lineStatusOf(items[idx], orderStatus);
+        if (LINE_TERMINAL.includes(current)) throw createError(400, `That material line is already ${current}`);
+        if (status === "closed" && current !== "dispatched") {
+          throw createError(400, "Only a completed material line can be closed — cancel it instead if it won't be finished");
+        }
+        if (status === "cancelled" && current === "dispatched") {
+          throw createError(400, "That material line is already completed — close it instead");
+        }
+        items[idx].so_status = status;
+        msg = `${so.so_no} — material line ${status}`;
+      } else if (status === "closed") {
+        // ---- whole SO: close (only once everything is completed) ----
+        const open = items.filter((it) => !LINE_TERMINAL.includes(lineStatusOf(it, orderStatus)));
+        if (!open.length || open.some((it) => lineStatusOf(it, orderStatus) !== "dispatched")) {
+          throw createError(400, "Every material must be completed before the Sales Order can be closed — cancel it instead if it won't be finished");
+        }
+        items.forEach((it) => {
+          if (!LINE_TERMINAL.includes(lineStatusOf(it, orderStatus))) it.so_status = "closed";
+        });
+        nextOrderStatus = "closed";
+        msg = `${so.so_no} closed`;
+      } else {
+        // ---- whole SO: cancel, at any stage ----
+        items.forEach((it) => {
+          if (lineStatusOf(it, orderStatus) !== "closed") it.so_status = "cancelled";
+        });
+        nextOrderStatus = "cancelled";
+        msg = `${so.so_no} cancelled`;
+        const trucks = await countActiveTrucks(so.id);
+        if (trucks > 0) {
+          warning = `${trucks} truck(s) are still at the gate against this order and can no longer be loaded against it.`;
+        }
+      }
+
+      // A line action can finish the order: every line closed / cancelled.
+      nextOrderStatus = orderStatusOf(nextOrderStatus, items.map((it) => lineStatusOf(it, nextOrderStatus)));
+
+      await so.update({ items, so_status: nextOrderStatus, updated_by: req.user ? req.user.id : null });
+
+      const fresh = await SalesOrder.findByPk(so.id, { include: detailIncludes });
+      const [enriched] = await enrichSoRows([fresh]);
+      res.status(200).json({ success: true, msg, warning, data: enriched });
     } catch (err) {
       next(err);
     }

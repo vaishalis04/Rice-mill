@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const productionController = require("../controllers/production.controller");
+const outputController = require("../controllers/productionOutput.controller");
 // const { authenticate, authorize } = require("../middlewares/auth"); // keep whatever you already had
 
 // NOTE: the frontend's api.js posts new batches to plain "/production" but
@@ -19,6 +20,8 @@ router.put("/batches/:id/materials/:materialId", productionController.updateMate
 router.put("/batches/:id/materials/:materialId/swap", productionController.swapMaterial);
 router.delete("/batches/:id/materials/:materialId", productionController.removeMaterial);
 router.delete("/batches/:id", productionController.delete);
+// Finalize a pending batch: output materials (accepted / rejected bags) + destination warehouse.
+router.patch("/batches/:id/finalize", outputController.finalize);
 
 router.get("/", productionController.getAll);
 router.get("/:id", productionController.getById);
@@ -29,5 +32,6 @@ router.put("/:id/materials/:materialId", productionController.updateMaterial);
 router.put("/:id/materials/:materialId/swap", productionController.swapMaterial);
 router.delete("/:id/materials/:materialId", productionController.removeMaterial);
 router.delete("/:id", productionController.delete);
+router.patch("/:id/finalize", outputController.finalize);
 
 module.exports = router;

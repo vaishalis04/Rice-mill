@@ -38,6 +38,8 @@ router.put("/so/:so_no/items", Controller.addItem);
 router.post("/so/:so_no/items", Controller.addItem);
 router.delete("/so/:so_no/items/:material_id", Controller.removeItem);
 router.put("/so/:so_no/header", Controller.updateHeader);
+// Close / cancel a whole SO, or one material line of it (body: { status, material_id? }).
+router.patch("/so/:so_no/status", Controller.setStatus);
 router.put("/:id", Controller.update);
 router.delete("/:id", Controller.delete);
 
