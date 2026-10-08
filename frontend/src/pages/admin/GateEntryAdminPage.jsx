@@ -219,17 +219,15 @@ export default function GateEntryAdminPage() {
       return;
     }
 
-    let poWithDetails = po;
-    let items = po.items || [];
-    const hasValidItems =
-      Array.isArray(items) && items.length > 0 && items.some((item) => item.material_id);
-
-    if (!hasValidItems) {
-      const detailedPO = await fetchPODetails(po_id);
-      if (detailedPO) {
-        poWithDetails = detailedPO;
-        items = detailedPO.items || [];
-      } else {
+    // Always read the current PO row: received_qty changes after a truck's
+    // second weighment, and the lookup list may still have stale item data.
+    let poWithDetails = await fetchPODetails(po_id);
+    let items = poWithDetails?.items || po.items || [];
+    if (!poWithDetails) {
+      poWithDetails = po;
+      const hasValidItems =
+        Array.isArray(items) && items.length > 0 && items.some((item) => item.material_id);
+      if (!hasValidItems) {
         if (typeof items === "string") {
           try {
             items = JSON.parse(items);
@@ -261,7 +259,7 @@ export default function GateEntryAdminPage() {
       ...prev,
       [poWithDetails.id]: finalItems.map((m) => ({
         material_id: m.material_id,
-        qty: m.qty || "",
+        qty: Math.max(0, Number(m.qty || 0) - Number(m.received_qty || 0)) || "",
       })),
     }));
 
@@ -763,6 +761,9 @@ export default function GateEntryAdminPage() {
                                         )}
                                         <small>
                                           Ordered: {material.qty} @ ₹{material.rate}
+                                          {Number(material.received_qty) > 0 && (
+                                            <> · Received: {Number(material.received_qty).toFixed(3)} Qtl · Remaining: {Math.max(0, Number(material.qty) - Number(material.received_qty)).toFixed(3)} Qtl</>
+                                          )}
                                         </small>
                                       </span>
                                     </label>
@@ -772,7 +773,7 @@ export default function GateEntryAdminPage() {
                                         min="0"
                                         step="0.01"
                                         className="material-qty-input"
-                                        placeholder="Qty (Tons)"
+                                        placeholder="Qty (Qtl)"
                                         value={selectedMaterial?.qty || ""}
                                         onChange={(e) =>
                                           handleMaterialQtyChange(po.id, material.material_id, e.target.value)
@@ -797,7 +798,7 @@ export default function GateEntryAdminPage() {
                 </div>
 
                 <div className="sf-field">
-                  <label>Expected Qty (Tons)</label>
+                  <label>Expected Qty (Qtl)</label>
                   <input
                     name="expected_qty"
                     type="number"
@@ -908,7 +909,7 @@ export default function GateEntryAdminPage() {
                                         step="0.01"
                                         max={remainingQty}
                                         className="material-qty-input"
-                                        placeholder="Qty to Load (Tons)"
+                                        placeholder="Qty to Load (Qtl)"
                                         value={selectedMaterial?.qty || ""}
                                         onChange={(e) =>
                                           handleSalesMaterialQtyChange(so.id, material.material_id, e.target.value)
@@ -932,7 +933,7 @@ export default function GateEntryAdminPage() {
                   <p className="field-hint">Optional — the delivery-note number for this dispatch, if any.</p>
                 </div>
                 <div className="sf-field">
-                  <label>Planned Loading Qty (Tons) (optional)</label>
+                  <label>Planned Loading Qty (Qtl) (optional)</label>
                   <input name="expected_qty" type="number" value={form.expected_qty} onChange={handleChange} />
                   <p className="field-hint">
                     Optional estimate only — the actual quantity is entered when the truck is loaded
@@ -979,7 +980,7 @@ export default function GateEntryAdminPage() {
                       >
                         <option value="nos">nos</option>
                         <option value="kg">kg</option>
-                        <option value="tons">tons</option>
+                        <option value="qtl">Qtl</option>
                         <option value="bags">bags</option>
                         <option value="ltr">ltr</option>
                         <option value="box">box</option>

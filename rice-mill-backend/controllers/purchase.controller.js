@@ -44,6 +44,7 @@ const normalizePoItems = (row) => {
       variety_id: item.variety_id ?? row?.variety_id ?? null,
       qty: item.qty ?? row?.qty ?? null,
       rate: item.rate ?? row?.rate ?? null,
+      received_qty: item.received_qty ?? null,
       material: item.material || row?.material || null,
       variety: item.variety || row?.variety || null,
     });
@@ -65,6 +66,7 @@ const normalizePoItems = (row) => {
       variety_id: row.variety_id ?? null,
       qty: row.qty ?? null,
       rate: row.rate ?? null,
+      received_qty: null,
       material: row.material || null,
       variety: row.variety || null,
     });

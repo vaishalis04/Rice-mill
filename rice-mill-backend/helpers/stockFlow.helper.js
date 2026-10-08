@@ -1,4 +1,5 @@
 const { Op } = require("sequelize");
+const { KG_PER_QTL } = require("./units");
 const {
   Inventory, Lot, Purchase, PurchaseOrder, GateEntry, Vendor, Vehicle, Customer, SalesOrder, Dispatch,
   ProductionBatch, Packing, FinishedGoods,
@@ -132,7 +133,7 @@ const buildEvents = (data, scope) => {
     events.push({
       t: ts(r.createdAt), type: "INWARD", stage: "raw", warehouse_id: r.warehouse_id, material_id: Number(r.material_id), size, key: k,
       delta: qty, qty,
-      bags: Number(r.lot?.accepted_bags) || (size ? Math.floor((qty * 1000) / size + 0.0001) : null),
+      bags: Number(r.lot?.accepted_bags) || (size ? Math.floor((qty * KG_PER_QTL) / size + 0.0001) : null),
       from: gate?.vendor?.name || "Vendor / purchase",
       to: whName(r.warehouse_id), ref: refParts.join(" · ") || "—",
     });
@@ -155,11 +156,11 @@ const buildEvents = (data, scope) => {
     const packing = data.packingById.get(Number(fg.packing_id));
     if (!packing || !packing.material_id) continue;
     const size = packing.pack_size != null ? Number(packing.pack_size) : null;
-    const qty = Number(fg.qty || 0) / 1000;
+    const qty = Number(fg.qty || 0) / KG_PER_QTL;
     if (!qty) continue;
     const k = keyOf("fg", fg.warehouse_id, packing.material_id, size);
     const batch = batchById.get(Number(packing.batch_id));
-    const bags = size ? Math.floor((qty * 1000) / size + 0.0001) : null;
+    const bags = size ? Math.floor((qty * KG_PER_QTL) / size + 0.0001) : null;
     const dispatched = fg.fg_status === "dispatched";
     if (!dispatched) addLive(k, qty);
     events.push({
@@ -196,7 +197,7 @@ const buildEvents = (data, scope) => {
       const k = keyOf("raw", b.warehouse_id, line.material_id, size);
       events.push({
         t: T, type: "ISSUE", stage: "raw", warehouse_id: b.warehouse_id, material_id: Number(line.material_id), size, key: k,
-        delta: -qty, qty, bags: size ? Math.floor((qty * 1000) / size + 0.0001) : null,
+        delta: -qty, qty, bags: size ? Math.floor((qty * KG_PER_QTL) / size + 0.0001) : null,
         from: whName(b.warehouse_id),
         to: `Production${b.destination_warehouse_id ? ` > ${whName(b.destination_warehouse_id)}` : ""}`,
         ref: [b.batch_no, lot?.lot_no ? `Lot ${lot.lot_no}` : line.lot_no ? `Lot ${line.lot_no}` : null].filter(Boolean).join(" · "),

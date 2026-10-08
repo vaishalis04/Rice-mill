@@ -1,4 +1,5 @@
 const createError = require("http-errors");
+const { KG_PER_QTL } = require("./units");
 const { Op } = require("sequelize");
 const sequelize = require("../config/db");
 const {
@@ -270,7 +271,7 @@ const inwardSpec = (d, ymd, date) => {
       { label: "Inward vehicles", value: fmtCount(all.length), color: IN_COLOR },
       { label: "Bags received", value: fmtCount(sum(all, (r) => r.bags)) },
       { label: "Net weight (Kg)", value: kg(sum(all, (r) => r.net)), color: IN_COLOR },
-      { label: "Net weight (MT)", value: fmtQty(sum(all, (r) => r.net) / 1000) },
+      { label: "Net weight (Qtl)", value: fmtQty(sum(all, (r) => r.net) / KG_PER_QTL) },
       { label: "Warehouses used", value: `${used} of ${d.listedWarehouses.length}` },
     ],
     columns: [
@@ -335,7 +336,7 @@ const outwardSpec = (d, ymd, date) => {
       { label: "Bags loaded", value: fmtCount(sum(all, (r) => r.bags)) },
       { label: "Loaded qty (Qtl)", value: fmtQty(sum(all, (r) => r.loaded_qty)) },
       { label: "Net weight (Kg)", value: kg(sum(all, (r) => r.net)), color: OUT_COLOR },
-      { label: "Net weight (MT)", value: fmtQty(sum(all, (r) => r.net) / 1000) },
+      { label: "Net weight (Qtl)", value: fmtQty(sum(all, (r) => r.net) / KG_PER_QTL) },
     ],
     columns: [
       { label: "S.No", w: 26, align: "center" },
@@ -395,10 +396,10 @@ const overallSpec = (d, ymd, date) => {
       i + 1, b.name, b.rows.length ? { t: fmtCount(b.rows.length), bold: true, color } : { t: "0", color: "#94A3B8" },
       b.rows.length ? fmtCount(sum(b.rows, (r) => r.bags)) : DASH,
       b.rows.length ? { t: kg(sum(b.rows, (r) => r.net)), bold: true } : DASH,
-      b.rows.length ? fmtQty(sum(b.rows, (r) => r.net) / 1000) : DASH,
+      b.rows.length ? fmtQty(sum(b.rows, (r) => r.net) / KG_PER_QTL) : DASH,
     ],
   });
-  const totalsOf = (label, rows) => ["", label, fmtCount(rows.length), fmtCount(sum(rows, (r) => r.bags)), kg(sum(rows, (r) => r.net)), fmtQty(sum(rows, (r) => r.net) / 1000)];
+  const totalsOf = (label, rows) => ["", label, fmtCount(rows.length), fmtCount(sum(rows, (r) => r.bags)), kg(sum(rows, (r) => r.net)), fmtQty(sum(rows, (r) => r.net) / KG_PER_QTL)];
   const inNet = sum(d.inward, (r) => r.net);
   const outNet = sum(d.outward, (r) => r.net);
 
@@ -466,7 +467,7 @@ const overallSpec = (d, ymd, date) => {
       { label: "Vehicles", w: 70, align: "right" },
       { label: "Bags", w: 80, align: "right" },
       { label: "Net Wt (Kg)", w: 110, align: "right" },
-      { label: "Net Wt (MT)", w: 100, align: "right" },
+      { label: "Net Wt (Qtl)", w: 100, align: "right" },
     ],
     groups: summaryGroups,
     totalsRow: null,

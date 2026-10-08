@@ -478,7 +478,7 @@ CREATE TABLE `negotiation` (
 CREATE TABLE `weight_slip` (
   `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `gate_entry_id` BIGINT NOT NULL,
-  `slip_no` VARCHAR(30) NOT NULL UNIQUE,
+  `slip_no` VARCHAR(30) NOT NULL,
   `gross_weight` DECIMAL(10, 2) NOT NULL,
   `tare_weight` DECIMAL(10, 2) NOT NULL,
   `weighed_at` DATETIME NULL,

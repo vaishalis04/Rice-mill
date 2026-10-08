@@ -1,4 +1,5 @@
 const { Inventory, ProductionBatch, Packing, FinishedGoods } = require("../models/index");
+const { KG_PER_QTL } = require("./units");
 
 // Warehouse stock "before" and "after" a production batch.
 //
@@ -79,7 +80,7 @@ const matchFgRows = (inv, packings, fgs) => {
   const tryMatch = (strictQty) => {
     for (const { fg, packing } of pending) {
       if (matched.has(fg.id)) continue;
-      const want = Number(fg.qty || 0) / 1000;
+      const want = Number(fg.qty || 0) / KG_PER_QTL;
       let best = null;
       let bestDt = Infinity;
       for (const row of fgRows) {

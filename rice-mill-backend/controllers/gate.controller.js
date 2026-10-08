@@ -15,8 +15,23 @@ const {
   GateEntrySalesOrder,
   GateEntryMiscItem,
   Customer,
+  Loading,
+  Purchase,
+  Lot,
 } = require("../models/index");
 const { generateTokenNo } = require("../helpers/helperFunction");
+
+const findActiveTripForVehicle = (vehicleId, options = {}) =>
+  GateEntry.findOne({
+    where: {
+      vehicle_id: Number(vehicleId),
+      is_deleted: false,
+      gate_status: { [Op.ne]: "exited" },
+      ...(options.excludeId ? { id: { [Op.ne]: options.excludeId } } : {}),
+    },
+    order: [["created_at", "DESC"]],
+    ...(options.transaction ? { transaction: options.transaction, lock: options.transaction.LOCK.UPDATE } : {}),
+  });
 
 const detailIncludes = [
   {
@@ -313,6 +328,23 @@ const validateReferences = async ({
 };
 
 module.exports = {
+getAvailableVehicles: async (req, res, next) => {
+  try {
+    const activeEntries = await GateEntry.findAll({
+      where: { is_deleted: false, gate_status: { [Op.ne]: "exited" } },
+      attributes: ["vehicle_id"],
+      group: ["vehicle_id"],
+    });
+    const activeVehicleIds = activeEntries.map((entry) => Number(entry.vehicle_id)).filter(Boolean);
+    const where = { is_deleted: false };
+    if (activeVehicleIds.length) where.id = { [Op.notIn]: activeVehicleIds };
+    const vehicles = await Vehicle.findAll({ where, order: [["vehicle_no", "ASC"]] });
+    res.status(200).json({ success: true, data: vehicles });
+  } catch (err) {
+    next(err);
+  }
+},
+
 getAll: async (req, res, next) => {
   try {
     const {
@@ -841,6 +873,11 @@ getById: async (req, res, next) => {
       if (!vehicle_id || !driver_id) {
         throw createError(400, "vehicle_id and driver_id are required");
       }
+
+      const activeTrip = await findActiveTripForVehicle(vehicle_id);
+      if (activeTrip) {
+        throw createError(409, `Vehicle is already inside the mill on token ${activeTrip.token_no}; it can be assigned again after check-out.`);
+      }
       if (entry_type === "purchase" && (!vendor_id || !material_id)) {
         throw createError(
           400,
@@ -1052,7 +1089,7 @@ getById: async (req, res, next) => {
       }
 
       const updates = {
-        gate_status: "unloaded",
+        gate_status: "waiting_second_weighment",
         updated_by: req.user ? req.user.id : null,
       };
       if (warehouse_id) updates.received_warehouse_id = warehouse_id;
@@ -1090,10 +1127,10 @@ getById: async (req, res, next) => {
           "Vehicle has not been checked in yet; cannot check out",
         );
       }
-      if (entry.entry_type === "sales" && entry.gate_status !== "parked") {
+      if (entry.gate_status !== "parked") {
         throw createError(
           400,
-          `Cannot check out a sales truck with status '${entry.gate_status}'; it must be 'parked' first (see the Loading module)`,
+          `Cannot check out a vehicle with status '${entry.gate_status}'; complete unloading/loading and record its second weighment first.`,
         );
       }
 
@@ -1126,6 +1163,7 @@ getById: async (req, res, next) => {
 // checked in). Until Admin attaches those details, the entry just sits
 // at gate_status "pending_details".
 generateToken: async (req, res, next) => {
+  let transaction;
   try {
     const { vehicle_id, driver_id, driver_photo_url, plant_id } =
       req.body || {};
@@ -1137,8 +1175,11 @@ generateToken: async (req, res, next) => {
       throw createError(400, "driver_id is required");
     }
 
+    transaction = await sequelize.transaction();
     const vehicle = await Vehicle.findOne({
       where: { id: vehicle_id, is_deleted: false },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
     });
     if (!vehicle) {
       throw createError(400, `Invalid vehicle_id: ${vehicle_id}`);
@@ -1157,8 +1198,14 @@ generateToken: async (req, res, next) => {
       );
     }
 
+    const activeTrip = await findActiveTripForVehicle(vehicle_id, { transaction });
+    if (activeTrip) {
+      throw createError(409, `Vehicle is already inside the mill on token ${activeTrip.token_no}; it can be assigned again after check-out.`);
+    }
+
     const driver = await Driver.findOne({
       where: { id: driver_id, is_deleted: false },
+      transaction,
     });
     if (!driver) {
       throw createError(400, `Invalid driver_id: ${driver_id}`);
@@ -1177,7 +1224,7 @@ generateToken: async (req, res, next) => {
       plant_id: resolvedPlantId,
       entry_time: new Date(),
       created_by: req.user ? req.user.id : null,
-    });
+    }, { transaction });
 
     const createdGateEntry = await GateEntry.findByPk(gateEntry.id, {
       include: [
@@ -1192,7 +1239,11 @@ generateToken: async (req, res, next) => {
           attributes: ["id", "name", "mobile", "license_no", "photo_url"],
         },
       ],
+      transaction,
     });
+
+    await transaction.commit();
+    transaction = null;
 
     return res.status(201).json({
       success: true,
@@ -1201,6 +1252,7 @@ generateToken: async (req, res, next) => {
       data: createdGateEntry,
     });
   } catch (err) {
+    if (transaction) await transaction.rollback();
     next(err);
   }
 },
@@ -1360,6 +1412,18 @@ attachDetails: async (req, res, next) => {
     const validatedSalesOrders = [];
 
     if (entry_type === "sales") {
+      const activeSalesEntries = await GateEntry.findAll({
+        where: {
+          is_deleted: false,
+          entry_type: "sales",
+          gate_status: { [Op.ne]: "exited" },
+          id: { [Op.ne]: pendingEntry.id },
+        },
+        attributes: ["id"],
+        transaction: t,
+      });
+      const activeSalesEntryIds = activeSalesEntries.map((entry) => Number(entry.id));
+
       for (const soItem of sales_orders) {
         const { so_id, materials } = soItem || {};
 
@@ -1567,6 +1631,60 @@ attachDetails: async (req, res, next) => {
             throw createError(
               400,
               `Requested quantity ${requestedQty} exceeds remaining quantity ${remainingQty} for Sales Order ${so_id}, material ${material_id}`
+            );
+          }
+
+          // Existing assignments to other trucks inside the mill reserve
+          // order quantity until those trucks load it. Ignore the portion
+          // already loaded on that trip because it is reflected in SO
+          // dispatched_qty.
+          let reservedElsewhere = 0;
+          if (activeSalesEntryIds.length) {
+            const assignments = await GateEntrySalesOrder.findAll({
+              where: {
+                so_id: salesOrder.id,
+                material_id: materialKey,
+                gate_entry_id: { [Op.in]: activeSalesEntryIds },
+                is_deleted: false,
+              },
+              attributes: ["gate_entry_id", "qty"],
+              transaction: t,
+            });
+            const assignedByEntry = new Map();
+            assignments.forEach((assignment) => {
+              const entryId = Number(assignment.gate_entry_id);
+              assignedByEntry.set(entryId, (assignedByEntry.get(entryId) || 0) + Number(assignment.qty || 0));
+            });
+            const activeLoadings = await Loading.findAll({
+              where: {
+                so_id: salesOrder.id,
+                gate_entry_id: { [Op.in]: activeSalesEntryIds },
+                is_deleted: false,
+              },
+              attributes: ["gate_entry_id", "items"],
+              transaction: t,
+            });
+            const loadedByEntry = new Map();
+            activeLoadings.forEach((loading) => {
+              let lines = loading.items || [];
+              if (typeof lines === "string") {
+                try { lines = JSON.parse(lines); } catch { lines = []; }
+              }
+              (Array.isArray(lines) ? lines : []).forEach((line) => {
+                if (Number(line.so_id || salesOrder.id) !== Number(salesOrder.id) || Number(line.material_id) !== materialKey) return;
+                const entryId = Number(loading.gate_entry_id);
+                loadedByEntry.set(entryId, (loadedByEntry.get(entryId) || 0) + Number(line.qty || 0));
+              });
+            });
+            assignedByEntry.forEach((assigned, entryId) => {
+              reservedElsewhere += Math.max(0, assigned - (loadedByEntry.get(entryId) || 0));
+            });
+          }
+          const unreservedQty = Math.max(0, remainingQty - reservedElsewhere);
+          if (requestedQty > unreservedQty) {
+            throw createError(
+              400,
+              `Requested quantity ${requestedQty} exceeds unreserved quantity ${unreservedQty} for Sales Order ${so_id}, material ${material_id}`
             );
           }
 
@@ -1782,13 +1900,71 @@ attachDetails: async (req, res, next) => {
           // RECEIVED QTY
           // ------------------------------------------------------
 
-          const receivedQty = Number(poMaterial.received_qty || 0);
+          let receivedQty;
+          if (poMaterial.received_qty !== undefined && poMaterial.received_qty !== null) {
+            receivedQty = Number(poMaterial.received_qty || 0);
+          } else {
+            // Older PO rows predate per-item received_qty. Reconstruct their
+            // completed receipts from accepted + rejected unloading bags.
+            const priorPurchases = await Purchase.findAll({
+              where: { po_id: purchaseOrder.id, is_deleted: false },
+              attributes: ["id"],
+              include: [{
+                model: GateEntry,
+                as: "gateEntry",
+                attributes: ["id"],
+                where: { is_deleted: false, gate_status: "exited" },
+                required: true,
+              }],
+              transaction: t,
+            });
+            const priorLots = priorPurchases.length
+              ? await Lot.findAll({
+                  where: {
+                    purchase_id: { [Op.in]: priorPurchases.map((row) => row.id) },
+                    material_id: materialKey,
+                    unloading_status: "completed",
+                    is_deleted: false,
+                  },
+                  attributes: ["qty", "rejected_qty"],
+                  transaction: t,
+                })
+              : [];
+            receivedQty = priorLots.reduce(
+              (sum, lot) => sum + Number(lot.qty || 0) + Number(lot.rejected_qty || 0),
+              0,
+            );
+          }
+
+          const activeGateEntries = await GateEntry.findAll({
+            where: {
+              is_deleted: false,
+              gate_status: { [Op.notIn]: ["exited", "parked"] },
+              id: { [Op.ne]: pendingEntry.id },
+            },
+            attributes: ["id"],
+            transaction: t,
+          });
+          const activeGateEntryIds = activeGateEntries.map((entry) => Number(entry.id));
+          const activeReservations = activeGateEntryIds.length
+            ? await GateEntryPurchaseOrder.findAll({
+                where: {
+                  gate_entry_id: { [Op.in]: activeGateEntryIds },
+                  po_id: purchaseOrder.id,
+                  material_id: materialKey,
+                  is_deleted: false,
+                },
+                attributes: ["qty"],
+                transaction: t,
+              })
+            : [];
+          const reservedElsewhere = activeReservations.reduce((sum, row) => sum + Number(row.qty || 0), 0);
 
           // ------------------------------------------------------
           // REMAINING QTY
           // ------------------------------------------------------
 
-          const remainingQty = orderedQty - receivedQty;
+          const remainingQty = orderedQty - receivedQty - reservedElsewhere;
 
           if (remainingQty <= 0) {
             throw createError(

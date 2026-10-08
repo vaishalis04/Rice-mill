@@ -64,10 +64,10 @@ const orderLines = (order) => {
 };
 const orderTotalQty = (order) => orderLines(order).reduce((s, l) => s + (toNum(l.qty) || 0), 0);
 
-// Quantities on orders / loading are in the app's "Qtl", which this app
-// defines as 1000 kg (a metric ton) — the same figure the Excel calls MT.
-const KG_PER_ORDER_QTL = 1000;
-const mtLabel = (qty) => `${trim3(qty)}MT`;
+// Quantities on orders / loading are in Qtl (1 Qtl = 100 kg, helpers/units.js).
+// The Sauda / Pending Sauda text on the advice therefore reads e.g. "600Qtl".
+const { KG_PER_QTL: KG_PER_ORDER_QTL } = require("./units");
+const qtlLabel = (qty) => `${trim3(qty)}Qtl`;
 
 // ---------------------------------------------------------------- search ---
 
@@ -279,10 +279,10 @@ const salesSauda = async (entry, loadings, soById) => {
   return {
     order_no: so.so_no,
     sauda_date: ymd(so.order_date),
-    sauda: total ? mtLabel(total) : "",
+    sauda: total ? qtlLabel(total) : "",
     inward_details: inward,
     // Only shown when the order is only PARTLY loaded, as on the Excel.
-    pending_sauda: total && pending > 0.0005 ? mtLabel(pending) : "",
+    pending_sauda: total && pending > 0.0005 ? qtlLabel(pending) : "",
   };
 };
 
@@ -350,15 +350,15 @@ const purchaseSauda = async (entry, purchases) => {
     weight: Math.round(Number(p.final_qty) || 0),
     gp_no: gpNoFor("purchase", p.gate_entry_id), // the vehicle that made this delivery
   }));
-  const receivedMt = allReceipts.reduce((s, p) => s + (Number(p.final_qty) || 0), 0) / KG_PER_ORDER_QTL;
-  const pending = total - receivedMt;
+  const receivedQtl = allReceipts.reduce((s, p) => s + (Number(p.final_qty) || 0), 0) / KG_PER_ORDER_QTL;
+  const pending = total - receivedQtl;
 
   return {
     order_no: po.po_no,
     sauda_date: ymd(po.po_date),
-    sauda: total ? mtLabel(total) : "",
+    sauda: total ? qtlLabel(total) : "",
     inward_details: inward,
-    pending_sauda: total && pending > 0.0005 ? mtLabel(pending) : "",
+    pending_sauda: total && pending > 0.0005 ? qtlLabel(pending) : "",
   };
 };
 

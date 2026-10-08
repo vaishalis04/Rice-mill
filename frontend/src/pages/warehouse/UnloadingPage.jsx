@@ -13,7 +13,10 @@ import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
 import PdfPreviewModal from "../../components/PdfPreviewModal";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
-import { kgToQtl } from "../../utils/units";
+import { KG_PER_QTL, QtlToKg } from "../../utils/units";
+
+// Backend stock / lot quantities are already in Qtl — show them as they are.
+const fmtQtl = (v) => Math.round((Number(v) || 0) * 100) / 100;
 
 const startForm0 = {
   gate_entry_id: "",
@@ -103,6 +106,7 @@ export default function UnloadingPage() {
           lot_no: lot.lot_no,
           material_id: material.id || lot.material_id,
           material_name: material.name || 'Unknown Material',
+          assigned_qty: Number(material.assigned_qty || 0),
           bag_size: "",
           accepted_bags: "",
           rejected_bags: "0",
@@ -150,8 +154,8 @@ export default function UnloadingPage() {
       bag_size: lot.bag_size || "",
       accepted_bags: lot.accepted_bags || "",
       rejected_bags: lot.rejected_bags || "0",
-      accepted_qty: lot.qty || 0,
-      rejected_qty: lot.rejected_qty || 0,
+      accepted_qty: QtlToKg(lot.qty || 0), // Lot.qty is Qtl; this form field is kg
+      rejected_qty: QtlToKg(lot.rejected_qty || 0),
     }]);
     setIsUnloadingFormOpen(true);
   };
@@ -302,6 +306,11 @@ export default function UnloadingPage() {
             <h4 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>
               {item.lot_id ? `${item.material_name} (Lot: ${item.lot_no})` : 'New material / variety found'}
             </h4>
+            {Number(item.assigned_qty) > 0 && (
+              <div className="field-hint" style={{ margin: "-6px 0 10px" }}>
+                Assigned on this vehicle: <strong>{Number(item.assigned_qty).toFixed(3)} Qtl</strong>
+              </div>
+            )}
             {!item.lot_id && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '12px' }}>
                 <div className="sf-field" style={{ marginBottom: 0 }}>
@@ -368,11 +377,11 @@ export default function UnloadingPage() {
             }}>
               <span>
                 <strong>Accepted Qty:</strong> {item.accepted_qty || 0} kg 
-                ({Math.round((item.accepted_qty || 0) / 1000 * 100) / 100} Qtl)
+                ({Math.round((item.accepted_qty || 0) / KG_PER_QTL * 100) / 100} Qtl)
               </span>
               <span>
                 <strong>Rejected Qty:</strong> {item.rejected_qty || 0} kg
-                ({Math.round((item.rejected_qty || 0) / 1000 * 100) / 100} Qtl)
+                ({Math.round((item.rejected_qty || 0) / KG_PER_QTL * 100) / 100} Qtl)
               </span>
               <span>
                 <strong>Total:</strong> {Math.round(((item.accepted_qty || 0) + (item.rejected_qty || 0)) * 100) / 100} kg
@@ -465,10 +474,10 @@ export default function UnloadingPage() {
                     <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: warehouseSummary.materials.length ? 8 : 0 }}>
                       <span>
                         <strong>Capacity:</strong>{" "}
-                        {warehouseSummary.capacity != null ? `${kgToQtl(warehouseSummary.capacity)} Qtl` : "Not set"}
+                        {warehouseSummary.capacity != null ? `${fmtQtl(warehouseSummary.capacity)} Qtl` : "Not set"}
                       </span>
                       <span>
-                        <strong>Current stock:</strong> {kgToQtl(warehouseSummary.total_stock)} Qtl
+                        <strong>Current stock:</strong> {fmtQtl(warehouseSummary.total_stock)} Qtl
                       </span>
                       <span
                         style={{
@@ -481,7 +490,7 @@ export default function UnloadingPage() {
                       >
                         Remaining:{" "}
                         {warehouseSummary.remaining_capacity != null
-                          ? `${kgToQtl(warehouseSummary.remaining_capacity)} Qtl`
+                          ? `${fmtQtl(warehouseSummary.remaining_capacity)} Qtl`
                           : "Unlimited"}
                       </span>
                     </div>
@@ -489,7 +498,7 @@ export default function UnloadingPage() {
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                         {warehouseSummary.materials.map((m) => (
                           <span key={m.material_id} style={{ color: "#475569" }}>
-                            {m.material_name}: <strong>{kgToQtl(m.qty)} Qtl</strong>
+                            {m.material_name}: <strong>{fmtQtl(m.qty)} Qtl</strong>
                           </span>
                         ))}
                       </div>
@@ -614,8 +623,8 @@ export default function UnloadingPage() {
           },
           { key: "accepted_bags", label: "Accepted Bags" },
           { key: "rejected_bags", label: "Rejected Bags" },
-          { key: "qty", label: "Accepted Qty (Qtl)", render: (row) => kgToQtl(row.qty) },
-          { key: "rejected_qty", label: "Rejected Qty (Qtl)", render: (row) => kgToQtl(row.rejected_qty) },
+          { key: "qty", label: "Accepted Qty (Qtl)", render: (row) => fmtQtl(row.qty) },
+          { key: "rejected_qty", label: "Rejected Qty (Qtl)", render: (row) => fmtQtl(row.rejected_qty) },
           {
             key: "status",
             label: "Status",

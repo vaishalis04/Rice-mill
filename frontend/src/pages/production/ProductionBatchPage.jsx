@@ -16,6 +16,7 @@ import ModuleGuide from "../../components/ModuleGuide";
 import PdfPreviewModal from "../../components/PdfPreviewModal";
 import ProductionOutputPanel from "../../components/ProductionOutputPanel";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
+import { KG_PER_QTL } from "../../utils/units";
 
 const emptyCreateForm = {
   warehouse_id: "",
@@ -186,7 +187,7 @@ export default function ProductionBatchPage() {
     const bag = (material.bags || []).find((entry) => Number(entry.bag_size) === Number(packSize));
     if (!bag) return 0;
     const availableQty = Number(material.available_qty ?? material.qty);
-    const availableBagsByWeight = Math.floor((availableQty * 1000) / Number(packSize) + 0.0001);
+    const availableBagsByWeight = Math.floor((availableQty * KG_PER_QTL) / Number(packSize) + 0.0001);
     return Math.min(Number(bag.bag_count) || 0, availableBagsByWeight);
   };
 
@@ -207,9 +208,9 @@ export default function ProductionBatchPage() {
       const materialName = materials.getLabel(materialId) || `Material ${materialId}`;
       return {
         index,
-        message: `${materialName}: Requested ${requested.toFixed(3)} tons but only ${availableInTons.toFixed(
+        message: `${materialName}: Requested ${requested.toFixed(3)} Qtl but only ${availableInTons.toFixed(
           3
-        )} tons available`,
+        )} Qtl available`,
       };
     }
     return null;
@@ -273,14 +274,14 @@ export default function ProductionBatchPage() {
 
       const materialCount = validMaterials.length;
       const totalQty = validMaterials.reduce(
-        (sum, m) => sum + (Number(getResolvedCreatePackSize(m)) * Number(m.bag_count)) / 1000,
+        (sum, m) => sum + (Number(getResolvedCreatePackSize(m)) * Number(m.bag_count)) / KG_PER_QTL,
         0,
       );
 
       setInfo(
         `✅ Batch ${created.batch_no} created (${materialCount} material${
           materialCount > 1 ? "s" : ""
-        }, ${totalQty.toFixed(2)} tons total). Now add its output.`
+        }, ${totalQty.toFixed(2)} Qtl total). Now add its output.`
       );
 
       // Opens the output screen for the new (still pending) batch.
@@ -390,7 +391,7 @@ export default function ProductionBatchPage() {
       );
       return;
     }
-    const requested = (packSize * bagCount) / 1000;
+    const requested = (packSize * bagCount) / KG_PER_QTL;
 
     setAddMaterialLoading(true);
     try {
@@ -614,18 +615,18 @@ export default function ProductionBatchPage() {
                       </span>
                       <span>
                         <strong>Total Stock:</strong> {(warehouseSummary.total_stock).toFixed(2)}{" "}
-                        tons
+                        Qtl
                       </span>
                         {warehouseSummary.materials.some((m) => Number(m.reserved_qty) > 0) && (
                           <span>
                             <strong>Reserved:</strong>{" "}
-                            {warehouseSummary.materials.reduce((sum, m) => sum + Number(m.reserved_qty || 0), 0).toFixed(2)} tons
+                            {warehouseSummary.materials.reduce((sum, m) => sum + Number(m.reserved_qty || 0), 0).toFixed(2)} Qtl
                           </span>
                         )}
                       {warehouseSummary.remaining_capacity != null && (
                         <span>
                           <strong>Remaining Capacity:</strong>{" "}
-                          {(warehouseSummary.remaining_capacity ).toFixed(2)} tons
+                          {(warehouseSummary.remaining_capacity ).toFixed(2)} Qtl
                         </span>
                       )}
                     </div>
@@ -649,12 +650,12 @@ export default function ProductionBatchPage() {
                           >
                             <div style={{ display: "flex", justifyContent: "space-between" }}>
                               <span style={{ fontWeight: 500 }}>{m.material_name}</span>
-                              <strong>{Number(m.qty).toFixed(2)} tons</strong>
+                              <strong>{Number(m.qty).toFixed(2)} Qtl</strong>
                             </div>
                             {Number(m.reserved_qty) > 0 && (
                               <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>
-                                Available for production: {Number(m.available_qty).toFixed(2)} tons
-                                <span> · Reserved: {Number(m.reserved_qty).toFixed(2)} tons</span>
+                                Available for production: {Number(m.available_qty).toFixed(2)} Qtl
+                                <span> · Reserved: {Number(m.reserved_qty).toFixed(2)} Qtl</span>
                               </div>
                             )}
                             {m.bags && m.bags.length > 0 && (
@@ -673,7 +674,7 @@ export default function ProductionBatchPage() {
                                       {b.bag_size != null ? `${b.bag_size} kg` : "Bulk"}
                                       {b.bag_count != null && ` × ${b.bag_count} bags`}
                                     </span>
-                                    <span>{b.qty.toFixed(3)} tons</span>
+                                    <span>{b.qty.toFixed(3)} Qtl</span>
                                   </div>
                                 ))}
                               </div>
@@ -734,7 +735,7 @@ export default function ProductionBatchPage() {
                 const packSize = Number(getResolvedCreatePackSize(item));
                 const availableBags = getCreateBagAvailability(item.material_id, packSize);
                 const requestedBags = Number(item.bag_count || 0);
-                const lineTons = packSize > 0 ? (packSize * requestedBags) / 1000 : 0;
+                const lineTons = packSize > 0 ? (packSize * requestedBags) / KG_PER_QTL : 0;
                 const isQuantityExceeded = item.material_id && requestedBags > availableBags && availableBags > 0;
 
                 const allAvailableMaterials = getAvailableMaterials();
@@ -764,7 +765,7 @@ export default function ProductionBatchPage() {
                         options={allAvailableMaterials.map((m) => ({
                           id: m.material_id,
                           label: m.material_name,
-                          sublabel: `${(m.qty).toFixed(2)} tons`,
+                          sublabel: `${(m.qty).toFixed(2)} Qtl`,
                         }))}
                         emptyMessage="No materials with stock in this warehouse"
                       />
@@ -803,7 +804,7 @@ export default function ProductionBatchPage() {
                         onChange={(e) => handleMaterialChange(index, "bag_count", e.target.value)}
                         required
                       />
-                      {requestedBags > 0 && packSize > 0 && <div style={{ fontSize: 12, color: isQuantityExceeded ? "#dc2626" : "#64748b", marginTop: 4 }}>Input: {lineTons.toFixed(3)} tons</div>}
+                      {requestedBags > 0 && packSize > 0 && <div style={{ fontSize: 12, color: isQuantityExceeded ? "#dc2626" : "#64748b", marginTop: 4 }}>Input: {lineTons.toFixed(3)} Qtl</div>}
                       {isQuantityExceeded && (
                         <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4, fontWeight: 500 }}>
                           ⚠️ {fieldErrors[index] || `Only ${availableBags} bags available`}
@@ -897,7 +898,7 @@ export default function ProductionBatchPage() {
                   options={getAddMaterialAvailableOptions().map((m) => ({
                     id: m.material_id,
                     label: m.material_name,
-                    sublabel: `${(m.qty).toFixed(2)} tons`,
+                    sublabel: `${(m.qty).toFixed(2)} Qtl`,
                   }))}
                   emptyMessage="No additional materials with stock are available in this batch's warehouse"
                 />
@@ -983,10 +984,10 @@ export default function ProductionBatchPage() {
             label: "Source Warehouse",
             render: (row) => (row.warehouse_id ? warehouses.getLabel(row.warehouse_id) : "—"),
           },
-          { key: "input_qty", label: "Input (Tons)" },
+          { key: "input_qty", label: "Input (Qtl)" },
           {
             key: "output",
-            label: "Output (Tons)",
+            label: "Output (Qtl)",
             render: (row) => {
               const lines = row.outputs_data?.lines;
               if (!Array.isArray(lines) || lines.length === 0) return "—";

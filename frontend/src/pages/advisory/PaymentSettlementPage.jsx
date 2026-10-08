@@ -539,10 +539,10 @@ export default function PaymentSettlementPage() {
           </span>
         </div>
         <div className="sf-field"><label>Sauda Date<Tag kind="auto" /></label><input type="date" {...field("sauda_date")} /></div>
-        <div className="sf-field"><label>Sauda<Tag kind="auto" /></label><input {...field("sauda")} placeholder="e.g. 60MT" /></div>
+        <div className="sf-field"><label>Sauda<Tag kind="auto" /></label><input {...field("sauda")} placeholder="e.g. 600Qtl" /></div>
         <div className="sf-field">
           <label>Pending Sauda<Tag kind="auto" /></label>
-          <input {...field("pending_sauda")} placeholder={fromAuto ? "empty = order fully loaded" : "e.g. 3.45MT"} />
+          <input {...field("pending_sauda")} placeholder={fromAuto ? "empty = order fully loaded" : "e.g. 34.5Qtl"} />
           {form.pending_sauda && <div style={hint}>The order is only partly loaded.</div>}
           {vehicleCount > 1 && <div style={hint}>{vehicleCount} vehicles were used — their GP numbers print under Pending Sauda.</div>}
         </div>

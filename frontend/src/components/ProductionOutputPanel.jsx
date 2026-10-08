@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { finalizeProductionBatchApi } from "../api/api";
 import EntitySelect from "./EntitySelect";
+import { KG_PER_QTL } from "../utils/units";
 
 // The OUTPUT half of a production batch.
 //
@@ -14,7 +15,7 @@ import EntitySelect from "./EntitySelect";
 // and finally picks ONE destination warehouse for all accepted output.
 // Rejected bags are recorded but never added to stock.
 //
-// Quantities are in tons (1 ton = 1000 kg), as everywhere else in this app.
+// Quantities are in Qtl (1 Qtl = 100 kg); only the bag size is in kg (utils/units.js).
 
 const PACK_PRESETS = ["5", "10", "25", "50", "100"];
 const CUSTOM = "__custom__";
@@ -107,7 +108,7 @@ export default function ProductionOutputPanel({
     const mine = rows.filter((r) => r.line_key === line.key);
     const acceptedKg = mine.reduce((s, r) => s + (Number(r.accepted_bags) || 0) * sizeOf(r), 0);
     const rejectedKg = mine.reduce((s, r) => s + (Number(r.rejected_bags) || 0) * sizeOf(r), 0);
-    const inputKg = line.input_qty * 1000;
+    const inputKg = line.input_qty * KG_PER_QTL;
     const usedKg = acceptedKg + rejectedKg;
     return { line, mine, acceptedKg, rejectedKg, inputKg, usedKg, over: usedKg > inputKg + 0.5 };
   });
@@ -152,7 +153,7 @@ export default function ProductionOutputPanel({
       }
       if (complete === 0) return setError(`Add at least one output for ${name}.`);
       if (p.over) {
-        return setError(`${name}: output ${t3(p.usedKg / 1000)} tons is more than the ${t3(p.inputKg / 1000)} tons used as input.`);
+        return setError(`${name}: output ${t3(p.usedKg / KG_PER_QTL)} Qtl is more than the ${t3(p.inputKg / KG_PER_QTL)} Qtl used as input.`);
       }
     }
 
@@ -208,7 +209,7 @@ export default function ProductionOutputPanel({
           const canRemoveInput = onRemoveInput && lines.length > 1 && !duplicateMaterial;
           const pct = p.inputKg > 0 ? Math.min(100, (p.usedKg / p.inputKg) * 100) : 0;
           const barColor = p.over ? "#dc2626" : pct >= 90 ? "#f59e0b" : "#22c55e";
-          const left = (p.inputKg - p.usedKg) / 1000;
+          const left = (p.inputKg - p.usedKg) / KG_PER_QTL;
 
           return (
             <div
@@ -223,7 +224,7 @@ export default function ProductionOutputPanel({
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 700 }}>{getMaterialLabel(line.material_id)}</div>
                   <div style={{ fontSize: 13, color: "#475569" }}>
-                    {t3(line.input_qty)} tons
+                    {t3(line.input_qty)} Qtl
                     {line.pack_size && line.bag_count ? ` · ${line.bag_count} bags × ${line.pack_size} kg` : ""} · from{" "}
                     {getWarehouseLabel(batch?.warehouse_id)}
                   </div>
@@ -246,11 +247,11 @@ export default function ProductionOutputPanel({
                   <div style={{ width: `${pct}%`, height: "100%", background: barColor, transition: "width 0.15s" }} />
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 6, fontSize: 12.5, color: p.over ? "#dc2626" : "#475569" }}>
-                  <span><b>Accepted</b> {t3(p.acceptedKg / 1000)} t</span>
-                  <span><b>Rejected</b> {t3(p.rejectedKg / 1000)} t</span>
-                  <span><b>Output</b> {t3(p.usedKg / 1000)} of {t3(p.inputKg / 1000)} t</span>
+                  <span><b>Accepted</b> {t3(p.acceptedKg / KG_PER_QTL)} Qtl</span>
+                  <span><b>Rejected</b> {t3(p.rejectedKg / KG_PER_QTL)} Qtl</span>
+                  <span><b>Output</b> {t3(p.usedKg / KG_PER_QTL)} of {t3(p.inputKg / KG_PER_QTL)} Qtl</span>
                   <span style={{ fontWeight: 600 }}>
-                    {p.over ? `Over by ${t3(-left)} t — reduce the bags` : `${t3(left)} t unused / loss`}
+                    {p.over ? `Over by ${t3(-left)} Qtl — reduce the bags` : `${t3(left)} Qtl unused / loss`}
                   </span>
                 </div>
               </div>
@@ -268,7 +269,7 @@ export default function ProductionOutputPanel({
                   </div>
 
                   {p.mine.map((r, i) => {
-                    const total = (sizeOf(r) * bagsOf(r)) / 1000;
+                    const total = (sizeOf(r) * bagsOf(r)) / KG_PER_QTL;
                     return (
                       <div key={r.id} style={{ marginBottom: 8 }}>
                         <div style={{ fontSize: 11, color: "#64748b", margin: "0 2px 3px", fontWeight: 600 }}>
@@ -347,10 +348,10 @@ export default function ProductionOutputPanel({
         {/* overall + destination */}
         <div style={{ background: "#fff", border: "1px solid #dbeafe", borderRadius: 8, padding: 14, marginBottom: 14 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 22, marginBottom: 12, fontSize: 14 }}>
-            <span>Total input <b>{t3(totals.input / 1000)} t</b></span>
-            <span style={{ color: "#15803d" }}>Accepted <b>{t3(totals.accepted / 1000)} t</b></span>
-            <span style={{ color: "#b91c1c" }}>Rejected <b>{t3(totals.rejected / 1000)} t</b></span>
-            <span style={{ color: "#475569" }}>Unused / loss <b>{t3((totals.input - totals.accepted - totals.rejected) / 1000)} t</b></span>
+            <span>Total input <b>{t3(totals.input / KG_PER_QTL)} Qtl</b></span>
+            <span style={{ color: "#15803d" }}>Accepted <b>{t3(totals.accepted / KG_PER_QTL)} Qtl</b></span>
+            <span style={{ color: "#b91c1c" }}>Rejected <b>{t3(totals.rejected / KG_PER_QTL)} Qtl</b></span>
+            <span style={{ color: "#475569" }}>Unused / loss <b>{t3((totals.input - totals.accepted - totals.rejected) / KG_PER_QTL)} Qtl</b></span>
           </div>
           <div style={{ maxWidth: 420 }}>
             <EntitySelect
@@ -364,7 +365,7 @@ export default function ProductionOutputPanel({
           </div>
           {destination && totals.accepted > 0 && (
             <div style={{ fontSize: 12.5, color: "#475569", marginTop: 6 }}>
-              {t3(totals.accepted / 1000)} tons will be added to {getWarehouseLabel(destination)}; {t3(totals.input / 1000)} tons will be
+              {t3(totals.accepted / KG_PER_QTL)} Qtl will be added to {getWarehouseLabel(destination)}; {t3(totals.input / KG_PER_QTL)} Qtl will be
               deducted from {getWarehouseLabel(batch?.warehouse_id)}.
             </div>
           )}

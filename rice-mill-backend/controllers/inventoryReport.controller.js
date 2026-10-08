@@ -1,4 +1,5 @@
 const createError = require("http-errors");
+const { KG_PER_QTL } = require("../helpers/units");
 const { Op } = require("sequelize");
 const {
   Inventory, Lot, MaterialMaster, WarehouseMaster, PlantMaster, ProductionBatch, Packing, FinishedGoods,
@@ -174,7 +175,7 @@ const addLiveStock = async (store, scope) => {
     const balance = Number(r.balance_qty || 0);
     const row = store.get("raw", r.warehouse_id, r.material_id, size);
     row.closing += balance;
-    if (size) row.bags += Math.floor((balance * 1000) / size + 0.0001);
+    if (size) row.bags += Math.floor((balance * KG_PER_QTL) / size + 0.0001);
     const moved = r.as_of ? new Date(r.as_of) : null;
     if (moved && (!row.last_movement || moved > row.last_movement)) row.last_movement = moved;
   }
@@ -206,9 +207,9 @@ const addLiveStock = async (store, scope) => {
     const lot = lots.find((row) => Number(row.id) === Number(packing.lot_id));
     const size = packing.pack_size != null ? Number(packing.pack_size) : lot?.bag_size != null ? Number(lot.bag_size) : null;
     const row = store.get("fg", fg.warehouse_id, materialId, size);
-    const balance = Number(fg.qty || 0) / 1000;
+    const balance = Number(fg.qty || 0) / KG_PER_QTL;
     row.closing += balance;
-    if (size) row.bags += Math.floor((balance * 1000) / size + 0.0001);
+    if (size) row.bags += Math.floor((balance * KG_PER_QTL) / size + 0.0001);
     const moved = fg.ready_since || fg.updated_at ? new Date(fg.ready_since || fg.updated_at) : null;
     if (moved && (!row.last_movement || moved > row.last_movement)) row.last_movement = moved;
   }
@@ -250,7 +251,7 @@ const addMovements = async (store, scope, from, to) => {
     for (const p of packings) {
       if (!p.material_id) continue;
       const fg = fgByPacking.get(Number(p.id));
-      const qtl = fg ? Number(fg.qty || 0) / 1000 : 0;
+      const qtl = fg ? Number(fg.qty || 0) / KG_PER_QTL : 0;
       const size = Number(p.pack_size);
       if (fg && scope.inWarehouseScope(fg.warehouse_id)) store.get("fg", fg.warehouse_id, p.material_id, size).production += qtl;
     }
@@ -301,7 +302,7 @@ const addMovements = async (store, scope, from, to) => {
     for (const fg of dispatched) {
       const packing = packingById.get(Number(fg.packing_id));
       if (!packing || !packing.material_id) continue;
-      store.get("fg", fg.warehouse_id, packing.material_id, Number(packing.pack_size)).dispatch += Number(fg.qty || 0) / 1000;
+      store.get("fg", fg.warehouse_id, packing.material_id, Number(packing.pack_size)).dispatch += Number(fg.qty || 0) / KG_PER_QTL;
     }
   }
 };

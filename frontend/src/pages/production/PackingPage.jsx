@@ -3,6 +3,7 @@ import { getPackingsApi, updatePackingApi, deletePackingApi } from "../../api/ap
 import DataTable from "../../components/DataTable";
 import ModuleGuide from "../../components/ModuleGuide";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
+import { KG_PER_QTL } from "../../utils/units";
 
 const PACK_SIZE_PRESETS = ["5", "10", "25", "50"];
 const CUSTOM_SENTINEL = "__custom__";
@@ -169,7 +170,7 @@ export default function PackingPage() {
             label: "Total Qty",
             render: (row) => {
               const totalKg = Number(row.pack_size || 0) * Number(row.bag_count || 0);
-              return `${totalKg} kg (${(totalKg / 1000).toFixed(3)} Qtl)`;
+              return `${totalKg} kg (${(totalKg / KG_PER_QTL).toFixed(3)} Qtl)`;
             },
           },
           { key: "barcode", label: "Barcode" },

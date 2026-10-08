@@ -7,6 +7,7 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "db:sync": "node database/sync.js",
+    "db:allow-duplicate-weight-slips": "node database/allowDuplicateWeightSlipNumbers.js",
     "seed:role-logins": "node database/seedRoleLogins.js",
     "seed:advisory-login": "node database/seedAdvisoryLogin.js"
   },

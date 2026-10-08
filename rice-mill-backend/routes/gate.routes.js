@@ -15,6 +15,7 @@ const { uploadImage } = require("../helpers/multer.helper");
 router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["gate","warehouse","production","lab","purchase","weighbridge","admin"], ["gate","warehouse","production","lab","purchase","weighbridge"]));
 
 router.get("/",     Controller.getAll);
+router.get("/available-vehicles", Controller.getAvailableVehicles);
 // Must come before "/:id" — otherwise Express would treat "misc-items" as
 // an :id value for getById.
 router.get("/misc-items", Controller.getMiscItems);

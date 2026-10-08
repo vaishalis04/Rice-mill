@@ -21,7 +21,6 @@ const {
 // of the six views (empty/misc trucks still being processed, details not yet
 // attached) are returned as `unassigned` so nothing in the mill goes unseen.
 
-const KG_PER_ORDER_QTL = 1000; // the app's "Qtl" on orders is 1000 kg, shown as MT
 const r3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
 
 // How long a vehicle has sat in its current step (minutes) before it is flagged.
@@ -218,7 +217,7 @@ const buildGateSummary = async ({ plantId, now = new Date() } = {}) => {
   const received = new Map();
   if (poIds.length) {
     (await Purchase.findAll({ where: { po_id: { [Op.in]: poIds }, is_deleted: false }, attributes: ["po_id", "final_qty"] })).forEach((p) =>
-      received.set(p.po_id, (received.get(p.po_id) || 0) + Number(p.final_qty || 0) / KG_PER_ORDER_QTL) // final_qty is the weighbridge net weight in kg
+      received.set(p.po_id, (received.get(p.po_id) || 0) + Number(p.final_qty || 0)) // Purchase.final_qty is stored in Qtl
     );
   }
   const orderMaterialIds = new Set();
@@ -234,8 +233,11 @@ const buildGateSummary = async ({ plantId, now = new Date() } = {}) => {
   const shapeOrder = (o, kind) => {
     const lines = orderLines(o.order);
     const ordered = lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+    const hasMaterialReceipts = kind === "po" && lines.some((line) => line.received_qty != null);
     const done = kind === "po"
-      ? received.get(o.order.id) || 0
+      ? hasMaterialReceipts
+        ? lines.reduce((sum, line) => sum + Number(line.received_qty || 0), 0)
+        : received.get(o.order.id) || 0
       : lines.reduce((s, l) => s + (Number(l.dispatched_qty) || 0), 0) || Number(o.order.dispatched_qty) || 0;
     return {
       order_no: o.order_no,

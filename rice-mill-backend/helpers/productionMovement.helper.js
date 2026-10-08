@@ -1,4 +1,5 @@
 const { Op } = require("sequelize");
+const { KG_PER_QTL } = require("./units");
 const {
   ProductionBatch, Packing, FinishedGoods, WarehouseMaster, MaterialMaster, Lot, PlantMaster,
 } = require("../models/index");
@@ -47,7 +48,7 @@ const packedOutputByBatch = async (batchIds) => {
   const batchOfPacking = new Map(packings.map((p) => [Number(p.id), Number(p.batch_id)]));
   for (const fg of fgs) {
     const b = batchOfPacking.get(Number(fg.packing_id));
-    out.set(b, (out.get(b) || 0) + Number(fg.qty || 0) / 1000);
+    out.set(b, (out.get(b) || 0) + Number(fg.qty || 0) / KG_PER_QTL);
   }
   return out;
 };
@@ -118,8 +119,8 @@ const buildBatchMovements = async (batches) => {
         const mid = Number(p.material_id);
         const gk = `${fg.warehouse_id}|${mid}`;
         const g = groups.get(gk) || { warehouse_id: fg.warehouse_id, material_id: mid, qty: 0, packs: [] };
-        g.qty += Number(fg.qty || 0) / 1000;
-        g.packs.push({ pack_size: Number(p.pack_size), bags: Number(p.bag_count) || 0, qty: r3(Number(fg.qty || 0) / 1000) });
+        g.qty += Number(fg.qty || 0) / KG_PER_QTL;
+        g.packs.push({ pack_size: Number(p.pack_size), bags: Number(p.bag_count) || 0, qty: r3(Number(fg.qty || 0) / KG_PER_QTL) });
         groups.set(gk, g);
       }
     }

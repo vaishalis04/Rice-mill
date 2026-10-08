@@ -5,6 +5,7 @@ const {
   ProductionBatch, Lot, MaterialMaster, Inventory, Packing, FinishedGoods, WarehouseMaster, RejectMaterial,
 } = require("../models/index");
 const { generatePackingBatchNo, generateEAN13 } = require("../helpers/helperFunction");
+const { KG_PER_QTL } = require("../helpers/units");
 
 // Production OUTPUT + finalize (a separate controller so production.controller.js
 // keeps doing exactly what it did for creating / reserving a batch).
@@ -38,7 +39,7 @@ const { generatePackingBatchNo, generateEAN13 } = require("../helpers/helperFunc
 //          (outputs_data), and show in Production History and the batch report
 //        - the batch becomes "completed"
 //
-// Quantities: 1 "Qtl"/"ton" in this app = 1000 kg, so qty = kg / 1000.
+// Quantities: every quantity is in Qtl (1 Qtl = 100 kg), so qty = kg / KG_PER_QTL (helpers/units.js).
 
 const DEFAULT_SHELF_LIFE_DAYS = 180;
 const round3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
@@ -138,7 +139,7 @@ const consumeFromWarehouse = async ({ warehouse_id, material_id, qty, pack_size,
       kind: "fg",
       lot_id: lot?.id || packing?.lot_id || null,
       bag_size: packing?.pack_size != null ? Number(packing.pack_size) : null,
-      qty_qtl: Number(row.qty || 0) / 1000,
+      qty_qtl: Number(row.qty || 0) / KG_PER_QTL,
       as_of: row.ready_since,
       finishedGoods: row,
     });
@@ -174,7 +175,7 @@ const consumeFromWarehouse = async ({ warehouse_id, material_id, qty, pack_size,
       await row.inventory.save({ transaction: t });
     } else {
       const finishedGoods = row.finishedGoods;
-      finishedGoods.qty = Math.max(0, round3(Number(finishedGoods.qty || 0) - take * 1000));
+      finishedGoods.qty = Math.max(0, round3(Number(finishedGoods.qty || 0) - take * KG_PER_QTL));
       finishedGoods.updated_by = userId;
       await finishedGoods.save({ transaction: t });
 
@@ -296,15 +297,15 @@ module.exports = {
         const line = lines[idx];
         const mine = wanted.filter((o) => o.source_index === idx);
         const name = (await MaterialMaster.findByPk(line.material_id, { attributes: ["name"], transaction: t }))?.name || `Material ${line.material_id}`;
-        if (mine.length === 0) throw createError(400, `Add at least one output for ${name} (input ${round3(line.input_qty).toFixed(3)} tons)`);
+        if (mine.length === 0) throw createError(400, `Add at least one output for ${name} (input ${round3(line.input_qty).toFixed(3)} Qtl)`);
 
-        const inputKg = Number(line.input_qty) * 1000;
+        const inputKg = Number(line.input_qty) * KG_PER_QTL;
         const acceptedKg = mine.reduce((s, o) => s + o.accepted_bags * o.pack_size, 0);
         const rejectedKg = mine.reduce((s, o) => s + o.rejected_bags * o.pack_size, 0);
         if (acceptedKg + rejectedKg > inputKg + 0.5) {
           throw createError(
             400,
-            `${name}: output ${round3((acceptedKg + rejectedKg) / 1000).toFixed(3)} tons (accepted + rejected) is more than the ${round3(inputKg / 1000).toFixed(3)} tons used as input`
+            `${name}: output ${round3((acceptedKg + rejectedKg) / KG_PER_QTL).toFixed(3)} Qtl (accepted + rejected) is more than the ${round3(inputKg / KG_PER_QTL).toFixed(3)} Qtl used as input`
           );
         }
         lineSummaries.push({ idx, name, inputKg, acceptedKg, rejectedKg });
@@ -342,7 +343,7 @@ module.exports = {
             lot_no: `${batch.batch_no}-O${i + 1}`,
             purchase_id: null,
             material_id: o.material_id,
-            qty: round3((o.accepted_bags * o.pack_size) / 1000),
+            qty: round3((o.accepted_bags * o.pack_size) / KG_PER_QTL),
             parent_lot_id: lines[o.source_index].lot_id || null,
             destination: "warehouse",
             warehouse_id: Number(destination_warehouse_id),
@@ -350,7 +351,7 @@ module.exports = {
             bag_size: o.pack_size,
             accepted_bags: o.accepted_bags,
             rejected_bags: o.rejected_bags,
-            rejected_qty: round3((o.rejected_bags * o.pack_size) / 1000),
+            rejected_qty: round3((o.rejected_bags * o.pack_size) / KG_PER_QTL),
             plant_id: resolvedPlantId,
             created_by: userId,
           },
@@ -365,7 +366,7 @@ module.exports = {
         const o = accepted[i];
         const line = lines[o.source_index];
         const qtyKg = o.pack_size * o.accepted_bags;
-        const qtyTons = qtyKg / 1000;
+        const qtyQtl = qtyKg / KG_PER_QTL;
         const packingNo = seq.packingNo(i);
         const outLot = outLots.get(o.row);
 
@@ -407,9 +408,9 @@ module.exports = {
             material_id: o.material_id,
             warehouse_id: Number(destination_warehouse_id),
             stage: "fg",
-            qty_in: qtyTons,
+            qty_in: qtyQtl,
             qty_out: 0,
-            balance_qty: qtyTons,
+            balance_qty: qtyQtl,
             as_of: new Date(),
             plant_id: resolvedPlantId,
             created_by: userId,
@@ -425,7 +426,7 @@ module.exports = {
           {
             source_stage: "production",
             batch_id: batch.id,
-            qty: round3((o.rejected_bags * o.pack_size) / 1000),
+            qty: round3((o.rejected_bags * o.pack_size) / KG_PER_QTL),
             plant_id: resolvedPlantId,
             created_by: userId,
           },
@@ -440,10 +441,10 @@ module.exports = {
         lines: lineSummaries.map((s) => ({
           source_index: s.idx,
           input_material_id: lines[s.idx].material_id,
-          input_qty: round3(s.inputKg / 1000),
-          accepted_qty: round3(s.acceptedKg / 1000),
-          rejected_qty: round3(s.rejectedKg / 1000),
-          loss_qty: round3((s.inputKg - s.acceptedKg - s.rejectedKg) / 1000),
+          input_qty: round3(s.inputKg / KG_PER_QTL),
+          accepted_qty: round3(s.acceptedKg / KG_PER_QTL),
+          rejected_qty: round3(s.rejectedKg / KG_PER_QTL),
+          loss_qty: round3((s.inputKg - s.acceptedKg - s.rejectedKg) / KG_PER_QTL),
         })),
         outputs: wanted.map((o) => ({
           source_index: o.source_index,
@@ -454,8 +455,8 @@ module.exports = {
           pack_size: o.pack_size,
           accepted_bags: o.accepted_bags,
           rejected_bags: o.rejected_bags,
-          accepted_qty: round3((o.accepted_bags * o.pack_size) / 1000),
-          rejected_qty: round3((o.rejected_bags * o.pack_size) / 1000),
+          accepted_qty: round3((o.accepted_bags * o.pack_size) / KG_PER_QTL),
+          rejected_qty: round3((o.rejected_bags * o.pack_size) / KG_PER_QTL),
           remark: o.remark,
         })),
       };
@@ -478,16 +479,16 @@ module.exports = {
       res.status(200).json({
         success: true,
         msg:
-          `Batch ${batch.batch_no} completed. ${round3(totalAcceptedKg / 1000).toFixed(3)} tons added to ${warehouse.name}` +
-          (totalRejectedKg > 0 ? `, ${round3(totalRejectedKg / 1000).toFixed(3)} tons rejected` : "") +
-          `, from ${round3(totalInputKg / 1000).toFixed(3)} tons of input.`,
+          `Batch ${batch.batch_no} completed. ${round3(totalAcceptedKg / KG_PER_QTL).toFixed(3)} Qtl added to ${warehouse.name}` +
+          (totalRejectedKg > 0 ? `, ${round3(totalRejectedKg / KG_PER_QTL).toFixed(3)} Qtl rejected` : "") +
+          `, from ${round3(totalInputKg / KG_PER_QTL).toFixed(3)} Qtl of input.`,
         data: {
           batch_id: batch.id,
           batch_no: batch.batch_no,
           batch_status: "completed",
-          total_input_Qtl: round3(totalInputKg / 1000),
-          total_accepted_Qtl: round3(totalAcceptedKg / 1000),
-          total_rejected_Qtl: round3(totalRejectedKg / 1000),
+          total_input_Qtl: round3(totalInputKg / KG_PER_QTL),
+          total_accepted_Qtl: round3(totalAcceptedKg / KG_PER_QTL),
+          total_rejected_Qtl: round3(totalRejectedKg / KG_PER_QTL),
           packings,
           outputs_data: outputsData,
         },

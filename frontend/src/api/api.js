@@ -174,6 +174,9 @@ export const getGateEntriesApi = (status, entry_type, limit) => {
   return axiosInstance.get("/gate", { params });
 };
 
+export const getAvailableGateVehiclesApi = () =>
+  axiosInstance.get("/gate/available-vehicles");
+
 // "Other" (empty/misc) trucks — what arrived & where it's stored, kept
 // outside the formal Inventory system (Admin > Gate Entry log).
 export const getGateMiscItemsApi = (gate_entry_id) =>

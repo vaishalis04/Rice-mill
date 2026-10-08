@@ -1,4 +1,5 @@
 const createError = require("http-errors");
+const { KG_PER_QTL } = require("../helpers/units");
 const { Op } = require("sequelize");
 const { WarehouseMaster, BinStackMaster, Stack, Lot, Inventory, MaterialMaster, ProductionBatch, FinishedGoods, Packing } = require("../models/index");
 const { generateCode } = require("../helpers/helperFunction");
@@ -191,8 +192,8 @@ module.exports = {
         byMaterial.set(key, existing);
 
         const bagSize = row.lot?.bag_size != null ? Number(row.lot.bag_size) : null;
-        const wholeBags = bagSize ? Math.floor((balance * 1000) / bagSize + 0.0001) : null;
-        const bagQty = bagSize && wholeBags != null ? (wholeBags * bagSize) / 1000 : balance;
+        const wholeBags = bagSize ? Math.floor((balance * KG_PER_QTL) / bagSize + 0.0001) : null;
+        const bagQty = bagSize && wholeBags != null ? (wholeBags * bagSize) / KG_PER_QTL : balance;
         addBagLine(key, bagSize, wholeBags, bagQty);
       }
 
@@ -238,13 +239,13 @@ module.exports = {
           material_code: material?.material_code || null,
           qty: 0,
         };
-        const balance = Number(row.qty || 0) / 1000;
+        const balance = Number(row.qty || 0) / KG_PER_QTL;
         existing.qty += balance;
         byMaterial.set(materialId, existing);
 
         const packSize = packing.pack_size != null ? Number(packing.pack_size) : null;
-        const wholeBags = packSize ? Math.floor((balance * 1000) / packSize + 0.0001) : null;
-        const bagQty = packSize && wholeBags != null ? (wholeBags * packSize) / 1000 : balance;
+        const wholeBags = packSize ? Math.floor((balance * KG_PER_QTL) / packSize + 0.0001) : null;
+        const bagQty = packSize && wholeBags != null ? (wholeBags * packSize) / KG_PER_QTL : balance;
         addBagLine(materialId, packSize, wholeBags, bagQty);
       }
 
@@ -377,7 +378,7 @@ module.exports = {
           qty: 0,
         };
         existing.qty += balance;
-        if (bagSize) existing.bag_count += (balance * 1000) / bagSize;
+        if (bagSize) existing.bag_count += (balance * KG_PER_QTL) / bagSize;
         rawByKey.set(key, existing);
       }
       const rawStock = Array.from(rawByKey.values())
@@ -458,7 +459,7 @@ module.exports = {
             material_code: p.material_code,
             pack_size: p.pack_size,
             bag_count: p.bag_count,
-            qty_Qtl: Math.round((p.qty_kg / 1000) * 1000) / 1000,
+            qty_Qtl: Math.round((p.qty_kg / KG_PER_QTL) * 1000) / 1000,
           }))
           .filter((p) => p.qty_Qtl > 0.001)
           .sort((a, b) => b.qty_Qtl - a.qty_Qtl);

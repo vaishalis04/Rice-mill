@@ -14,6 +14,7 @@ import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
 import PdfPreviewModal from "../../components/PdfPreviewModal";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
+import { KG_PER_QTL } from "../../utils/units";
 
 const emptyForm = { gate_entry_id: "", loaded_qty: "", remarks: "" };
 
@@ -224,10 +225,9 @@ export default function LoadingPage() {
   // than an arbitrary typed number.
   // Bag Size is the only field in kg — its resulting quantity (like
   // everywhere else on this page: ordered/dispatched/remaining/loaded)
-  // is in Qtl. 1 Qtl = 1000 kg, rounded to 3 decimals so small bag
-  // counts still add up exactly (matches loading.controller.js's
+  // is in Qtl. 1 Qtl = 100 kg (utils/units.js), rounded to 3 decimals so small
+  // bag counts still add up exactly (matches loading.controller.js's
   // bagsToQtl on the backend).
-  const KG_PER_QTL = 1000;
   const round3 = (n) => Math.round(Number(n) * 1000) / 1000;
 
   const handleBagInputChange = (materialId, field, value) => {
@@ -868,9 +868,9 @@ export default function LoadingPage() {
           "Only sales (outbound) gate entries that are checked in and 'waiting_loading' show up here — that happens right after the first weighment.",
           "Select the gate entry, then choose which materials this truck is carrying.",
           "Enter Bag Size (kg) and No. of Bags for each selected material, same as Unloading — the quantity is computed automatically.",
-          "If a material isn't fully loaded, load the rest in a separate loading entry against the same truck (or the next one) once more bags are ready.",
-          "The truck can only go for its second weighment once every material on the Sales Order is fully loaded — a partial load leaves it at 'waiting_loading'.",
-          "Once all materials are fully loaded, the gate entry moves to 'waiting_second_weighment' and the Sales Order is automatically marked as 'dispatched'.",
+          "Each vehicle is loaded up to the quantity assigned to that vehicle, then proceeds to its second weighment—even if the overall Sales Order is only partially complete.",
+          "After second weighment, the vehicle can be parked and checked out. Any remaining Sales Order quantity stays open for another vehicle.",
+          "The Sales Order's dispatched quantity is cumulative across vehicles and is adjusted from the actual weighbridge net weight (within the allowed ±50 Qtl tolerance).",
           "You can also manually close the order if you want to stop loading the remaining quantity."
         ]}
       />

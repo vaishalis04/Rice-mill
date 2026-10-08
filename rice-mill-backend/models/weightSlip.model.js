@@ -7,7 +7,9 @@ WeightSlip.init(
   {
     id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
     gate_entry_id: { type: DataTypes.BIGINT, allowNull: false, references: { model: "gate_entry", key: "id" } },
-    slip_no: { type: DataTypes.STRING(30), allowNull: false, unique: "weight_slip_slip_no_unique" },
+    // A weighbridge slip number may be reused by different vehicles or
+    // weighments; gate_entry_id identifies the specific trip.
+    slip_no: { type: DataTypes.STRING(30), allowNull: false },
     gross_weight: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
     tare_weight: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
     net_weight: {
@@ -16,7 +18,7 @@ WeightSlip.init(
         const g = this.getDataValue("gross_weight");
         const t = this.getDataValue("tare_weight");
         if (g == null || t == null) return null;
-        return Number(g) - Number(t);
+        return Math.max(Number(g) - Number(t), 0);
       },
     }, // improvement: derive instead of storing a value that can drift
     weighed_at: { type: DataTypes.DATE },

@@ -1,3 +1,4 @@
+const { KG_PER_QTL } = require("../helpers/units");
   const createError = require("http-errors");
   const { Op } = require("sequelize");
   const {
@@ -86,7 +87,7 @@
 
     const calculatedQty = packSize * bagCount;
     const qtyInKg = qtyOverride != null && qtyOverride !== "" ? Number(qtyOverride) : calculatedQty;
-    const qtyInQtl = qtyInKg / 1000;
+    const qtyInQtl = qtyInKg / KG_PER_QTL;
 
     const resolvedProductionDate = productionDate || new Date().toISOString().slice(0, 10);
     const shelfDays = shelfLifeDays !== undefined ? Number(shelfLifeDays) : DEFAULT_SHELF_LIFE_DAYS;
@@ -267,7 +268,7 @@
       });
 
       const totalKg = results.reduce((sum, r) => sum + r.qty_in_kg, 0);
-      const totalQtl = totalKg / 1000;
+      const totalQtl = totalKg / KG_PER_QTL;
 
       res.status(201).json({
         success: true,

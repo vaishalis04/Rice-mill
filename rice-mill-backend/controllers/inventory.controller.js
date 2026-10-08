@@ -1,4 +1,5 @@
 const createError = require("http-errors");
+const { KG_PER_QTL } = require("../helpers/units");
 const { Op } = require("sequelize");
 const { Inventory, StockMovement, Lot, MaterialMaster, WarehouseMaster, FinishedGoods, Packing } = require("../models/index");
 
@@ -89,7 +90,7 @@ module.exports = {
         };
         const balance = Number(qty || 0);
         existing.qty_Qtl += balance;
-        if (bagSize) existing.bag_count += Math.floor((balance * 1000) / bagSize + 0.0001);
+        if (bagSize) existing.bag_count += Math.floor((balance * KG_PER_QTL) / bagSize + 0.0001);
         const moved = movedAt ? new Date(movedAt) : null;
         if (moved && (!existing.last_movement || moved > existing.last_movement)) existing.last_movement = moved;
         rowsByKey.set(key, existing);
@@ -150,7 +151,7 @@ module.exports = {
         if (!materialId) continue;
         const material = materialById.get(materialId);
         const bagSize = packing.pack_size != null ? Number(packing.pack_size) : null;
-        const qtyQtl = Number(row.qty || 0) / 1000;
+        const qtyQtl = Number(row.qty || 0) / KG_PER_QTL;
         addRow({
           stage: "fg",
           materialId,
@@ -173,7 +174,7 @@ module.exports = {
           // remaining weight so dispatched/partially consumed bags do not
           // remain counted as if all original bags were still present.
           bag_count: r.stage === "fg" && r.bag_size
-            ? Math.floor((r.qty_Qtl * 1000) / r.bag_size + 0.0001)
+            ? Math.floor((r.qty_Qtl * KG_PER_QTL) / r.bag_size + 0.0001)
             : r.bag_count != null ? Math.floor(r.bag_count) : null,
           last_movement: r.last_movement ? r.last_movement.toISOString() : null,
           idle_days: r.last_movement ? Math.floor((now - r.last_movement.getTime()) / 86400000) : null,

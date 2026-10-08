@@ -2,6 +2,7 @@ const createError = require("http-errors");
 const { Op } = require("sequelize");
 const { ProductionBatch, Lot, MaterialMaster, Inventory, Packing, FinishedGoods } = require("../models/index");
 const { generateBatchNo } = require("../helpers/helperFunction");
+const { KG_PER_QTL } = require("../helpers/units");
 
 // Simplified production flow (Module 11):
 // 1. Pick a warehouse -> see what materials/qty are available in it.
@@ -99,7 +100,7 @@ const getWarehousePhysicalRows = async ({ warehouse_id, material_id, transaction
       material_id: rowMaterialId,
       lot_id: lot?.id || packing?.lot_id || null,
       bag_size: packing?.pack_size != null ? Number(packing.pack_size) : null,
-      qty_qtl: Number(row.qty || 0) / 1000,
+      qty_qtl: Number(row.qty || 0) / KG_PER_QTL,
       as_of: row.ready_since,
       finishedGoods: row,
     });
@@ -138,7 +139,7 @@ const getAvailableWarehouseBags = async ({ warehouse_id, material_id, pack_size,
   const rows = await getWarehousePhysicalRows({ warehouse_id, material_id });
   let available = rows.reduce((sum, row) =>
     Number(row.bag_size) === size
-      ? sum + Math.floor((Number(row.qty_qtl || 0) * 1000) / size + 0.0001)
+      ? sum + Math.floor((Number(row.qty_qtl || 0) * KG_PER_QTL) / size + 0.0001)
       : sum, 0);
 
   const pendingWhere = { warehouse_id, batch_status: "pending", is_deleted: false };
@@ -150,7 +151,7 @@ const getAvailableWarehouseBags = async ({ warehouse_id, material_id, pack_size,
   for (const batch of pendingBatches) {
     for (const line of getBatchMaterialLines(batch)) {
       if (line.material_id === Number(material_id)) {
-        available -= (Number(line.input_qty || 0) * 1000) / size;
+        available -= (Number(line.input_qty || 0) * KG_PER_QTL) / size;
       }
     }
   }
@@ -166,7 +167,7 @@ const normalizeMaterials = (body) => {
       const bagCount = Number(m.bag_count);
       return {
         material_id: Number(m.material_id),
-        input_qty: m.input_qty !== undefined ? Number(m.input_qty) : (packSize * bagCount) / 1000,
+        input_qty: m.input_qty !== undefined ? Number(m.input_qty) : (packSize * bagCount) / KG_PER_QTL,
         pack_size: packSize,
         bag_count: bagCount,
       };
@@ -361,7 +362,7 @@ module.exports = {
       const resolvedBagCount = Number(bag_count);
       const resolvedInputQty = input_qty !== undefined
         ? Number(input_qty)
-        : (resolvedPackSize * resolvedBagCount) / 1000;
+        : (resolvedPackSize * resolvedBagCount) / KG_PER_QTL;
       if (!material_id || !(resolvedPackSize > 0) || !(resolvedBagCount > 0) || !(resolvedInputQty > 0)) {
         throw createError(400, "material_id, pack_size, and bag_count are required");
       }

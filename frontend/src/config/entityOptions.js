@@ -16,6 +16,7 @@ import {
   getPurchaseOrdersGroupedApi,
   createPurchaseOrderApi,
   getGateEntriesApi,
+  getAvailableGateVehiclesApi,
   getSamplingsApi,
   getLabTestsApi,
   getWarehouseSettingsApi,
@@ -55,21 +56,7 @@ export const ENTITY_OPTIONS = {
     },
   },
   vehicle: {
-    fetch: async () => {
-      const [vehicleRows, gateRows] = await Promise.all([
-        getVehiclesDriversApi("vehicle").then(unwrap),
-        getGateEntriesApi(undefined, undefined, 500).then(unwrap),
-      ]);
-      const exitedVehicleIds = new Set(
-        (gateRows || [])
-          .filter((row) => row.gate_status === "exited")
-          .map((row) => String(row.vehicle_id))
-          .filter(Boolean),
-      );
-      return (vehicleRows || []).filter(
-        (row) => !exitedVehicleIds.has(String(row.id)),
-      );
-    },
+    fetch: () => getAvailableGateVehiclesApi().then(unwrap),
     getLabel: (row) =>
       `${row.vehicle_no}${row.vehicle_type ? ` — ${row.vehicle_type}` : ""}`,
     quickCreate: {
@@ -247,7 +234,7 @@ export const ENTITY_OPTIONS = {
       label: "Purchase Order",
       fields: [
         { name: "po_no", label: "PO No.", required: true },
-        { name: "qty", label: "Qty (Tons)", type: "number", required: true },
+        { name: "qty", label: "Qty (Qtl)", type: "number", required: true },
         { name: "rate", label: "Rate", type: "number", required: true },
         { name: "po_date", label: "PO Date", type: "date" },
       ],

@@ -1,4 +1,5 @@
 const createError = require("http-errors");
+const { KG_PER_QTL } = require("../helpers/units");
 const PDFDocument = require("pdfkit");
 const {
   Lot, MaterialMaster, VarietyMaster, PlantMaster, WarehouseMaster, BinStackMaster, Stack,
@@ -152,11 +153,11 @@ module.exports = {
       ], width);
 
       // Accepted Quantity WT = Lot.qty, which this system already stores in
-      // Qtl as accepted_bags x bag_size / 1000 — shown here in kg to match
+      // Qtl as accepted_bags x bag_size / KG_PER_QTL (1 Qtl = 100 kg) — shown here in kg to match
       // the paper form's units.
       drawFieldRow(doc, [
         { label: "Accepted Quantity : (Bags)", value: lot.accepted_bags ?? "—" },
-        { label: "WT :", value: lot.qty != null ? `${(Number(lot.qty) * 1000).toFixed(0)} kg` : "—" },
+        { label: "WT :", value: lot.qty != null ? `${(Number(lot.qty) * KG_PER_QTL).toFixed(0)} kg` : "—" },
       ], width);
 
       doc.font("Helvetica-Bold").fontSize(10).text("Commodity Stack Details :-");

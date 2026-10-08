@@ -476,19 +476,11 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
                       → Go to the Loading tab to load this truck
                     </span>
                   )}
-                  {row.entry_type === "sales"
-                    ? row.gate_status === "parked" && (
-                        <button className="dt-btn" onClick={() => handleCheckout(row.id)}>
-                          Check-out
-                        </button>
-                      )
-                    : row.gate_status !== "waiting_token" &&
-                      row.gate_status !== "pending_details" &&
-                      row.gate_status !== "exited" && (
-                        <button className="dt-btn" onClick={() => handleCheckout(row.id)}>
-                          Check-out
-                        </button>
-                      )}
+                  {row.gate_status === "parked" && (
+                    <button className="dt-btn" onClick={() => handleCheckout(row.id)}>
+                      Check-out
+                    </button>
+                  )}
                   {/* Gate Pass: only once the truck has checked out. */}
                   {row.gate_status === "exited" && ["purchase", "sales", "other"].includes(row.entry_type) && (
                     <button className="dt-btn" onClick={() => setPassRow(row)}>

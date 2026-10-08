@@ -1,4 +1,5 @@
 const createError = require("http-errors");
+const { KG_PER_QTL, kgToQtl } = require("../helpers/units");
 const {
   Lot, Purchase, GateEntry, MaterialMaster, VarietyMaster, PurchaseOrder, Sampling, LabTest,
   Stack, WarehouseMaster, BinStackMaster, Inventory, User,WeightSlip, Vendor, Vehicle
@@ -139,8 +140,7 @@ module.exports = {
     
     if (!purchase) {
       // Create purchase from weight slip data
-      const netQty = weightSlip.tare_weight != null ? 
-        Number(weightSlip.gross_weight) - Number(weightSlip.tare_weight) : 0;
+      const netQty = weightSlip.net_weight != null ? kgToQtl(weightSlip.net_weight) : 0;
       
       // Get PO rate if available
       let resolvedRate = 0;
@@ -210,6 +210,7 @@ module.exports = {
               material_id: item.material_id,
               material: item.material,
               po_id: item.po_id,
+              qty: Number(item.qty || 0),
               purchaseOrder: item.purchaseOrder
             });
           }
@@ -295,7 +296,8 @@ module.exports = {
         materials: materials.map(m => ({
           id: m.material_id,
           name: m.material ? m.material.name : 'Unknown',
-          po_id: m.po_id
+          po_id: m.po_id,
+          assigned_qty: m.qty,
         }))
       },
     });
@@ -334,6 +336,40 @@ completeUnloading: async (req, res, next) => {
         400,
         "Please provide at least one material/lot to complete unloading"
       );
+    }
+
+    // A vehicle can be counted in several unloading passes (one lot at a
+    // time). Do not let the scale-out begin until every lot for this trip is
+    // complete. When this request finishes the last open lot, validate the
+    // cumulative accepted + rejected bags against the truck's assignment,
+    // allowing the same +/- 50 Qtl weighbridge adjustment window.
+    const gateEntryIds = [...new Set(items.map((item) => Number(item?.gate_entry_id || body.gate_entry_id)).filter(Boolean))];
+    if (gateEntryIds.length > 1) throw createError(400, "One unloading submission can only belong to one vehicle trip");
+    const unloadingGateEntryId = gateEntryIds[0];
+    let allLotsWillBeComplete = true;
+    if (unloadingGateEntryId) {
+      const entry = await GateEntry.findOne({ where: { id: unloadingGateEntryId, is_deleted: false } });
+      if (entry?.entry_type !== "purchase") throw createError(400, "Only Purchase gate entries can be unloaded into stock");
+      const purchase = await Purchase.findOne({ where: { gate_entry_id: unloadingGateEntryId, is_deleted: false } });
+      if (purchase) {
+        const tripLots = await Lot.findAll({ where: { purchase_id: purchase.id, is_deleted: false } });
+        const submittedLotIds = new Set(items.map((item) => Number(item?.lot_id)).filter(Boolean));
+        allLotsWillBeComplete = tripLots.every((lot) => lot.unloading_status === "completed" || submittedLotIds.has(Number(lot.id)));
+        if (allLotsWillBeComplete && Number(entry.expected_qty) > 0) {
+          const alreadyCounted = tripLots
+            .filter((lot) => lot.unloading_status === "completed" && !submittedLotIds.has(Number(lot.id)))
+            .reduce((sum, lot) => sum + Number(lot.qty || 0) + Number(lot.rejected_qty || 0), 0);
+          const thisSubmission = items.reduce((sum, item) => {
+            const kg = Number(item?.bag_size || 0) * (Number(item?.accepted_bags || 0) + Number(item?.rejected_bags || 0));
+            return sum + kgToQtl(kg);
+          }, 0);
+          const counted = Math.round((alreadyCounted + thisSubmission) * 1000) / 1000;
+          const difference = Math.round((counted - Number(entry.expected_qty)) * 1000) / 1000;
+          if (Math.abs(difference) > 50) {
+            throw createError(400, `Counted unloading is ${difference.toFixed(3)} Qtl from the assigned ${Number(entry.expected_qty).toFixed(3)} Qtl. Allowed adjustment is -50 to +50 Qtl.`);
+          }
+        }
+      }
     }
 
     const completedLots = [];
@@ -480,16 +516,15 @@ completeUnloading: async (req, res, next) => {
       // ==========================================================
       // bag_size is kg-per-bag, but every other table in this app
       // (Inventory.balance_qty, Lot.qty elsewhere, Stack.qty, Production's
-      // availability math, etc.) treats quantities as Qtl. bag_size *
-      // bag_count is a quantity in KG, so it must be divided by 1000
-      // before being stored anywhere as "qty" — this was previously
-      // missing, which inflated every downstream figure by 1000x.
+      // availability math, etc.) treats quantities as Qtl (1 Qtl = 100 kg).
+      // bag_size * bag_count is a quantity in KG, so it is divided by
+      // KG_PER_QTL (helpers/units.js) before being stored as "qty".
 
       const acceptedQtyKg = bagSizeNum * acceptedBagsNum;
-      const acceptedQty = Math.round((acceptedQtyKg / 1000) * 1000) / 1000;
+      const acceptedQty = Math.round((acceptedQtyKg / KG_PER_QTL) * 1000) / 1000;
 
       const rejectedQtyKg = bagSizeNum * rejectedBagsNum;
-      const rejectedQty = Math.round((rejectedQtyKg / 1000) * 1000) / 1000;
+      const rejectedQty = Math.round((rejectedQtyKg / KG_PER_QTL) * 1000) / 1000;
 
       // ==========================================================
       // 5. UPDATE LOT
@@ -580,8 +615,11 @@ completeUnloading: async (req, res, next) => {
         });
 
         if (gateEntry) {
+          const openLots = await Lot.count({
+            where: { purchase_id: purchase.id, is_deleted: false, unloading_status: "in_progress" },
+          });
           await gateEntry.update({
-            gate_status: "waiting_second_weighment",
+            gate_status: openLots === 0 ? "waiting_second_weighment" : "unloading",
             updated_by: req.user
               ? req.user.id
               : null,

@@ -4,12 +4,11 @@ const { Loading, GateEntry, SalesOrder, Customer, MaterialMaster, Vehicle, Drive
 const { generateLoadingNo } = require("../helpers/helperFunction");
 
 // Units on a Sales Order / Loading: bag SIZE is in kg, everything else
-// (ordered, dispatched, remaining, loaded, totals) is in Qtl. 1 Qtl = 1000 kg
-// here — the same definition the frontend's utils/units.js (KG_PER_TON) uses
-// for Unloading/Stock, so Loading lines up with the rest of the app. Rounded
-// to 3 decimals (1 kg = 0.001 Qtl exactly) so small bag counts still add up
+// (ordered, dispatched, remaining, loaded, totals) is in Qtl. 1 Qtl = 100 kg —
+// the one definition in helpers/units.js, shared with the whole app. Rounded
+// to 3 decimals (1 kg = 0.01 Qtl exactly) so small bag counts still add up
 // and "fully loaded" lands on exactly zero remaining.
-const KG_PER_QTL = 1000;
+const { KG_PER_QTL } = require("../helpers/units");
 const round3 = (n) => Math.round(Number(n) * 1000) / 1000;
 const bagsToQtl = (bagSizeKg, bags) => round3((Number(bagSizeKg) * Number(bags)) / KG_PER_QTL);
 
@@ -230,6 +229,22 @@ create: async (req, res, next) => {
       if (!junctionRecord) {
         throw createError(400, `Material ${material_id} in Sales Order ${so_id} is not linked to this gate entry`);
       }
+
+      const previousLoadings = await Loading.findAll({
+        where: { gate_entry_id: gateEntry.id, so_id, is_deleted: false },
+        attributes: ["items"],
+      });
+      let alreadyLoadedOnThisTrip = 0;
+      previousLoadings.forEach((loading) => {
+        const priorLines = parseItemsField(loading.items);
+        alreadyLoadedOnThisTrip += priorLines
+          .filter((line) => Number(line.so_id || so_id) === Number(so_id) && Number(line.material_id) === Number(material_id))
+          .reduce((sum, line) => sum + Number(line.qty || 0), 0);
+      });
+      const assignmentRemaining = Math.max(0, round3(Number(junctionRecord.qty || 0) - alreadyLoadedOnThisTrip));
+      if (round3(qty) > assignmentRemaining) {
+        throw createError(400, `Loaded qty (${round3(qty)} Qtl) exceeds this truck's assigned quantity (${assignmentRemaining} Qtl) for ${junctionRecord.material?.name || material_id}`);
+      }
       
       // Get the sales order
       const so = await SalesOrder.findOne({ 
@@ -346,14 +361,11 @@ create: async (req, res, next) => {
     // Check if ALL materials are fully loaded
     const allMaterialsFullyLoaded = materialsStatus.every(m => m.remaining_qty <= 0);
 
-    // This is the crux of the whole flow: the gate entry only moves on to
-    // 'waiting_second_weighment' (and can go for its second weighment) once
-    // EVERY material on the Sales Order is fully loaded. A partial load
-    // (any material still short) leaves it at 'waiting_loading' — another
-    // loading pass can be recorded against the same gate entry (see the
-    // removed "already exists" check above) until it's complete.
+    // This vehicle is weighed out after its own load, even when its part of
+    // the overall SO is partial. The SO stays allocated and its remaining
+    // quantity is available to assign to another vehicle.
     await gateEntry.update({
-      gate_status: allMaterialsFullyLoaded ? "waiting_second_weighment" : "waiting_loading",
+      gate_status: "waiting_second_weighment",
       updated_by: req.user ? req.user.id : null
     });
     
@@ -404,8 +416,8 @@ create: async (req, res, next) => {
     res.status(201).json({
       success: true,
       msg: allMaterialsFullyLoaded
-        ? `Loading recorded — Sales Order ${so.so_no} is now fully loaded; the gate entry can proceed to its second weighment.`
-        : `Loading recorded — Sales Order ${so.so_no} still has remaining quantity; the gate entry stays at 'waiting_loading' until it's fully loaded.`,
+        ? `Loading recorded — Sales Order ${so.so_no} is fully loaded. This vehicle can proceed to its second weighment.`
+        : `Partial loading recorded — ${newRemainingQty.toFixed(3)} Qtl remains on Sales Order ${so.so_no}. This vehicle can proceed to its second weighment; assign the balance to another vehicle.`,
       data: created,
       results: results,
       all_fully_loaded: allMaterialsFullyLoaded

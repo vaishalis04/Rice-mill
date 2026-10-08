@@ -1,4 +1,5 @@
 const { Op } = require("sequelize");
+const { kgToQtl } = require("../helpers/units");
 const {
   GateEntry, Purchase, LabTest, Sampling, ProductionBatch, FinishedGoods,
   SalesOrder, Dispatch,
@@ -61,10 +62,10 @@ module.exports = {
         success: true,
         data: {
           trucks_at_gate: trucksAtGate,
-          today_intake_qty: Number(todayIntakeQty) || 0,
+          today_intake_qty: kgToQtl(todayIntakeQty), // Purchase.final_qty is the weighbridge net weight in kg; the dashboard shows Qtl
           lab_rejection_rate: labTestsToday > 0 ? Number(((labRejectedToday / labTestsToday) * 100).toFixed(2)) : 0,
           active_batches: activeBatches,
-          fg_stock_qty: Number(fgStockQty) || 0,
+          fg_stock_qty: kgToQtl(fgStockQty), // FinishedGoods.qty is kg; the dashboard shows Qtl
           pending_dispatch_count: pendingDispatchCount,
           today_dispatch_value: Number(today_dispatch_value.toFixed(2)),
         },
@@ -91,7 +92,7 @@ module.exports = {
 
         // eslint-disable-next-line no-await-in-loop
         const qty = await Purchase.sum("final_qty", { where: { ...plantWhere, is_deleted: false, purchase_date: dateStr } });
-        results.push({ date: dateStr, intake_qty: Number(qty) || 0 });
+        results.push({ date: dateStr, intake_qty: kgToQtl(qty) }); // kg -> Qtl
       }
 
       res.status(200).json({ success: true, data: results });

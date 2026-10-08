@@ -9,6 +9,7 @@ import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
+import { KG_PER_QTL, SCALE_TOLERANCE_QTL } from "../../utils/units";
 
 const emptyForm = {
   gate_entry_id: "",
@@ -46,6 +47,7 @@ export default function WeighbridgePage() {
 
   const selectedGateEntry = getGateEntryRow(form.gate_entry_id);
   const isOtherEntry = selectedGateEntry?.entry_type === "other";
+  const isPurchaseEntry = selectedGateEntry?.entry_type === "purchase";
   const isSecondWeight = selectedGateEntry?.gate_status === "waiting_second_weighment";
   const isFirstWeight = selectedGateEntry?.gate_status === "waiting_weighment" || 
                         selectedGateEntry?.gate_status === "accepted";
@@ -70,8 +72,32 @@ export default function WeighbridgePage() {
     const g = parseFloat(form.gross_weight);
     const t = parseFloat(form.tare_weight);
     if (isNaN(g) || isNaN(t)) return null;
-    return g - t;
-  }, [form.gross_weight, form.tare_weight]);
+    return Math.max(isPurchaseEntry && isSecondWeight ? t - g : g - t, 0);
+  }, [form.gross_weight, form.tare_weight, isPurchaseEntry, isSecondWeight]);
+
+  // Second weighment: compare the scale net (kg -> Qtl) with what was recorded at
+  // loading / unloading. The backend refuses a difference beyond +/- SCALE_TOLERANCE_QTL,
+  // so warn here BEFORE the operator submits.
+  const toleranceCheck = useMemo(() => {
+    if (!isSecondWeight || liveNetWeight === null || !existingFirstSlip?.trip_activity) return null;
+    const type = selectedGateEntry?.entry_type;
+    const recordedQtl =
+      type === "sales"
+        ? Number(existingFirstSlip.trip_activity.loaded_qty || 0)
+        : type === "purchase"
+          ? Number(existingFirstSlip.trip_activity.unloaded_qty || 0)
+          : null;
+    if (recordedQtl === null) return null;
+    const scaleQtl = liveNetWeight / KG_PER_QTL;
+    const diff = scaleQtl - recordedQtl;
+    return {
+      type,
+      recordedQtl,
+      scaleQtl,
+      diff,
+      ok: Math.abs(diff) <= SCALE_TOLERANCE_QTL,
+    };
+  }, [isSecondWeight, liveNetWeight, existingFirstSlip, selectedGateEntry]);
 
   // Load existing slip data when gate entry changes
   const loadExistingSlip = async (gateEntryId) => {
@@ -250,16 +276,6 @@ export default function WeighbridgePage() {
           return;
         }
         payload.tare_weight = tareVal;
-        
-        // Validate second weight > first weight
-        if (existingFirstSlip) {
-          // const firstWeight = parseFloat(existingFirstSlip.gross_weight);
-          // if (grossVal <= firstWeight) {
-          //   setError(`Second weight must be greater than first weight (${firstWeight.toFixed(2)})`);
-          //   setIsSubmitting(false);
-          //   return;
-          // }
-        }
       } else if (form.tare_weight !== "" && form.tare_weight != null) {
         // BULK CREATE - both weights provided at once
         const tareVal = parseFloat(form.tare_weight);
@@ -270,13 +286,7 @@ export default function WeighbridgePage() {
         }
         payload.tare_weight = tareVal;
         
-        // Validate net weight is positive
-        const netWeight = grossVal - tareVal;
-        if (netWeight <= 0) {
-          setError("Net weight must be positive. Gross weight must be greater than tare weight");
-          setIsSubmitting(false);
-          return;
-        }
+        // The scale order may be reversed; net is never a negative value.
       }
       // If tare_weight is empty, it's first weight only
 
@@ -299,13 +309,17 @@ export default function WeighbridgePage() {
       // Show appropriate message based on response
       if (response.data?.data?.isFirstWeight) {
         setInfo(
-          "✅ First weight recorded! Gate entry moved to waiting_second_weighment. Enter second weight when ready."
+          ge?.entry_type === "sales"
+            ? "✅ First weight recorded! The truck is ready for partial/full loading; record the second weight after loading."
+            : "✅ First weight recorded! Complete unloading before recording the second weight."
         );
       } else if (response.data?.data?.isSecondWeight) {
         setInfo(
           isOtherEntry
             ? "✅ Second weight recorded! Gate entry moved to parked."
-            : "✅ Second weight recorded! Purchase finalized and gate entry moved to parked."
+            : ge?.entry_type === "sales"
+              ? "✅ Second weight recorded! This truck is parked; any remaining Sales Order quantity is available for the next vehicle."
+              : "✅ Second weight recorded! Purchase/PO balance updated and gate entry moved to parked."
         );
       } else {
         // Bulk create
@@ -324,7 +338,10 @@ export default function WeighbridgePage() {
       gateEntries.refetch();
       
     } catch (err) {
-      const errorMsg = err.response?.data?.message || err.message || "Save failed";
+      // The backend sends its reason in `msg` (e.g. the +/- tolerance message);
+      // showing err.message would only say "Request failed with status code 400".
+      const errorMsg =
+        err.response?.data?.msg || err.response?.data?.message || err.message || "Save failed";
       setError(errorMsg);
     } finally {
       setIsSubmitting(false);
@@ -477,6 +494,18 @@ export default function WeighbridgePage() {
                     First Weight: {parseFloat(existingFirstSlip.gross_weight).toFixed(2)}
                   </span>
                 )}
+                {existingFirstSlip?.trip_activity && (
+                  <div style={{ marginTop: 6, color: '#334155' }}>
+                    {selectedGateEntry?.entry_type === "sales" ? (
+                      <>
+                        Loaded this trip: <strong>{Number(existingFirstSlip.trip_activity.loaded_qty || 0).toFixed(3)} Qtl</strong>
+                        {Number(existingFirstSlip.trip_activity.expected_qty) > 0 && <> · Assigned: <strong>{Number(existingFirstSlip.trip_activity.expected_qty).toFixed(3)} Qtl</strong></>}
+                      </>
+                    ) : selectedGateEntry?.entry_type === "purchase" ? (
+                      <>Unloaded this trip: <strong>{Number(existingFirstSlip.trip_activity.unloaded_qty || 0).toFixed(3)} Qtl</strong></>
+                    ) : null}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -534,7 +563,7 @@ export default function WeighbridgePage() {
             />
             {isSecondWeight && existingFirstSlip && (
               <div style={{ fontSize: '12px', marginTop: '4px', color: '#3b82f6' }}>
-                💡 Must be greater than {parseFloat(existingFirstSlip.gross_weight).toFixed(2)}
+                💡 Either scale order is accepted; net weight is the absolute difference.
               </div>
             )}
             {!isSecondWeight && (
@@ -601,14 +630,23 @@ export default function WeighbridgePage() {
                 background: '#f8fafc',
               }}
             />
-            {/* {liveNetWeight !== null && liveNetWeight <= 0 && (
-              <div style={{ fontSize: '12px', marginTop: '4px', color: '#dc2626' }}>
-                ⚠️ Second weight must be greater than first weight
-              </div>
-            )} */}
-            {liveNetWeight !== null && liveNetWeight > 0 && (
+            {liveNetWeight !== null && (
               <div style={{ fontSize: '12px', marginTop: '4px', color: '#059669' }}>
-                ✅ Net weight: {liveNetWeight.toFixed(2)}
+                ✅ Net weight: {liveNetWeight.toFixed(2)} kg = {(liveNetWeight / KG_PER_QTL).toFixed(3)} Qtl (negative results are treated as 0 by the backend)
+              </div>
+            )}
+            {toleranceCheck && (
+              <div style={{
+                fontSize: '12px',
+                marginTop: '6px',
+                padding: '6px 8px',
+                borderRadius: '4px',
+                color: toleranceCheck.ok ? '#166534' : '#991b1b',
+                backgroundColor: toleranceCheck.ok ? '#dcfce7' : '#fee2e2',
+              }}>
+                {toleranceCheck.ok ? "✅ Within the allowed range" : "⛔ Outside the allowed range — the second weight will be refused"}
+                : scale {toleranceCheck.scaleQtl.toFixed(3)} Qtl vs {toleranceCheck.type === "sales" ? "loaded" : "unloaded"} {toleranceCheck.recordedQtl.toFixed(3)} Qtl
+                {" "}(Δ {toleranceCheck.diff >= 0 ? "+" : ""}{toleranceCheck.diff.toFixed(3)} Qtl; allowed ±{SCALE_TOLERANCE_QTL} Qtl)
               </div>
             )}
           </div>
@@ -657,7 +695,7 @@ export default function WeighbridgePage() {
                 }}
               />
               <div style={{ fontSize: '12px', marginTop: '4px', color: '#6b7280' }}>
-                💡 Rate per unit weight
+                💡 Rate per Qtl
               </div>
             </div>
           )}
@@ -855,20 +893,35 @@ export default function WeighbridgePage() {
             key: "net_weight",
             label: "Net Wt.",
             render: (row) => {
-              let net = row.net_weight;
-              if (net === null || net === undefined) {
-                const gross = parseFloat(row.gross_weight);
-                const tare = parseFloat(row.tare_weight);
-                if (!isNaN(gross) && !isNaN(tare)) {
-                  net = gross - tare;
-                } else {
-                  return "—";
-                }
-              }
+              const gross = parseFloat(row.gross_weight);
+              const tare = parseFloat(row.tare_weight);
+              const net = Number.isFinite(gross) && Number.isFinite(tare) ? Math.max(gross - tare, 0) : null;
+              if (net === null) return "—";
               const val = parseFloat(net);
               return !isNaN(val) ? (
                 <strong style={{ color: '#1d4ed8' }}>{val.toFixed(2)}</strong>
               ) : "—";
+            },
+          },
+          {
+            key: "trip_activity",
+            label: "Trip Load / Unload",
+            render: (row) => {
+              const activity = row.trip_activity || {};
+              const type = row.gateEntry?.entry_type;
+              const actualKg = row.net_weight == null ? null : Math.max(Number(row.net_weight), 0);
+              const actualQtl = actualKg == null ? null : actualKg / KG_PER_QTL;
+              const recordedQtl = type === "sales" ? Number(activity.loaded_qty || 0) : Number(activity.unloaded_qty || 0);
+              const title = type === "sales" ? "Loaded" : type === "purchase" ? "Unloaded" : "Handled";
+              const difference = actualQtl == null ? null : actualQtl - recordedQtl;
+              return (
+                <div style={{ minWidth: 135 }}>
+                  <div><strong>{title}:</strong> {recordedQtl.toFixed(3)} Qtl</div>
+                  {actualQtl != null && <div style={{ color: Math.abs(difference) <= SCALE_TOLERANCE_QTL ? "#15803d" : "#b91c1c", fontSize: 12 }}>
+                    Scale {actualQtl.toFixed(3)} Qtl · Δ {difference >= 0 ? "+" : ""}{difference.toFixed(3)}
+                  </div>}
+                </div>
+              );
             },
           },
           {
@@ -935,6 +988,7 @@ export default function WeighbridgePage() {
         tips={[
           "💡 The tare weight auto-fills from the same vehicle's previous weighing to save time.",
           "💡 Net weight is calculated live as you type - no manual calculation needed.",
+          `💡 The scale net weight (kg ÷ ${KG_PER_QTL} = Qtl) may be up to ±${SCALE_TOLERANCE_QTL} Qtl more or less than the loaded / unloaded quantity; the form tells you before you submit if it is outside that range.`,
           "💡 Purchase entries require a rate (from PO or manual entry) to create the Purchase record.",
           "💡 Empty/Misc entries skip purchase creation and go directly to parked.",
           "💡 You can edit a weight slip to correct weights, but purchase records may need manual adjustment.",

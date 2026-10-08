@@ -1,4 +1,5 @@
 const createError = require("http-errors");
+const { KG_PER_QTL } = require("../helpers/units");
 const { Op } = require("sequelize");
 const PDFDocument = require("pdfkit");
 const sequelize = require("../config/db");
@@ -205,7 +206,7 @@ module.exports = {
           ? await FinishedGoods.findAll({ where: { packing_id: { [Op.in]: packings.map((p) => p.id) }, is_deleted: false }, attributes: ["packing_id", "qty"] })
           : [];
         const qtyByPacking = new Map();
-        fgs.forEach((f) => qtyByPacking.set(Number(f.packing_id), (qtyByPacking.get(Number(f.packing_id)) || 0) + Number(f.qty || 0) / 1000));
+        fgs.forEach((f) => qtyByPacking.set(Number(f.packing_id), (qtyByPacking.get(Number(f.packing_id)) || 0) + Number(f.qty || 0) / KG_PER_QTL));
         const out = new Map();
         packings.forEach((p) => {
           const cur = out.get(Number(p.batch_id)) || { qty: 0, packings: 0 };
@@ -266,7 +267,7 @@ module.exports = {
           list.push(packing);
           packingByBatch.set(Number(packing.batch_id), list);
         });
-        const qtyByPacking = new Map(finishedGoods.map((row) => [Number(row.packing_id), Number(row.qty || 0) / 1000]));
+        const qtyByPacking = new Map(finishedGoods.map((row) => [Number(row.packing_id), Number(row.qty || 0) / KG_PER_QTL]));
 
         let totalInput = 0;
         let totalAccepted = 0;
@@ -346,7 +347,7 @@ module.exports = {
         return renderTableReport(res, {
           filename: `production-summary-${from || "all"}${to ? `_to_${to}` : ""}.pdf`,
           title: "PRODUCTION SUMMARY REPORT",
-          subtitleLines: [`Production date: ${fromLabel} to ${toLabel}`, "Stock quantities are in Qtl (metric tons)."],
+          subtitleLines: [`Production date: ${fromLabel} to ${toLabel}`, "Stock quantities are in Qtl (1 Qtl = 100 kg)."],
           plant,
           kpis: [
             { label: "Batches", value: String(batches.length) },
@@ -580,7 +581,7 @@ module.exports = {
   // Trucks (advisory_location_note / advisory_position_note / advisory_date)
   // — a direct field read, not a guessed match, since the row itself IS
   // that gate entry now.
-  // "MT" (Balance Weight, in metric tons) is strictly the weighbridge first
+  // "Qtl" (Balance Weight, in quintals: 1 Qtl = 100 kg) is strictly the weighbridge first
   // weighment minus second weighment (gross - tare) off the WeightSlip tied
   // to this exact gate entry (GateEntry.id === WeightSlip.gate_entry_id) —
   // never a manually recorded quantity. No matching weighbridge slip => "—".
@@ -647,7 +648,7 @@ module.exports = {
       const doc = new PDFDocument({ size: "A4", margin: 28, layout: "landscape" });
       doc.pipe(res);
 
-      const headers = ["S.No", "Date", "Vehicle No.", "Item", "To", "Lot No.", "MT (Balance Wt.)", "Mill Name", "Party Name", "Location", "Position", "Unloading Date", "Driver Name"];
+      const headers = ["S.No", "Date", "Vehicle No.", "Item", "To", "Lot No.", "Qtl (Balance Wt.)", "Mill Name", "Party Name", "Location", "Position", "Unloading Date", "Driver Name"];
       const colWidths = [24, 50, 60, 42, 50, 42, 58, 52, 100, 78, 60, 58, 78];
       const startX = doc.page.margins.left;
       const tableWidth = colWidths.reduce((a, b) => a + b, 0);
@@ -710,7 +711,7 @@ module.exports = {
             materialNameFor(ge),
             "—", // To — no destination field tracked against GateEntry in this system
             "—", // Lot No. — raw outward gate exits aren't tied to a source lot
-            balanceWeightKg != null ? (Number(balanceWeightKg) / 1000).toFixed(2) : "—",
+            balanceWeightKg != null ? (Number(balanceWeightKg) / KG_PER_QTL).toFixed(2) : "—",
             ge.plant?.name || "—",
             ge.customer?.name || "—",
             ge.advisory_location_note || "—",
@@ -735,7 +736,7 @@ module.exports = {
 
       doc.moveDown(1.5);
       doc.font("Helvetica").fontSize(7.5).fillColor("#666").text(
-        "G.P. No. is not shown. Location, Position and Unloading Date come from Admin > Advisory Trucks for this gate entry — \"—\" until an admin fills them in there. MT is the weighbridge Balance Weight (first weighment minus second weighment) for the weighbridge slip tied to this gate entry; it shows \"—\" when no weighbridge slip exists yet. Lot No. isn't tracked for outward gate exits.",
+        "G.P. No. is not shown. Location, Position and Unloading Date come from Admin > Advisory Trucks for this gate entry — \"—\" until an admin fills them in there. Qtl is the weighbridge Balance Weight (first weighment minus second weighment, kg / 100) for the weighbridge slip tied to this gate entry; it shows \"—\" when no weighbridge slip exists yet. Lot No. isn't tracked for outward gate exits.",
         { width: tableWidth }
       );
 

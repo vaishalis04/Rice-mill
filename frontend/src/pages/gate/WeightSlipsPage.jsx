@@ -232,7 +232,7 @@ export default function WeightSlipsPage() {
             key: "net_weight",
             label: "Net Wt",
             render: (row) =>
-              row.net_weight ?? row.gross_weight - row.tare_weight,
+              Math.max(Number(row.gross_weight) - Number(row.tare_weight), 0),
           },
           { key: "weighed_at", label: "Weighed At" },
         ]}
