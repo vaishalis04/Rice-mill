@@ -17,6 +17,7 @@ import PaymentSettlementPage from "../advisory/PaymentSettlementPage";
 import UserApprovalsPage from "../admin/UserApprovalsPage";
 import { usePermissionFilteredTabs } from "../../hooks/usePermissionFilteredTabs";
 import { permissionCode } from "../../config/pageCatalog";
+import "../../styles/admin-theme.css";
 
 const ALL_TABS = [
   { key: "dashboard", label: "Dashboard" }, // no code — always visible, it's just the landing overview
@@ -41,7 +42,7 @@ export default function AdminDashboard() {
   const tabs = usePermissionFilteredTabs(ALL_TABS);
 
   return (
-    <DashboardLayout title="Admin Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab}>
+    <DashboardLayout title="Admin Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab} theme="admin">
       {tab === "dashboard" && <AdminAnalyticsPage />}
       {tab === "master" && <MasterSettingsPage />}
       {tab === "vehicles" && <VehiclesDriversPage />}

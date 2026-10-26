@@ -26,7 +26,7 @@ import html2canvas from "html2canvas";
 import "../../components/DataTable.css";
 import "./AdminAnalyticsPage.css";
 
-const PIE_COLORS = ["#3b6fb4", "#8a7f5a", "#2b2b2b", "#b7c3d6"];
+const PIE_COLORS = ["#0f766e", "#c8b98f", "#14201d", "#8fc9c0"];
 
 function KpiCard({ label, value, delta, deltaLabel }) {
   return (
@@ -209,8 +209,8 @@ export default function AdminAnalyticsPage() {
                     <YAxis yAxisId="right" orientation="right" unit="%" />
                     <Tooltip />
                     <Legend />
-                    <Bar yAxisId="left" dataKey="input_qty" fill="#3b6fb4" name="Input Qty (Qtl)" />
-                    <Bar yAxisId="left" dataKey="output_qty" fill="#8a7f5a" name="Output Qty (Qtl)" />
+                    <Bar yAxisId="left" dataKey="input_qty" fill="#0f766e" name="Input Qty (Qtl)" />
+                    <Bar yAxisId="left" dataKey="output_qty" fill="#c8b98f" name="Output Qty (Qtl)" />
                     <Line yAxisId="right" type="monotone" dataKey="recovery_pct" stroke="#2b2b2b" name="Recovery %" />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -231,7 +231,7 @@ export default function AdminAnalyticsPage() {
                         style={{
                           width: 40,
                           height: 140,
-                          background: "#eef0f3",
+                          background: "#efe8d5",
                           borderRadius: 6,
                           display: "flex",
                           alignItems: "flex-end",
@@ -239,7 +239,7 @@ export default function AdminAnalyticsPage() {
                           overflow: "hidden",
                         }}
                       >
-                        <div style={{ width: "100%", height: `${item.pct}%`, background: "#3b6fb4" }} />
+                        <div style={{ width: "100%", height: `${item.pct}%`, background: "#0f766e" }} />
                       </div>
                       <div style={{ fontWeight: 700, marginTop: 8 }}>{item.pct}%</div>
                       <div style={{ fontSize: 12 }}>{item.qty} qtl</div>
@@ -313,7 +313,7 @@ export default function AdminAnalyticsPage() {
                     {fleet.top_drivers.map((d) => (
                       <li key={d.license_no} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
                         <span>{d.name}</span>
-                        <span style={{ color: "#3b6fb4", fontWeight: 600 }}>{d.trips} trips</span>
+                        <span style={{ color: "#0f766e", fontWeight: 600 }}>{d.trips} trips</span>
                       </li>
                     ))}
                     {fleet.top_drivers.length === 0 && <li>No dispatch trips recorded yet.</li>}

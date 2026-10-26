@@ -16,6 +16,11 @@ import "./Dashboard.css";
  * left-hand sidebar (desktop) that collapses into a hamburger-triggered
  * slide-in drawer on mobile. Dashboards with only one section (e.g.
  * Dispatch) can omit `tabs` entirely and just pass `children`.
+ *
+ * `theme` is optional and purely visual: when set (e.g. "admin") the shell
+ * gets a `theme-<name>` class that a role-specific stylesheet can hook into
+ * (see styles/admin-theme.css), plus a brand block at the top of the sidebar.
+ * Left out, the shell renders exactly as before.
  */
 export default function DashboardLayout({
   title,
@@ -24,6 +29,7 @@ export default function DashboardLayout({
   onTabChange,
   children,
   roleLabel,
+  theme,
 }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -41,7 +47,7 @@ export default function DashboardLayout({
   };
 
   return (
-    <div className="dash-wrapper">
+    <div className={`dash-wrapper${theme ? ` theme-${theme}` : ""}`}>
       <header className="dash-header">
         <div className="dash-header-left">
           {hasSidebar && (
@@ -80,6 +86,12 @@ export default function DashboardLayout({
               />
             )}
             <nav className={`dash-sidebar ${sidebarOpen ? "open" : ""}`}>
+              {theme && (
+                <div className="dash-brand">
+                  <span className="dash-brand-mark">RM</span>
+                  <span className="dash-brand-name">Rice Mill ERP</span>
+                </div>
+              )}
               <div className="dash-sidebar-head">
                 <span>Menu</span>
                 <button
