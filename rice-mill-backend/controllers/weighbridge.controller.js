@@ -3,6 +3,7 @@ const { Op } = require("sequelize");
 const sequelize = require("../config/db");
 const { WeightSlip, GateEntry, Purchase, PurchaseOrder, User, Vendor, Customer, Vehicle, MaterialMaster, SalesOrder, Loading, GateEntryPurchaseOrder, Lot } = require("../models/index");
 const { kgToQtl, SCALE_TOLERANCE_QTL } = require("../helpers/units");
+const { resyncItems: resyncLoadingStock } = require("../helpers/loadingStock.helper");
 const round3 = (n) => Math.round((Number(n) || 0) * 1000) / 1000;
 // The scale may read this many Qtl more or less than the recorded load / unload (helpers/units.js).
 const MAX_SCALE_ADJUSTMENT_QTL = SCALE_TOLERANCE_QTL;
@@ -73,7 +74,9 @@ const reconcileSalesLoading = async ({ gateEntryId, actualQtyQtl, userId, transa
   for (const [soId, lines] of bySo) {
     const so = await SalesOrder.findOne({ where: { id: soId, is_deleted: false }, transaction });
     if (!so) throw createError(404, `Sales Order ${soId} was not found during weighbridge reconciliation`);
-    const items = parseJsonArray(so.items);
+    // Work on COPIES of the lines: editing so.items in place is not seen as a change by
+    // Sequelize, so the corrected per-line dispatched_qty would not be saved (only the total was).
+    const items = parseJsonArray(so.items).map((item) => ({ ...item }));
     for (const line of lines) {
       const item = items.find((candidate) => Number(candidate.material_id) === line.material_id);
       if (!item) throw createError(400, `Material ${line.material_id} is missing from Sales Order ${so.so_no}`);
@@ -105,8 +108,11 @@ const reconcileSalesLoading = async ({ gateEntryId, actualQtyQtl, userId, transa
       return { ...line, qty: round3(Number(line.qty || 0) * ratio) };
     });
     const loadedQty = round3(adjustedLines.reduce((sum, line) => sum + Number(line.qty || 0), 0));
+    // The warehouse stock this load took follows the corrected quantity, so stock,
+    // Sales Order and loading record all keep telling the same story.
+    const restockedLines = await resyncLoadingStock({ oldItems: lines, newItems: adjustedLines, userId, transaction });
     await loading.update({
-      items: adjustedLines,
+      items: restockedLines,
       loaded_qty: loadedQty,
       updated_by: userId,
     }, { transaction });

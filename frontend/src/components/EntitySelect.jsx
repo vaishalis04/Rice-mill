@@ -27,7 +27,7 @@ export default function EntitySelect({
   // forgetting to write its own status filter.
   const HIDDEN_GATE_STATUSES = ["exited", "cancelled"];
   const combinedFilter =
-    entity === "gate_entry"
+    entity === "gate_entry" || entity === "gate_entry_party"
       ? (row) =>
           !HIDDEN_GATE_STATUSES.includes(row.gate_status) &&
           (filter ? filter(row) : true)

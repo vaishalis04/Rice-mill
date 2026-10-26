@@ -1,10 +1,17 @@
 const router = require("express").Router();
 const Controller = require("../controllers/paymentSettlement.controller");
-const { attachUser, authorize } = require("../middlewares/auth.middleware");
+const { attachUser, authorizeRoleOrModule } = require("../middlewares/auth.middleware");
 const { verifyAccessToken } = require("../helpers/jwt.helper");
 
-// Admin and the new Advisory role — same access list as advisoryTruck.routes.js.
-router.use(verifyAccessToken, attachUser, authorize("admin", "advisory"));
+// Admin and the Advisory role (unchanged), plus any user / custom role that has
+// been granted the Payment Settlement page — either "Payment Settlement"
+// under Other Pages (admin.payment_settlement) or the Advisory dashboard's
+// "Payment Settlement Advice" (advisory.payment_settlement).
+router.use(
+  verifyAccessToken,
+  attachUser,
+  authorizeRoleOrModule(["admin", "advisory"], [], { codes: ["admin.payment_settlement", "advisory.payment_settlement"] })
+);
 
 // Auto-fetch: find the truck (by GP No. / SO No. / PO No. / vehicle / party) a
 // settlement is being made against, then pre-fill the form from it. Declared

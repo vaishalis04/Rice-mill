@@ -8,6 +8,7 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(["lab","purchase","admin","sales","gate","warehouse"], ["lab","purchase","sales","gate","warehouse"])); // Protected routes
 
 router.get("/",     Controller.getAll);
+router.get("/:id/pdf", Controller.pdf);
 router.get("/:id",  Controller.getById);
 router.post("/",    Controller.create);
 router.put("/:id",  Controller.update);

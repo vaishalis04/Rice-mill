@@ -5,6 +5,7 @@ const {
   ProductionBatch, Packing, FinishedGoods,
 } = require("../models/index");
 const { fmtQty, fmtCount, pad2 } = require("./reportPdf.helper");
+const { loadingStockEvents, loadedQtlByFinishedGoods } = require("./loadingStock.helper");
 const stamp = (t) => { const d = new Date(t); return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${String(d.getFullYear()).slice(-2)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
 
 // Material-flow ledger for the Stock Movement report (Admin > Reports > Inventory).
@@ -16,7 +17,7 @@ const stamp = (t) => { const d = new Date(t); return `${pad2(d.getDate())}-${pad
 //   INWARD       raw material received into a warehouse after unloading   (Vendor -> Warehouse)
 //   ISSUE        raw material drawn from a warehouse by a production batch (Warehouse -> Batch)
 //   PRODUCTION   packed goods a batch put into a warehouse                  (Batch -> Warehouse)
-//   DISPATCH     packed goods that left on a sales dispatch                 (Warehouse -> Customer)
+//   DISPATCH     stock that left on a sales truck loading (or a sales dispatch) (Warehouse -> Customer)
 //
 // and for each line: from, to, how much (Qtl + bags), the reference (lot / batch / challan)
 // and the quantity LEFT in that warehouse for that item + pack size right after it.
@@ -93,13 +94,15 @@ const loadFlowData = async () => {
   // customer / challan behind every dispatched pack
   const dispatchIds = [...new Set(fgRows.map((f) => Number(f.dispatch_id)).filter(Boolean))];
   const dispatches = dispatchIds.length ? await Dispatch.findAll({ where: { id: { [Op.in]: dispatchIds } } }) : [];
-  const soIds = [...new Set(dispatches.map((d) => Number(d.so_id)).filter(Boolean))];
+  // Stock taken out by sales-truck loadings (each names the warehouse it was loaded from)
+  const loadEvents = await loadingStockEvents();
+  const soIds = [...new Set([...dispatches.map((d) => Number(d.so_id)), ...loadEvents.map((e) => Number(e.so_id))].filter(Boolean))];
   const sos = soIds.length ? await SalesOrder.findAll({ where: { id: { [Op.in]: soIds } }, attributes: ["id", "so_no", "customer_id"] }) : [];
   const custIds = [...new Set(sos.map((s) => Number(s.customer_id)).filter(Boolean))];
   const customers = custIds.length ? await Customer.findAll({ where: { id: { [Op.in]: custIds } }, attributes: ["id", "name"] }) : [];
 
   return {
-    rawInv, fgRows, packings, packingById, batches,
+    rawInv, fgRows, packings, packingById, batches, loadEvents,
     lotById: new Map(inputLots.map((l) => [Number(l.id), l])),
     purchaseById: new Map(purchases.map((p) => [Number(p.id), p])),
     gateById: new Map(gates.map((g) => [Number(g.id), g])),
@@ -152,17 +155,22 @@ const buildEvents = (data, scope) => {
     (fgByBatch.get(bid) || fgByBatch.set(bid, []).get(bid)).push(fg);
   }
 
+  // Loading REDUCES FinishedGoods.qty, so what a packing run produced = what is left +
+  // what sales loadings took out of it (otherwise PRODUCTION would shrink with every load).
+  const loadedByFg = loadedQtlByFinishedGoods(data.loadEvents || []);
+
   for (const fg of data.fgRows) {
     const packing = data.packingById.get(Number(fg.packing_id));
     if (!packing || !packing.material_id) continue;
     const size = packing.pack_size != null ? Number(packing.pack_size) : null;
-    const qty = Number(fg.qty || 0) / KG_PER_QTL;
+    const current = Number(fg.qty || 0) / KG_PER_QTL;
+    const qty = r3(current + (loadedByFg.get(Number(fg.id)) || 0));
     if (!qty) continue;
     const k = keyOf("fg", fg.warehouse_id, packing.material_id, size);
     const batch = batchById.get(Number(packing.batch_id));
     const bags = size ? Math.floor((qty * KG_PER_QTL) / size + 0.0001) : null;
     const dispatched = fg.fg_status === "dispatched";
-    if (!dispatched) addLive(k, qty);
+    if (!dispatched) addLive(k, current);
     events.push({
       t: ts(fg.createdAt), type: "PRODUCTION", stage: "fg", warehouse_id: fg.warehouse_id, material_id: Number(packing.material_id), size, key: k,
       delta: qty, qty, bags,
@@ -181,6 +189,30 @@ const buildEvents = (data, scope) => {
         ref: [d?.challan_no, so?.so_no].filter(Boolean).join(" · ") || "—",
       });
     }
+  }
+
+  // ---- dispatch: stock taken out by sales-truck loadings ----
+  // One line per loading / warehouse / material / pack size — even when oldest-first
+  // stock-taking drew it from several packing runs.
+  const loadLines = new Map();
+  for (const e of data.loadEvents || []) {
+    const stage = e.kind === "raw" ? "raw" : "fg";
+    const k = keyOf(stage, e.warehouse_id, e.material_id, e.bag_size);
+    const lk = `${e.loading_id}|${k}`;
+    const cur = loadLines.get(lk);
+    if (cur) cur.qty_qtl = r3(cur.qty_qtl + e.qty_qtl);
+    else loadLines.set(lk, { ...e, stage, k, qty_qtl: r3(e.qty_qtl) });
+  }
+  for (const e of loadLines.values()) {
+    const so = e.so_id ? data.soById.get(Number(e.so_id)) : null;
+    const cust = so?.customer_id ? data.customerById.get(Number(so.customer_id)) : null;
+    events.push({
+      t: e.t, type: "DISPATCH", stage: e.stage, warehouse_id: e.warehouse_id, material_id: e.material_id, size: e.bag_size, key: e.k,
+      delta: -e.qty_qtl, qty: e.qty_qtl, bags: e.bag_size ? Math.floor((e.qty_qtl * KG_PER_QTL) / e.bag_size + 0.0001) : null,
+      from: whName(e.warehouse_id),
+      to: cust?.name || "Customer",
+      ref: [e.loading_no, so?.so_no].filter(Boolean).join(" · ") || "—",
+    });
   }
 
   // ---- issue: raw material a completed batch drew from its source warehouse ----

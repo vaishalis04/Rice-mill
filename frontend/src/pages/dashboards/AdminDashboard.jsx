@@ -13,6 +13,7 @@ import RolesPage from "../admin/RolesPage";
 import VisitorsPage from "../admin/VisitorsPage";
 import GateEntryAdminPage from "../admin/GateEntryAdminPage";
 import AdvisoryTrucksPage from "../admin/AdvisoryTrucksPage";
+import PaymentSettlementPage from "../advisory/PaymentSettlementPage";
 import UserApprovalsPage from "../admin/UserApprovalsPage";
 import { usePermissionFilteredTabs } from "../../hooks/usePermissionFilteredTabs";
 import { permissionCode } from "../../config/pageCatalog";
@@ -32,6 +33,7 @@ const ALL_TABS = [
   { key: "roles", label: "Roles & Permissions", code: permissionCode("admin", "roles") },
   { key: "gateEntry", label: "Gate Entry", code: permissionCode("admin", "gate_entry") },
   { key: "advisoryTrucks", label: "Advisory Trucks", code: permissionCode("admin", "advisory_trucks") },
+  { key: "paymentSettlement", label: "Payment Settlement", code: permissionCode("admin", "payment_settlement") },
 ];
 
 export default function AdminDashboard() {
@@ -45,15 +47,16 @@ export default function AdminDashboard() {
       {tab === "vehicles" && <VehiclesDriversPage />}
       {tab === "customers" && <CustomersPage />}
       {tab === "vendors" && <VendorsPage />}
+      {tab === "purchaseApproval" && <PurchaseOrderApprovalPage />}
+      {tab === "salesApproval" && <SalesOrderApprovalPage />}
       {tab === "visitors" && <VisitorsPage />}
       {tab === "users" && <UsersPage />}
       {tab === "userApprovals" && <UserApprovalsPage />}
       {tab === "reports" && <ReportsPage />}
-      {tab === "purchaseApproval" && <PurchaseOrderApprovalPage />}
-      {tab === "salesApproval" && <SalesOrderApprovalPage />}
       {tab === "roles" && <RolesPage />}
       {tab === "gateEntry" && <GateEntryAdminPage />}
       {tab === "advisoryTrucks" && <AdvisoryTrucksPage />}
+      {tab === "paymentSettlement" && <PaymentSettlementPage />}
     </DashboardLayout>
   );
 }

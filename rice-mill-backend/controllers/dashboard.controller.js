@@ -1,8 +1,8 @@
 const { Op } = require("sequelize");
-const { kgToQtl } = require("../helpers/units");
+const { kgToQtl, KG_PER_QTL } = require("../helpers/units");
 const {
   GateEntry, Purchase, LabTest, Sampling, ProductionBatch, FinishedGoods,
-  SalesOrder, Dispatch,
+  SalesOrder, Dispatch, Loading,
 } = require("../models/index");
 
 // Real-time KPIs (Module 24)
@@ -39,6 +39,7 @@ module.exports = {
         fgStockQty,
         pendingDispatchCount,
         todayDispatches,
+        todayLoadings,
       ] = await Promise.all([
         GateEntry.count({ where: { ...plantWhere, is_deleted: false, gate_status: { [Op.notIn]: ["exited"] } } }),
         Purchase.sum("final_qty", { where: { ...plantWhere, is_deleted: false, purchase_date: new Date().toISOString().slice(0, 10) } }),
@@ -51,9 +52,34 @@ module.exports = {
           where: { ...plantWhere, is_deleted: false, dispatch_time: todayRange },
           include: [{ association: "salesOrder", attributes: ["rate"] }],
         }),
+        // Sales trucks loaded today (the gate-based sales flow records loadings, not Dispatch rows)
+        Loading.findAll({
+          where: { ...plantWhere, is_deleted: false, loaded_at: todayRange },
+          attributes: ["id", "so_id", "items", "loaded_at"],
+        }),
       ]);
 
-      const today_dispatch_value = todayDispatches.reduce((sum, d) => {
+      // Value of what was loaded today: each line's Qtl -> kg x its Sales Order line rate (Rs / kg).
+      const loadingSoIds = [...new Set(todayLoadings.map((l) => Number(l.so_id)).filter(Boolean))];
+      const loadingSos = loadingSoIds.length
+        ? await SalesOrder.findAll({ where: { id: { [Op.in]: loadingSoIds } }, attributes: ["id", "rate", "items"] })
+        : [];
+      const asList = (v) => {
+        if (Array.isArray(v)) return v;
+        try { const p = JSON.parse(v); return Array.isArray(p) ? p : []; } catch (e) { return []; }
+      };
+      const soById = new Map(loadingSos.map((so) => [Number(so.id), so]));
+      const loadingValue = todayLoadings.reduce((total, l) => {
+        const so = soById.get(Number(l.so_id));
+        const soLines = asList(so?.items);
+        return total + asList(l.items).reduce((sum, line) => {
+          const soLine = soLines.find((it) => Number(it.material_id) === Number(line.material_id));
+          const rate = Number(soLine?.rate ?? so?.rate ?? 0);
+          return sum + Number(line.qty || 0) * KG_PER_QTL * rate;
+        }, 0);
+      }, 0);
+
+      const today_dispatch_value = loadingValue + todayDispatches.reduce((sum, d) => {
         const rate = d.salesOrder ? Number(d.salesOrder.rate) : 0;
         return sum + Number(d.dispatch_weight || 0) * rate;
       }, 0);

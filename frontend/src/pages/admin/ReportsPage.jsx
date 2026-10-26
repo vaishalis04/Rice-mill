@@ -8,6 +8,8 @@ import EntitySelect from "../../components/EntitySelect";
 import ModuleGuide from "../../components/ModuleGuide";
 import PdfPreviewModal from "../../components/PdfPreviewModal";
 import GateSummaryPanel from "../../components/GateSummaryPanel";
+import PartyOrdersPanel from "../../components/PartyOrdersPanel";
+import { useEntityLookup } from "../../hooks/useEntityLookup";
 import ProductionMovementModal from "../../components/ProductionMovementModal";
 import InventoryPage from "../warehouse/InventoryPage";
 
@@ -235,27 +237,81 @@ const DAILY_REPORTS = [
   },
 ];
 
+// Pick one OR MORE warehouses (nothing ticked = all). A small dropdown with a tick-list.
+function WarehouseMultiSelect({ plantId, value, onChange }) {
+  const warehouses = useEntityLookup("warehouse");
+  const options = warehouses.rows.filter((w) => !plantId || !w.plant_id || String(w.plant_id) === String(plantId));
+  const picked = new Set(value.map(String));
+  const toggleOne = (id) => {
+    const next = new Set(picked);
+    if (next.has(String(id))) next.delete(String(id));
+    else next.add(String(id));
+    onChange([...next]);
+  };
+  const names = options.filter((w) => picked.has(String(w.id))).map((w) => w.name);
+  const summary = !names.length ? "All warehouses" : names.length <= 2 ? names.join(", ") : `${names.length} warehouses selected`;
+  return (
+    <div className="sf-field">
+      <label>Warehouses (optional — all if none ticked)</label>
+      <details style={{ position: "relative" }}>
+        <summary
+          style={{ listStyle: "none", cursor: "pointer", padding: "9px 12px", border: "1px solid #cbd5e1", borderRadius: 8, background: "#fff", display: "flex", justifyContent: "space-between", gap: 8 }}
+        >
+          <span>{summary}</span>
+          <span aria-hidden="true">▾</span>
+        </summary>
+        <div
+          style={{ position: "absolute", zIndex: 20, left: 0, right: 0, marginTop: 4, background: "#fff", border: "1px solid #cbd5e1", borderRadius: 8, boxShadow: "0 6px 18px rgba(15,23,42,.12)", maxHeight: 260, overflowY: "auto", padding: 8 }}
+        >
+          <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+            <button type="button" className="dt-btn" onClick={() => onChange(options.map((w) => String(w.id)))}>Select all</button>
+            <button type="button" className="dt-btn" onClick={() => onChange([])}>Clear</button>
+          </div>
+          {options.length === 0 && <div style={{ color: "#64748b", fontSize: "0.85rem" }}>No warehouses.</div>}
+          {options.map((w) => (
+            <label key={w.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 2px", cursor: "pointer", fontSize: "0.9rem" }}>
+              <input type="checkbox" checked={picked.has(String(w.id))} onChange={() => toggleOne(w.id)} />
+              {w.name}
+            </label>
+          ))}
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function DailyReportTab() {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const today = new Date().toISOString().slice(0, 10);
+  const [from, setFrom] = useState(today);
+  const [to, setTo] = useState(today);
   const [plantId, setPlantId] = useState("");
-  const [warehouseId, setWarehouseId] = useState("");
+  const [warehouseIds, setWarehouseIds] = useState([]); // empty = all warehouses
   const [busy, setBusy] = useState(""); // report type being generated
   const [error, setError] = useState("");
   const [preview, setPreview] = useState(null); // { url, fileName, title }
 
   const handleView = async (report) => {
     setError("");
+    if (!from || !to) {
+      setError("Pick both a From and a To date");
+      return;
+    }
+    if (from > to) {
+      setError("'From' must not be after 'To'");
+      return;
+    }
     setBusy(report.type);
     try {
-      const params = { date, report_type: report.type };
+      const params = { from, to, report_type: report.type };
       if (plantId) params.plant_id = plantId;
-      if (warehouseId) params.warehouse_id = warehouseId;
+      if (warehouseIds.length) params.warehouse_ids = warehouseIds.join(",");
       const res = await getDailyReportPdfApi(params);
       const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      const range = from === to ? from : `${from}_to_${to}`;
       setPreview({
         url,
-        fileName: `daily-${report.type}-report-${date}.pdf`,
-        title: `${report.label} — ${date}`,
+        fileName: `daily-${report.type}-report-${range}.pdf`,
+        title: `${report.label} — ${from === to ? from : `${from} to ${to}`}`,
       });
     } catch (err) {
       setError(await blobErrorMessage(err, `Could not generate the ${report.label} PDF`));
@@ -267,13 +323,18 @@ function DailyReportTab() {
   return (
     <div>
       <p className="field-hint" style={{ marginTop: 0 }}>
-        Pick a date (and, if you want, a plant / mill or a single warehouse), then open the report you need.
-        Every vehicle carries its Gate Pass number; weights are the weighbridge net weight (1st − 2nd weighment).
+        Pick a date range (the same day in both boxes gives a single-day report) and, if you want, a plant / mill and
+        one or more warehouses, then open the report you need. Every vehicle carries its Gate Pass number; weights are
+        the weighbridge net weight (1st − 2nd weighment).
       </p>
       <form className="sf-form" onSubmit={(e) => e.preventDefault()}>
         <div className="sf-field">
-          <label>Date</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+          <label>From</label>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} required />
+        </div>
+        <div className="sf-field">
+          <label>To</label>
+          <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} required />
         </div>
         <EntitySelect
           entity="plant"
@@ -281,16 +342,10 @@ function DailyReportTab() {
           value={plantId}
           onChange={(v) => {
             setPlantId(v);
-            setWarehouseId("");
+            setWarehouseIds([]);
           }}
         />
-        <EntitySelect
-          entity="warehouse"
-          label="Warehouse (optional — all if blank)"
-          value={warehouseId}
-          onChange={setWarehouseId}
-          filter={(w) => !plantId || !w.plant_id || String(w.plant_id) === String(plantId)}
-        />
+        <WarehouseMultiSelect plantId={plantId} value={warehouseIds} onChange={setWarehouseIds} />
       </form>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12, marginTop: 14 }}>
@@ -370,6 +425,7 @@ const TABS = [
   { key: "production_summary", label: "Production Summary" },
   { key: "inventory", label: "Inventory" },
   { key: "daily_report", label: "Daily Report" },
+  { key: "party_orders", label: "Party Orders" },
 ];
 
 export default function ReportsPage() {
@@ -394,14 +450,16 @@ export default function ReportsPage() {
       {tab === "production_summary" && <ProductionSummaryTab />}
       {tab === "inventory" && <InventoryPage embedded />}
       {tab === "daily_report" && <DailyReportTab />}
+      {tab === "party_orders" && <PartyOrdersPanel />}
 
       <ModuleGuide
         title="Reports"
         steps={[
-          "Gate Summary — a live view of vehicles still inside the mill, grouped into Purchase Orders, Sales Orders, Lab Analysis, Loading, Unloading and Gate Pass Pending. Exited vehicles are excluded; the panel refreshes automatically.",
-          "Production Summary — every batch run, with input/output quantities and recovery %, filterable by production date. Click View under Warehouse movement for a batch to see which warehouse its materials were used from, which warehouse they were transferred into, and the stock before, after and now. PDF Report gives the same for every batch in the date range.",
+          "Gate Summary — a live view of vehicles still inside the mill, grouped into Purchase Orders, Sales Orders, Lab Analysis, Loading, Unloading and Gate Pass Pending. Inside each one, the status buttons split the vehicles by the exact step they are in (for example Lab Analysis: Sample not taken yet / Lab test pending). Exited vehicles are excluded; the panel refreshes automatically.",
+          "Production Summary — every batch run, with input/output quantities and recovery %, filterable by production date. Click View under Warehouse movement for a batch to see which warehouse its materials were used from, which warehouse they were transferred into, and the stock before, after and now. PDF Report gives the same for every batch in the date range, and Export CSV now carries the same warehouse and stock before / closing / current columns (one row per movement line; Line 1 of each batch carries the batch totals once).",
           "Inventory — your live stock by item, location and bag size, plus the Inventory Reports (PDF): Stock Movement for a date range and Current Stock.",
-          "Daily Report — pick a date (optionally a plant / mill or one warehouse) and open the Inward Report, the Outward Report or the Overall Inward / Outward report. Each is its own PDF layout and lists the Gate Pass number of every vehicle, with weighbridge net weight, bags and lot numbers.",
+          "Daily Report — pick a date range (one day, or From – To), optionally a plant / mill and one or more warehouses, and open the Inward Report, the Outward Report or the Overall Inward / Outward report. Each is its own PDF layout and lists the Gate Pass number of every vehicle, with weighbridge net weight, bags and lot numbers; a longer range adds each vehicle's date and, on the overall report, day-wise totals.",
+          "Party Orders — every Purchase Order (by vendor) and Sales Order (by customer) grouped by party: how many orders, how many completed / in progress / not started, ordered vs received or loaded quantity, what is pending, and the dates. Filter by order type, order date, status or party; click a party for its order history; open the PDF or export CSV.",
           "Production Summary has an Export CSV option; its designed PDF report opens in a preview. Inventory includes current-stock and date-range stock-movement PDFs; the stock-movement PDF also lists every material movement between warehouses with the quantity left.",
         ]}
       />

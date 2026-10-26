@@ -64,6 +64,7 @@ export default function ProductionBatchPage() {
   const [productionReportLoading, setProductionReportLoading] = useState(false);
   const [productionReportError, setProductionReportError] = useState("");
   const [pdfPreview, setPdfPreview] = useState(null); // { url, fileName, title }
+  const [reportLoadingId, setReportLoadingId] = useState(null); // batch whose report is being fetched from Production History
 
   const warehouses = useEntityLookup("warehouse");
   const materials = useEntityLookup("material");
@@ -552,6 +553,26 @@ export default function ProductionBatchPage() {
     }
   };
 
+  // The same Production Report PDF as the button above, for ANY completed batch — opened from the
+  // Actions column of Production History (view it in the preview, or download it from there).
+  const handleViewBatchReport = async (row) => {
+    setError("");
+    setReportLoadingId(row.id);
+    try {
+      const res = await getProductionReportPdfApi(row.id);
+      const blobUrl = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      setPdfPreview({
+        url: blobUrl,
+        fileName: `production-report-${row.batch_no}.pdf`,
+        title: `Production Report — ${row.batch_no}`,
+      });
+    } catch (err) {
+      setError(await extractBlobErrorMessage(err, "Could not generate the production report PDF"));
+    } finally {
+      setReportLoadingId(null);
+    }
+  };
+
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>Production Batches</h2>
@@ -1031,6 +1052,10 @@ export default function ProductionBatchPage() {
                     Delete
                   </button>
                 </div>
+              ) : row.batch_status === "completed" ? (
+                <button className="dt-btn" disabled={reportLoadingId === row.id} onClick={() => handleViewBatchReport(row)}>
+                  {reportLoadingId === row.id ? "Generating…" : "Production Report (PDF)"}
+                </button>
               ) : (
                 "—"
               ),
@@ -1046,6 +1071,7 @@ export default function ProductionBatchPage() {
           "Output of one input (accepted + rejected) can't be more than that input; less is fine — the rest is shrink / loss. Rejected bags are recorded but never added to stock.",
           "Step 4: Choose the destination warehouse for all accepted output and click 'Finalize Batch' — the input is deducted from the source warehouse and the accepted output is added to the destination.",
           "Left the screen before finalizing? The batch stays 'pending' with its stock reserved. In Production History use 'Continue / Finalize' to finish it, '+ Material' to add another input material, or 'Delete' to release its reservation.",
+          "Every completed batch has a 'Production Report (PDF)' button in Production History's Actions column — the same report shown right after finalizing. It opens in a preview where you can read it or press Download.",
         ]}
       />
     </div>

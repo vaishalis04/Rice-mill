@@ -306,15 +306,15 @@ export default function SalesOrdersPage() {
   };
 
   const handleDeleteWholeSo = async (so) => {
-    if (!window.confirm(`Delete SO ${so.so_no} and all ${so.items.length} of its material line(s)?`)) return;
+    if (!window.confirm(`Permanently delete the cancelled SO ${so.so_no} from the list?\n\nThis can't be undone.`)) return;
     setError("");
     setInfo("");
     try {
-      await deleteSalesOrderApi(so.so_no);
+      await deleteSalesOrderApi(so.id);
       setInfo(`SO ${so.so_no} deleted.`);
       load();
-    } catch {
-      setError("Delete failed");
+    } catch (err) {
+      setError(err.response?.data?.message || err.response?.data?.msg || "Delete failed");
     }
   };
 
@@ -591,6 +591,16 @@ export default function SalesOrdersPage() {
         rows={visibleOrders}
         onEdit={handleEditSo}
         onDelete={handleDeleteWholeSoById}
+        // Live orders: Edit + Cancel. Once cancelled, the only action left is Delete.
+        showEdit={(row) => orderStatusOf(row) !== "cancelled"}
+        showDelete={(row) => orderStatusOf(row) === "cancelled"}
+        extraActions={(row) =>
+          ["closed", "cancelled"].includes(orderStatusOf(row)) ? null : (
+            <button className="dt-btn dt-btn-danger" onClick={() => handleCancelSo(row)}>
+              Cancel
+            </button>
+          )
+        }
         columns={[
           { key: "so_no", label: "SO No." },
           {
@@ -656,9 +666,6 @@ export default function SalesOrdersPage() {
                           Close SO
                         </button>
                       )}
-                      <button className="dt-btn dt-btn-danger" onClick={() => handleCancelSo(row)}>
-                        Cancel SO
-                      </button>
                     </div>
                   )}
                 </div>
@@ -678,7 +685,8 @@ export default function SalesOrdersPage() {
           "Edit opens that SO's full details: change customer/order type/date once for the whole order, edit or remove any existing material line, and add more materials to it at any time.",
           "Each material line still moves through Gate → Loading independently, since each is its own material with its own quantity and status.",
           "Cancel/Close apply per material line, since different materials on the same SO can be at different stages of delivery. A line shows Completed once it is fully loaded; Close then finishes it. Once every line is closed or cancelled, the whole SO moves to the Closed / Cancelled tab.",
-          "Cancel SO (Status column) cancels the whole order at whatever stage it is - nothing more can be loaded against it and it moves to the Cancelled tab. Quantities already loaded stay on record. Close SO appears once every material is Completed.",
+          "Cancel (Actions column) cancels the whole order at whatever stage it is - nothing more can be loaded against it and it moves to the Cancelled tab. Quantities already loaded stay on record. Close SO (Status column) appears once every material is Completed.",
+          "An order can't be deleted while it is live. Once it is Cancelled, Delete is the only action left, and it removes that order from the list permanently.",
           "Tabs: Confirmed = open orders (including part-loaded ones), Completed = fully loaded, Closed, Cancelled - each with a live count.",
         ]}
       />

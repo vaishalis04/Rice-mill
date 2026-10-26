@@ -19,6 +19,17 @@ LabTest.init(
     moisture_pct: { type: DataTypes.DECIMAL(5, 2) },
     broken_pct: { type: DataTypes.DECIMAL(5, 2) },
     fm_pct: { type: DataTypes.DECIMAL(5, 2) },
+    // More quality parameters — every one of them is optional (only the verdict is mandatory).
+    pin_broken_pct: { type: DataTypes.DECIMAL(6, 2), allowNull: true },
+    avg_length_mm: { type: DataTypes.DECIMAL(6, 2), allowNull: true },
+    ddc_pct: { type: DataTypes.DECIMAL(6, 2), allowNull: true },
+    kett: { type: DataTypes.DECIMAL(6, 2), allowNull: true },
+    light_yellow_pct: { type: DataTypes.DECIMAL(6, 2), allowNull: true },
+    immature_pct: { type: DataTypes.DECIMAL(6, 2), allowNull: true },
+    white_belly_pct: { type: DataTypes.DECIMAL(6, 2), allowNull: true },
+    add_mixing_pct: { type: DataTypes.DECIMAL(6, 2), allowNull: true },
+    // Parameters the user adds inline for a particular material: [{ name, value }]
+    custom_params: { type: DataTypes.JSON, allowNull: true },
     color: { type: DataTypes.STRING(30) },
     smell: { type: DataTypes.STRING(30) },
     variety_detected: {

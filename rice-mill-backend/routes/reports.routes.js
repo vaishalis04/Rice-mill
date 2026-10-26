@@ -16,5 +16,6 @@ router.get("/production-batch/:id/movement", Controller.productionBatchMovement)
 router.get("/production-batch/:id/report", Controller.productionReport);
 router.get("/daily-outward-pdf", Controller.dailyOutwardPdf);
 router.get("/daily-report-pdf", Controller.dailyReportPdf);
+router.get("/party-orders", Controller.partyOrders); // orders grouped by party: completed / in progress / pending, quantities, dates
 
 module.exports = router;

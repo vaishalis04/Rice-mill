@@ -1,7 +1,8 @@
 const createError = require("http-errors");
 const sequelize = require("../config/db");
-const { Loading, GateEntry, SalesOrder, Customer, MaterialMaster, Vehicle, Driver, User, Sampling, LabTest ,GateEntrySalesOrder } = require("../models/index");
+const { Loading, GateEntry, SalesOrder, Customer, MaterialMaster, Vehicle, Driver, User, Sampling, LabTest ,GateEntrySalesOrder, WarehouseMaster } = require("../models/index");
 const { generateLoadingNo } = require("../helpers/helperFunction");
+const stock = require("../helpers/loadingStock.helper");
 
 // Units on a Sales Order / Loading: bag SIZE is in kg, everything else
 // (ordered, dispatched, remaining, loaded, totals) is in Qtl. 1 Qtl = 100 kg —
@@ -34,10 +35,25 @@ const parseItemsField = (value) => {
 const serializeLoading = (loading) => {
   if (!loading) return loading;
   const plain = typeof loading.toJSON === "function" ? loading.toJSON() : loading;
-  return { ...plain, items: parseItemsField(plain.items) };
+  // items[].allocations / stock_at are the stock bookkeeping (which stock rows this
+  // load took) — internal, kept in the database but not sent to the screens.
+  const items = parseItemsField(plain.items).map(({ allocations, stock_at, ...line }) => line);
+  return { ...plain, items };
 };
 
 const parseSoItems = (so) => parseItemsField(so?.items);
+
+// Every loading line names the warehouse it is loaded FROM (same idea as the
+// warehouse chosen in Unloading) — that is where its stock is taken out of.
+const requireWarehouse = async (entry, materialLabel, transaction) => {
+  const id = entry?.warehouse_id;
+  if (id === undefined || id === null || id === "") {
+    throw createError(400, `Select the warehouse to load ${materialLabel} from`);
+  }
+  const warehouse = await WarehouseMaster.findOne({ where: { id: Number(id), is_deleted: false }, transaction });
+  if (!warehouse) throw createError(400, `Invalid warehouse for ${materialLabel}`);
+  return warehouse;
+};
 
 const detailIncludes = [
   {
@@ -113,6 +129,7 @@ module.exports = {
   },
  
 create: async (req, res, next) => {
+  let t;
   try {
     const { gate_entry_id, loaded_qty, loaded_at, remarks, plant_id, material_quantities } = req.body;
     
@@ -176,6 +193,7 @@ create: async (req, res, next) => {
     
     for (const materialQty of material_quantities) {
       const { so_id, material_id, bag_size, bags } = materialQty;
+      const warehouse = await requireWarehouse(materialQty, `material ${material_id}`);
       // qty is derived from bag_size x bags — same physical-bag-count
       // convention Unloading uses — with a plain `qty` still accepted as a
       // fallback for any other caller of this API.
@@ -293,6 +311,8 @@ create: async (req, res, next) => {
         bag_size: bag_size != null ? Number(bag_size) : null,
         bags: bags != null ? Number(bags) : null,
         qty: Number(qty),
+        warehouse_id: Number(warehouse.id),
+        warehouse_name: warehouse.name,
         ordered_qty: orderedQty,
         dispatched_qty: dispatchedQty,
         remaining_qty: round3(remainingQty - Number(qty)),
@@ -311,6 +331,21 @@ create: async (req, res, next) => {
     // Generate loading number
     const loading_no = await generateLoadingNo();
 
+    // Everything below writes to several tables (loading, the warehouse stock it
+    // is taken from, the sales order, the gate entry): do it as ONE unit so a
+    // failure part-way can never leave stock deducted without a loading, or the
+    // other way round.
+    t = await sequelize.transaction();
+
+    // Take the loaded quantity out of each line's warehouse (oldest stock first).
+    const stockedItems = await stock.deductItems({
+      items: validatedMaterials.map((m) => ({
+        so_id: m.so_id, material_id: m.material_id, bag_size: m.bag_size, bags: m.bags, qty: m.qty, warehouse_id: m.warehouse_id,
+      })),
+      userId: req.user ? req.user.id : null,
+      transaction: t,
+    });
+
     // Create a SINGLE loading record — `items` is this record's own
     // per-material breakdown (bag_size/bags/qty), separate from the Sales
     // Order's own cumulative items updated further below.
@@ -322,16 +357,10 @@ create: async (req, res, next) => {
       loaded_at: loaded_at || new Date(),
       loading_operator_id: req.user ? req.user.id : null,
       remarks: remarks || `Loaded ${validatedMaterials.length} material(s)`,
-      items: validatedMaterials.map((m) => ({
-        so_id: m.so_id,
-        material_id: m.material_id,
-        bag_size: m.bag_size,
-        bags: m.bags,
-        qty: m.qty,
-      })),
+      items: stockedItems,
       plant_id: plant_id || gateEntry.plant_id || (req.user ? req.user.plant_id : null),
       created_by: req.user ? req.user.id : null,
-    });
+    }, { transaction: t });
 
     // Update the sales order's dispatched quantity and items
     const so = validatedMaterials[0].salesOrder;
@@ -367,7 +396,7 @@ create: async (req, res, next) => {
     await gateEntry.update({
       gate_status: "waiting_second_weighment",
       updated_by: req.user ? req.user.id : null
-    });
+    }, { transaction: t });
     
     // Calculate total dispatched quantity
     const totalDispatchedQty = round3(updatedItems.reduce((sum, item) => {
@@ -380,7 +409,9 @@ create: async (req, res, next) => {
       so_status: allMaterialsFullyLoaded ? "dispatched" : "allocated",
       items: updatedItems,
       updated_by: req.user ? req.user.id : null,
-    });
+    }, { transaction: t });
+
+    await t.commit();
     
     // Calculate remaining quantities for response
     // Real ordered total = sum of each item's own qty (the row-level so.qty
@@ -400,6 +431,8 @@ create: async (req, res, next) => {
         material_id: m.material_id,
         material_name: m.material_name,
         qty: m.qty,
+        warehouse_id: m.warehouse_id,
+        warehouse_name: m.warehouse_name,
         remaining_after: m.remaining_qty
       }))
     }];
@@ -423,6 +456,7 @@ create: async (req, res, next) => {
       all_fully_loaded: allMaterialsFullyLoaded
     });
   } catch (err) {
+    if (t && !t.finished) await t.rollback();
     next(err);
   }
 },
@@ -467,6 +501,9 @@ create: async (req, res, next) => {
         // remaining-qty check below is against the SO's state as if this
         // loading had never happened.
         const oldItems = parseItemsField(loading.items);
+        // ...and put back the stock it took, so the new quantities are checked
+        // against (and taken from) the warehouse as if this loading never happened.
+        await stock.restoreItems(oldItems, req.user ? req.user.id : null, t);
         const oldQtyByMaterial = new Map(
           oldItems.map((it) => [String(it.material_id), Number(it.qty) || 0]),
         );
@@ -497,6 +534,7 @@ create: async (req, res, next) => {
             throw createError(400, `Invalid quantity for material ${material_id}`);
           }
           if (qtyNum === 0) continue; // treat 0 as "remove this material's contribution"
+          const warehouse = await requireWarehouse(entry, materialById.get(String(material_id))?.name || `material ${material_id}`, t);
 
           const soItem = soItems.find((it) => Number(it.material_id) === Number(material_id));
           if (!soItem) {
@@ -523,6 +561,7 @@ create: async (req, res, next) => {
             bag_size: bag_size != null ? Number(bag_size) : null,
             bags: bags != null ? Number(bags) : null,
             qty: qtyNum,
+            warehouse_id: Number(warehouse.id),
           });
         }
 
@@ -553,10 +592,12 @@ create: async (req, res, next) => {
           { transaction: t },
         );
 
+        const stockedItems = await stock.deductItems({ items: newItems, userId: req.user ? req.user.id : null, transaction: t });
+
         await loading.update(
           {
             loaded_qty: newTotalQty,
-            items: newItems,
+            items: stockedItems,
             remarks: remarks !== undefined ? remarks : loading.remarks,
             updated_by: req.user ? req.user.id : null,
           },
@@ -600,15 +641,64 @@ create: async (req, res, next) => {
     }
   },
 
-  // DELETE /api/loading/:id  (soft delete)
-  delete: async (req, res, next) => {
+  // GET /api/loading/stock-availability?material_ids=1,2&exclude_loading_id=
+  // What each warehouse holds of the given materials (per pack size) — shown next to
+  // the Warehouse picker so a load is never planned from stock that isn't there.
+  stockAvailability: async (req, res, next) => {
     try {
-      const loading = await Loading.findOne({ where: { id: req.params.id, is_deleted: false } });
-      if (!loading) throw createError(404, "Loading record not found");
+      const materialIds = String(req.query.material_ids || "").split(",").map((x) => Number(x)).filter(Boolean);
+      const data = await stock.getAvailability({
+        materialIds,
+        excludeLoadingId: req.query.exclude_loading_id ? Number(req.query.exclude_loading_id) : null,
+      });
+      res.status(200).json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  },
 
-      await loading.update({ is_deleted: true, updated_by: req.user ? req.user.id : null });
+  // DELETE /api/loading/:id  (soft delete)
+  // Deleting a loading undoes everything it did: the stock goes back into its
+  // warehouse, the Sales Order's dispatched quantity is reduced again, and a
+  // truck that was waiting for its weighment because of it goes back to loading.
+  delete: async (req, res, next) => {
+    const t = await sequelize.transaction();
+    try {
+      const loading = await Loading.findOne({ where: { id: req.params.id, is_deleted: false }, transaction: t });
+      if (!loading) throw createError(404, "Loading record not found");
+      const userId = req.user ? req.user.id : null;
+      const items = parseItemsField(loading.items);
+
+      await stock.restoreItems(items, userId, t);
+
+      const so = await SalesOrder.findOne({ where: { id: loading.so_id, is_deleted: false }, transaction: t });
+      if (so && items.length) {
+        const backOut = new Map();
+        items.forEach((it) => backOut.set(String(it.material_id), round3((backOut.get(String(it.material_id)) || 0) + Number(it.qty || 0))));
+        const soItems = parseSoItems(so).map((item) => {
+          const q = backOut.get(String(item.material_id));
+          return q ? { ...item, dispatched_qty: Math.max(0, round3(Number(item.dispatched_qty || 0) - q)) } : item;
+        });
+        await so.update({
+          items: soItems,
+          dispatched_qty: round3(soItems.reduce((sum, item) => sum + Number(item.dispatched_qty || 0), 0)),
+          so_status: so.so_status === "dispatched" ? "allocated" : so.so_status,
+          updated_by: userId,
+        }, { transaction: t });
+      }
+
+      await loading.update({ is_deleted: true, updated_by: userId }, { transaction: t });
+
+      const gateEntry = await GateEntry.findOne({ where: { id: loading.gate_entry_id }, transaction: t });
+      if (gateEntry && gateEntry.gate_status === "waiting_second_weighment") {
+        const remaining = await Loading.count({ where: { gate_entry_id: loading.gate_entry_id, is_deleted: false }, transaction: t });
+        if (remaining === 0) await gateEntry.update({ gate_status: "waiting_loading", updated_by: userId }, { transaction: t });
+      }
+
+      await t.commit();
       res.status(200).json({ success: true, msg: "Loading record deleted" });
     } catch (err) {
+      await t.rollback();
       next(err);
     }
   },

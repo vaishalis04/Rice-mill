@@ -21,6 +21,40 @@ const TABS = [
   { key: "gatepass", label: "Gate Pass Pending", hint: "Finished — waiting for gate pass / exit", accent: "#dc2626" },
 ];
 
+// Status mini-tabs inside each tab: the vehicles of that tab split by the exact step they are in
+// (stage_key comes from the backend). `always` ones are shown even at 0 so the layout stays put;
+// `extra` ones only appear while at least one vehicle is in them. PO / SO have no fixed pair, so
+// they list every step that currently has vehicles, in journey order.
+const STAGE_LABEL = {
+  waiting_admin: "Waiting on Admin",
+  ready_checkin: "Ready for Check-in",
+  sample_pending: "Sample not taken yet",
+  lab_pending: "Lab test pending",
+  negotiation: "Negotiation pending",
+  accepted: "Accepted - waiting for 1st weighment",
+  rejected: "Rejected - awaiting exit",
+  first_weighment: "Waiting for 1st weighment",
+  ready_unload: "Weighed in - ready to unload",
+  in_process: "In process (weighed)",
+  unloading: "Unloading in progress",
+  unloaded: "Unloaded - gate pass pending",
+  ready_loading: "Ready for loading",
+  partly_loaded: "Partly loaded",
+  loaded: "Loaded",
+  second_weighment_unload: "Unloaded - waiting for 2nd weighment",
+  second_weighment_load: "Loaded - waiting for 2nd weighment",
+  second_weighment: "Waiting for 2nd weighment",
+  parked: "Parked - gate pass pending",
+};
+const SUBTABS = {
+  lab: { always: ["sample_pending", "lab_pending"], extra: ["negotiation", "rejected"] },
+  loading: { always: ["ready_loading", "partly_loaded", "second_weighment_load"], extra: ["loaded"] },
+  unloading: { always: ["ready_unload", "unloading", "second_weighment_unload"], extra: [] },
+  gatepass: { always: ["parked", "unloaded"], extra: [] },
+  po: { always: [], extra: ["waiting_admin", "ready_checkin", "sample_pending", "lab_pending", "negotiation", "accepted", "rejected", "first_weighment", "ready_unload", "in_process", "unloading", "second_weighment_unload", "unloaded", "parked"] },
+  so: { always: [], extra: ["waiting_admin", "ready_checkin", "first_weighment", "in_process", "ready_loading", "partly_loaded", "loaded", "second_weighment_load", "second_weighment", "parked"] },
+};
+
 const EMPTY_TEXT = {
   po: "No purchase trucks are inside the mill right now.",
   so: "No sales trucks are inside the mill right now.",
@@ -150,6 +184,7 @@ export default function GateSummaryPanel() {
   const [error, setError] = useState("");
   const [tab, setTab] = useState("po");
   const [view, setView] = useState("order"); // PO / SO: "order" | "vehicle"
+  const [sub, setSub] = useState("all"); // status mini-tab inside the current tab ("all" or a stage_key)
   const [q, setQ] = useState("");
   const [auto, setAuto] = useState(true);
 
@@ -192,8 +227,23 @@ export default function GateSummaryPanel() {
 
   const current = TABS.find((t) => t.key === tab);
   const showOrders = current.orders && view === "order";
-  const list = filtered ? filtered.lists[tab] : [];
-  const orders = filtered && current.orders ? filtered.orders[tab] : [];
+  const tabList = filtered ? filtered.lists[tab] : []; // every vehicle of the tab (search applied)
+
+  // status mini-tabs: counts per stage for this tab
+  const stageCounts = useMemo(() => {
+    const m = {};
+    tabList.forEach((v) => (m[v.stage_key] = (m[v.stage_key] || 0) + 1));
+    return m;
+  }, [tabList]);
+  const subDef = SUBTABS[tab] || { always: [], extra: [] };
+  const subKeys = [...subDef.always, ...subDef.extra.filter((k) => (stageCounts[k] || 0) > 0 && !subDef.always.includes(k))];
+  const activeSub = sub === "all" || subKeys.includes(sub) ? sub : "all"; // a stage that emptied out falls back to All
+  const inStage = (v) => activeSub === "all" || v.stage_key === activeSub;
+
+  const list = tabList.filter(inStage);
+  const orders = (filtered && current.orders ? filtered.orders[tab] : [])
+    .map((o) => ({ ...o, vehicles: o.vehicles.filter(inStage) }))
+    .filter((o) => o.vehicles.length > 0);
 
   return (
     <div className="gs">
@@ -228,7 +278,10 @@ export default function GateSummaryPanel() {
             type="button"
             className={`gs-tab ${tab === t.key ? "active" : ""}`}
             style={{ "--accent": t.accent }}
-            onClick={() => setTab(t.key)}
+            onClick={() => {
+              setTab(t.key);
+              setSub("all");
+            }}
             data-testid={`gs-tab-${t.key}`}
           >
             <span className="gs-tab-count">{filtered ? filtered.lists[t.key].length : "—"}</span>
@@ -251,6 +304,25 @@ export default function GateSummaryPanel() {
         )}
       </div>
 
+      {data && subKeys.length > 0 && (
+        <div className="gs-subtabs" role="tablist" aria-label="Status" style={{ "--accent": current.accent }}>
+          <button type="button" className={`gs-subtab ${activeSub === "all" ? "on" : ""}`} onClick={() => setSub("all")} data-testid="gs-sub-all">
+            All <span>{tabList.length}</span>
+          </button>
+          {subKeys.map((k) => (
+            <button
+              key={k}
+              type="button"
+              className={`gs-subtab ${activeSub === k ? "on" : ""}`}
+              onClick={() => setSub(k)}
+              data-testid={`gs-sub-${k}`}
+            >
+              {STAGE_LABEL[k] || k} <span>{stageCounts[k] || 0}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {!data && loading && <div className="gs-empty">Loading vehicles…</div>}
 
       {data && showOrders && (
@@ -264,7 +336,7 @@ export default function GateSummaryPanel() {
             )}
           </div>
         ) : (
-          <div className="gs-empty">{needle ? "No matches for your search." : EMPTY_TEXT[tab]}</div>
+          <div className="gs-empty">{needle ? "No matches for your search." : activeSub !== "all" ? `No vehicles are "${STAGE_LABEL[activeSub] || activeSub}" right now.` : EMPTY_TEXT[tab]}</div>
         )
       )}
 
@@ -274,7 +346,7 @@ export default function GateSummaryPanel() {
             {list.map((v) => <VehicleRow key={v.id} v={v} />)}
           </div>
         ) : (
-          <div className="gs-empty">{needle ? "No matches for your search." : EMPTY_TEXT[tab]}</div>
+          <div className="gs-empty">{needle ? "No matches for your search." : activeSub !== "all" ? `No vehicles are "${STAGE_LABEL[activeSub] || activeSub}" right now.` : EMPTY_TEXT[tab]}</div>
         )
       )}
 

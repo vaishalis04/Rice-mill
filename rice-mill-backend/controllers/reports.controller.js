@@ -15,6 +15,10 @@ const { buildDailyReportSpec } = require("../helpers/dailyReport.helper");
 const { buildBatchReportSpec } = require("../helpers/productionBatchReport.helper");
 const { buildWarehouseStockSpec } = require("./inventoryReport.controller");
 const { buildBatchMovements } = require("../helpers/productionMovement.helper");
+const {
+  buildPartyOrders, buildPartyOrdersPdfSpec, orderCsvRows, ORDER_CSV_COLUMNS, partyCsvRows, PARTY_CSV_COLUMNS,
+} = require("../helpers/partyOrders.helper");
+const { loadingStockEvents, loadedQtlByFinishedGoods } = require("../helpers/loadingStock.helper");
 
 const asArray = (value) => {
   if (Array.isArray(value)) return value;
@@ -203,10 +207,12 @@ module.exports = {
           ? await Packing.findAll({ where: { batch_id: { [Op.in]: ids }, is_deleted: false }, attributes: ["id", "batch_id"] })
           : [];
         const fgs = packings.length
-          ? await FinishedGoods.findAll({ where: { packing_id: { [Op.in]: packings.map((p) => p.id) }, is_deleted: false }, attributes: ["packing_id", "qty"] })
+          ? await FinishedGoods.findAll({ where: { packing_id: { [Op.in]: packings.map((p) => p.id) }, is_deleted: false }, attributes: ["id", "packing_id", "qty"] })
           : [];
+        // output = what is left + what sales loadings took out of it (loading lowers FinishedGoods.qty)
+        const loadedByFg = loadedQtlByFinishedGoods(await loadingStockEvents());
         const qtyByPacking = new Map();
-        fgs.forEach((f) => qtyByPacking.set(Number(f.packing_id), (qtyByPacking.get(Number(f.packing_id)) || 0) + Number(f.qty || 0) / KG_PER_QTL));
+        fgs.forEach((f) => qtyByPacking.set(Number(f.packing_id), (qtyByPacking.get(Number(f.packing_id)) || 0) + Number(f.qty || 0) / KG_PER_QTL + (loadedByFg.get(Number(f.id)) || 0)));
         const out = new Map();
         packings.forEach((p) => {
           const cur = out.get(Number(p.batch_id)) || { qty: 0, packings: 0 };
@@ -249,8 +255,9 @@ module.exports = {
           WarehouseMaster.findAll({ where: { is_deleted: false }, attributes: ["id", "name", "plant_id"] }),
         ]);
         const finishedGoods = packings.length
-          ? await FinishedGoods.findAll({ where: { packing_id: { [Op.in]: packings.map((packing) => packing.id) }, is_deleted: false }, attributes: ["packing_id", "qty"] })
+          ? await FinishedGoods.findAll({ where: { packing_id: { [Op.in]: packings.map((packing) => packing.id) }, is_deleted: false }, attributes: ["id", "packing_id", "qty"] })
           : [];
+        const loadedByFgPdf = loadedQtlByFinishedGoods(await loadingStockEvents());
         const materialIds = [...new Set([
           ...batches.flatMap((batch) => asArray(batch.materials_data).map((line) => Number(line.material_id))),
           ...packings.map((packing) => Number(packing.material_id)),
@@ -267,7 +274,7 @@ module.exports = {
           list.push(packing);
           packingByBatch.set(Number(packing.batch_id), list);
         });
-        const qtyByPacking = new Map(finishedGoods.map((row) => [Number(row.packing_id), Number(row.qty || 0) / KG_PER_QTL]));
+        const qtyByPacking = new Map(finishedGoods.map((row) => [Number(row.packing_id), Number(row.qty || 0) / KG_PER_QTL + (loadedByFgPdf.get(Number(row.id)) || 0)]));
 
         let totalInput = 0;
         let totalAccepted = 0;
@@ -378,7 +385,40 @@ module.exports = {
         const rows = await ProductionBatch.findAll({ where, include, order: [["production_date", "DESC"]] });
         const outputs = await loadOutputs(rows);
         const data = rows.map((row) => buildRow(row, outputs));
-        const csv = toCsv(data, [
+
+        // The same warehouse movement the screen ("Warehouse movement") and the PDF show: which warehouse each
+        // material was USED FROM, which warehouse the packed output was TRANSFERRED INTO, and the stock before /
+        // after (closing) / now. One CSV row per movement line, the batch columns repeated on each line of the
+        // batch — "Line" restarts at 1 for every batch, so filter Line = 1 to count batch totals once.
+        const movementByBatch = new Map((await buildBatchMovements(rows)).map((m) => [Number(m.batch_id), m]));
+        const stock = (v, completed) => (v === null || v === undefined ? (completed ? "n/a" : "") : Number(v).toFixed(3));
+        const csvRows = [];
+        data.forEach((batchRow) => {
+          const m = movementByBatch.get(Number(batchRow.batch_id));
+          const lines = [];
+          if (m) {
+            m.used.forEach((u) => lines.push({
+              movement: "USED FROM", movement_material: u.material_name, warehouse: u.warehouse_name,
+              lot_pack: u.lots.length ? `Lot ${u.lots.join(", ")}` : "", movement_qty: u.qty.toFixed(3),
+              stock_before: stock(u.before, m.completed), stock_after: stock(u.after, m.completed), stock_now: stock(u.current, true), note: "",
+            }));
+            m.produced.forEach((p) => lines.push({
+              movement: "TRANSFERRED INTO", movement_material: p.material_name, warehouse: p.warehouse_name,
+              lot_pack: p.packs.map((k) => `${k.pack_size} kg x ${k.bags}`).join(", "), movement_qty: p.qty.toFixed(3),
+              stock_before: stock(p.before, true), stock_after: stock(p.after, true), stock_now: stock(p.current, true), note: p.note || "",
+            }));
+          }
+          const common = {
+            ...batchRow,
+            status_label: m ? m.status_label : batchRow.batch_status,
+            source_warehouse: m ? m.source_warehouse.name : "",
+            destination_warehouses: m ? m.destination_warehouses.join("; ") : "",
+          };
+          if (!lines.length) csvRows.push({ ...common, line_no: 1, movement: "", movement_material: "", warehouse: "", lot_pack: "", movement_qty: "", stock_before: "", stock_after: "", stock_now: "", note: m && m.warnings.length ? m.warnings.join(" ") : "" });
+          else lines.forEach((line, i) => csvRows.push({ ...common, line_no: i + 1, ...line }));
+        });
+
+        const csv = toCsv(csvRows, [
           { key: "batch_no", label: "Batch No" },
           { key: "lot_no", label: "Lot No" },
           { key: "material", label: "Material" },
@@ -389,6 +429,18 @@ module.exports = {
           { key: "input_qty", label: "Input Qty (Qtl)" },
           { key: "output_qty", label: "Output Qty (Qtl)" },
           { key: "recovery_pct", label: "Recovery %" },
+          { key: "source_warehouse", label: "Used From (Warehouse)" },
+          { key: "destination_warehouses", label: "Transferred Into (Warehouse)" },
+          { key: "line_no", label: "Line" },
+          { key: "movement", label: "Movement" },
+          { key: "movement_material", label: "Movement Material" },
+          { key: "warehouse", label: "Movement Warehouse" },
+          { key: "lot_pack", label: "Lot / Packing" },
+          { key: "movement_qty", label: "Movement Qty (Qtl)" },
+          { key: "stock_before", label: "Stock Before (Qtl)" },
+          { key: "stock_after", label: "Closing Stock After (Qtl)" },
+          { key: "stock_now", label: "Current Stock (Qtl)" },
+          { key: "note", label: "Note" },
         ]);
         return sendCsv(res, "production-summary.csv", csv);
       }
@@ -741,6 +793,32 @@ module.exports = {
       );
 
       doc.end();
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // GET /api/reports/party-orders?type=po|so|all&from=&to=&status=&q=&party_key=&plant_id=&format=json|pdf|csv&detail=orders|parties
+  // Orders grouped by party (vendor for a PO, customer for an SO) with completed / in-progress / pending
+  // counts, ordered vs received-loaded quantity and the dates. Logic + layout: helpers/partyOrders.helper.js.
+  partyOrders: async (req, res, next) => {
+    try {
+      const { format, detail } = req.query || {};
+      const data = await buildPartyOrders(req.query || {});
+      if (format === "pdf") {
+        const plant = await PlantMaster.findOne({ where: { is_deleted: false }, order: [["id", "ASC"]] });
+        return renderTableReport(res, {
+          ...buildPartyOrdersPdfSpec(data),
+          plant,
+          generatedBy: (req.user && (req.user.username || req.user.name || req.user.email)) || "",
+        });
+      }
+      if (format === "csv") {
+        return detail === "parties"
+          ? sendCsv(res, "party-order-summary.csv", toCsv(partyCsvRows(data), PARTY_CSV_COLUMNS))
+          : sendCsv(res, "party-orders.csv", toCsv(orderCsvRows(data), ORDER_CSV_COLUMNS));
+      }
+      res.status(200).json({ success: true, data });
     } catch (err) {
       next(err);
     }

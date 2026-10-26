@@ -58,7 +58,7 @@ const stageFor = (e, extra) => {
   const type = e.entry_type;
   switch (e.gate_status) {
     case "pending_details": return { label: "Waiting on Admin", tone: "muted" };
-    case "waiting_token": return { label: "Waiting Token", tone: "muted" };
+    case "waiting_token": return { label: "Ready for Check-in", tone: "muted" };
     case "waiting_sampling": return { label: "Sample not taken yet", tone: "info" };
     case "sampling_done":
       if (extra.lab === "negotiation") return { label: "Negotiation pending", tone: "warn" };
@@ -80,6 +80,30 @@ const stageFor = (e, extra) => {
       return { label: "Waiting for 2nd weighment", tone: "info" };
     case "parked": return { label: "Parked - gate pass pending", tone: "good" };
     default: return { label: String(e.gate_status || "—").replace(/_/g, " "), tone: "muted" };
+  }
+};
+
+// A short, STABLE key for the stage a vehicle is in (the label above can carry numbers, e.g. "Partly
+// loaded (12.5 Qtl so far)"). The Gate Summary screen uses it for the status mini-tabs inside each tab.
+const stageKeyFor = (e, extra) => {
+  const type = e.entry_type;
+  switch (e.gate_status) {
+    case "pending_details": return "waiting_admin";
+    case "waiting_token": return "ready_checkin";
+    case "waiting_sampling": return "sample_pending";
+    case "sampling_done": return extra.lab === "negotiation" ? "negotiation" : "lab_pending";
+    case "accepted": return "accepted";
+    case "rejected": return "rejected";
+    case "waiting_weighment": return "first_weighment";
+    case "in_process": return type === "purchase" ? "ready_unload" : "in_process";
+    case "unloading": return "unloading";
+    case "unloaded": return "unloaded";
+    case "waiting_loading": return extra.loadedQty > 0 ? "partly_loaded" : "ready_loading";
+    case "loaded": return "loaded";
+    case "waiting_second_weighment":
+      return type === "purchase" ? "second_weighment_unload" : type === "sales" ? "second_weighment_load" : "second_weighment";
+    case "parked": return "parked";
+    default: return String(e.gate_status || "other");
   }
 };
 
@@ -152,6 +176,7 @@ const buildGateSummary = async ({ plantId, now = new Date() } = {}) => {
       gate_status: e.gate_status,
       stage_label: stage.label,
       stage_tone: stage.tone,
+      stage_key: stageKeyFor(e, extra),
       vehicle_no: e.vehicle ? e.vehicle.vehicle_no : null,
       driver_name: e.driver ? e.driver.name : null,
       driver_mobile: e.driver ? e.driver.mobile : null,

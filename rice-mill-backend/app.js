@@ -20,6 +20,7 @@ const visitorRoutes        = require("./routes/visitor.routes");
 const purchaseRoutes       = require("./routes/purchase.routes");
 const samplingRoutes       = require("./routes/sampling.routes");
 const labTestRoutes        = require("./routes/labTest.routes");
+const compositeReportRoutes = require("./routes/compositeReport.routes");
 const negotiationRoutes    = require("./routes/negotiation.routes");
 const weighbridgeRoutes    = require("./routes/weighbridge.routes");
 const loadingRoutes        = require("./routes/loading.routes");
@@ -75,6 +76,7 @@ app.use("/api/visitors",         visitorRoutes);
 app.use("/api/purchases",        purchaseRoutes);
 app.use("/api/sampling",         samplingRoutes);
 app.use("/api/lab-tests",        labTestRoutes);
+app.use("/api/composite-reports", compositeReportRoutes);
 app.use("/api/negotiations",     negotiationRoutes);
 app.use("/api/weight-slips",    weighbridgeRoutes);
 app.use("/api/loading",         loadingRoutes);
@@ -290,6 +292,47 @@ sequelize.authenticate()
       }
     } catch (roleSetupErr) {
       console.warn("ℹ️ Advisory role / legacy weighbridge role setup skipped:", roleSetupErr.message);
+    }
+
+    // Gate flow order is now: token -> Admin attaches PO/SO/Empty-Misc -> Check-in.
+    // A token generated under the previous order, and not yet attached, sits at
+    // "waiting_token" with no entry type: put it back to "pending_details" (waiting
+    // for Admin's details) so it follows the new order. Idempotent.
+    try {
+      const { GateEntry } = require("./models/index");
+      const [moved] = await GateEntry.update(
+        { gate_status: "pending_details" },
+        { where: { gate_status: "waiting_token", entry_type: "pending", is_deleted: false } }
+      );
+      if (moved) console.log(`ℹ️ ${moved} unattached token(s) moved to 'waiting for details'.`);
+    } catch (gateErr) {
+      console.warn("ℹ️ Gate token status normalisation skipped:", gateErr.message);
+    }
+
+    // Register the "Payment Settlement" page (Admin > Roles & Permissions /
+    // User Approvals) so it shows up in the permission checklist right away.
+    // Idempotent: findOrCreate by code, so it never duplicates and never
+    // touches a row an admin already created, edited or removed.
+    try {
+      const { Permission } = require("./models/index");
+      await Permission.findOrCreate({
+        where: { code: "admin.payment_settlement" },
+        defaults: { module: "admin", action: "payment_settlement", code: "admin.payment_settlement" },
+      });
+    } catch (permErr) {
+      console.warn("ℹ️ Payment Settlement permission setup skipped:", permErr.message);
+    }
+
+    // Register the "Composite Report" page (Quality) so it shows up in the
+    // permission checklist right away. Idempotent: findOrCreate by code.
+    try {
+      const { Permission } = require("./models/index");
+      await Permission.findOrCreate({
+        where: { code: "lab.composite_report" },
+        defaults: { module: "lab", action: "composite_report", code: "lab.composite_report" },
+      });
+    } catch (permErr) {
+      console.warn("ℹ️ Composite Report permission setup skipped:", permErr.message);
     }
 
     scheduleAgingJob();

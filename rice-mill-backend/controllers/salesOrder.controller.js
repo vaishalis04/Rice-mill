@@ -1009,12 +1009,24 @@ bulkCreate: async (req, res, next) => {
     }
   },
 
+  // DELETE /api/sales-orders/:id
+  // Permanently removes (soft delete) a whole Sales Order from the list — only
+  // a CANCELLED order can be deleted. Cancel it first (PATCH /so/:so_no/status).
   delete: async (req, res, next) => {
     try {
       const so = await SalesOrder.findOne({ where: { id: req.params.id, is_deleted: false } });
       if (!so) throw createError(404, "Sales order not found");
 
-      await so.update({ is_deleted: true, updated_by: req.user ? req.user.id : null });
+      const lines = parseItemsField(so.items).map((it) => lineStatusOf(it, so.so_status));
+      if (orderStatusOf(so.so_status, lines) !== "cancelled") {
+        throw createError(400, `Cancel Sales Order ${so.so_no} first — only a cancelled order can be deleted`);
+      }
+
+      // Every row that carries this SO number goes with it.
+      await SalesOrder.update(
+        { is_deleted: true, updated_by: req.user ? req.user.id : null },
+        { where: { so_no: so.so_no, is_deleted: false } },
+      );
       res.status(200).json({ success: true, msg: "Sales order deleted" });
     } catch (err) {
       next(err);

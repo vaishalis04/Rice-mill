@@ -6,6 +6,8 @@ import {
   updatePurchaseOrderApi,
   updatePurchaseOrderHeaderApi,
   deletePurchaseOrderApi,
+  cancelPurchaseOrderApi,
+  deleteCancelledPurchaseOrderApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
@@ -323,17 +325,38 @@ export default function PurchaseOrdersPage() {
     }
   };
 
+  // Only offered once a PO is cancelled — removes it from the list permanently.
   const handleDeleteWholePo = async (po) => {
-    if (!window.confirm(`Delete PO ${po.po_no} and all ${po.items.length} of its material line(s)?`)) return;
+    if (!window.confirm(`Permanently delete the cancelled PO ${po.po_no} from the list?\n\nThis can't be undone.`)) return;
     setError("");
     setInfo("");
     try {
-      // Delete each item individually
-      await Promise.all(po.items.map((i) => deletePurchaseOrderApi(i.id)));
+      await deleteCancelledPurchaseOrderApi(po.po_no);
       setInfo(`PO ${po.po_no} deleted.`);
       load();
-    } catch {
-      setError("Delete failed");
+    } catch (err) {
+      setError(err.response?.data?.message || err.response?.data?.msg || "Delete failed");
+    }
+  };
+
+  // Cancel the whole PO at whatever stage it is.
+  const handleCancelPo = async (po) => {
+    if (
+      !window.confirm(
+        `Cancel the whole Purchase Order ${po.po_no}?\n\n` +
+          `It will be cancelled at whatever stage it is, and nothing more can be received against it.\n` +
+          `This can't be undone.`,
+      )
+    )
+      return;
+    setError("");
+    setInfo("");
+    try {
+      const res = await cancelPurchaseOrderApi(po.po_no);
+      setInfo(`${res.data?.msg || `PO ${po.po_no} cancelled`}.${res.data?.warning ? ` ${res.data.warning}` : ""}`);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.message || err.response?.data?.msg || "Could not cancel the PO");
     }
   };
 
@@ -581,6 +604,16 @@ export default function PurchaseOrdersPage() {
         rows={orders}
         onEdit={handleEditPo}
         onDelete={handleDeleteWholePoById}
+        // Live POs: Edit + Cancel. Once cancelled, the only action left is Delete.
+        showEdit={(row) => row.approval_status !== "cancelled"}
+        showDelete={(row) => row.approval_status === "cancelled"}
+        extraActions={(row) =>
+          row.approval_status === "cancelled" ? null : (
+            <button className="dt-btn dt-btn-danger" onClick={() => handleCancelPo(row)}>
+              Cancel
+            </button>
+          )
+        }
         columns={[
           { key: "po_no", label: "PO No." },
           {
@@ -618,9 +651,9 @@ export default function PurchaseOrdersPage() {
                 fontSize: "12px",
                 fontWeight: "bold",
                 backgroundColor: row.approval_status === "approved" ? "#d4edda" :
-                              row.approval_status === "rejected" ? "#f8d7da" : "#fff3cd",
+                              (row.approval_status === "rejected" || row.approval_status === "cancelled") ? "#f8d7da" : "#fff3cd",
                 color: row.approval_status === "approved" ? "#155724" :
-                       row.approval_status === "rejected" ? "#721c24" : "#856404"
+                       (row.approval_status === "rejected" || row.approval_status === "cancelled") ? "#721c24" : "#856404"
               }}>
                 {row.approval_status?.replace("_", " ").toUpperCase() || "PENDING"}
               </span>
@@ -637,6 +670,7 @@ export default function PurchaseOrdersPage() {
           "The list below shows ONE row per PO, with all its materials listed together — not one confusing duplicate row per material.",
           "Edit opens that PO's full details: change vendor/date/DO No. once for the whole order, edit or remove any existing material line, and add more materials to it at any time — a PO stays editable until it's fully processed.",
           "Each line item still moves through Gate → Weighbridge independently, since each is its own material with its own quantity.",
+          "Cancel (Actions column) cancels the whole PO at whatever stage it is. A PO can't be deleted while it is live — once it is Cancelled, Delete is the only action left, and it removes that PO from the list permanently.",
           "There's no manual 'Convert' step — once a truck against a line item is gated in, sampled, lab-accepted, and weighed, the Purchase record is created automatically.",
         ]}
       />

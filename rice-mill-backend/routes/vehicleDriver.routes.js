@@ -7,7 +7,8 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 // TODO: split public vs protected routes as needed; adjust authorize() role(s).
 router.use(verifyAccessToken, attachUser, authorizeRoleOrModule(
   ["admin","gate","warehouse","dispatch","production","lab","weighbridge"],
-  ["gate","warehouse","dispatch","production","lab","weighbridge"]
+  ["gate","warehouse","dispatch","production","lab","weighbridge"],
+  { codes: ["admin.gate_entry"], readOnly: true } // admin Gate Entry page reads the driver list
 )); // Protected routes
 
 router.get("/",     Controller.getAll);

@@ -18,6 +18,21 @@ function formatLastMovement(row) {
   return `${row.idle_days} days ago`;
 }
 
+// Last OUTWARD movement of this material at this location: a dispatch / truck loading to a
+// customer, or an issue into production (taken from the same movement ledger as the Stock
+// Movement report).
+function formatOutwardAge(o) {
+  if (!o) return "—";
+  if (o.days_ago <= 0) return "Today";
+  if (o.days_ago === 1) return "1 day ago";
+  return `${o.days_ago} days ago`;
+}
+
+function formatOutwardDetail(o) {
+  const qty = `${Number(o.qty_Qtl).toFixed(3)} Qtl`;
+  return o.type === "ISSUE" ? `Issued to production · ${qty}` : `Dispatched · ${qty}${o.to ? ` → ${o.to}` : ""}`;
+}
+
 export default function InventoryPage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -118,6 +133,19 @@ export default function InventoryPage() {
               <div>
                 <div style={{ fontWeight: 500 }}>{row.material_name}</div>
                 <div style={{ fontSize: 12, color: "#94a3b8" }}>{formatIdleLabel(row)}</div>
+                {/* Same wording as Production's warehouse card; shown only while a pending batch holds stock. */}
+                {Number(row.reserved_qty_Qtl) > 0 && (
+                  <div
+                    style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}
+                    title={row.reserved_by?.length ? `Reserved by pending batch: ${row.reserved_by.join(", ")}` : undefined}
+                  >
+                    Available for production: {Number(row.available_qty_Qtl).toFixed(3)} Qtl
+                    <span style={{ color: "#b45309" }}> · Reserved: {Number(row.reserved_qty_Qtl).toFixed(3)} Qtl</span>
+                    {Number(row.location_qty_Qtl) - Number(row.qty_Qtl) > 0.001 && (
+                      <span> (of {Number(row.location_qty_Qtl).toFixed(3)} Qtl at this location)</span>
+                    )}
+                  </div>
+                )}
               </div>
             ),
           },
@@ -146,6 +174,19 @@ export default function InventoryPage() {
             label: "Last Movement",
             render: (row) => formatLastMovement(row),
           },
+          {
+            key: "last_outward",
+            label: "Outward Movement",
+            render: (row) =>
+              row.last_outward ? (
+                <div title={`${new Date(row.last_outward.at).toLocaleString()}${row.last_outward.ref ? ` · ${row.last_outward.ref}` : ""}`}>
+                  <div>{formatOutwardAge(row.last_outward)}</div>
+                  <div style={{ fontSize: 12, color: "#94a3b8" }}>{formatOutwardDetail(row.last_outward)}</div>
+                </div>
+              ) : (
+                "—"
+              ),
+          },
         ]}
       />
 
@@ -156,6 +197,8 @@ export default function InventoryPage() {
           "Raw stock shows a bag size when it was recorded during unloading (bag count is an estimate from remaining Qtl, since consumption is tracked in Qtl); otherwise it shows as 'Bulk'.",
           "Packed material is grouped by its actual pack size, with the total bag count and Qtl for that group.",
           "'Last Movement' reflects the most recent stock change for that group — a raw stock deduction/addition, or a packing/dispatch update for packed stock.",
+          "Under a material's name, 'Available for production · Reserved' appears while a pending production batch holds stock of it (same figures as the Production screen). When that batch is finished the stock is deducted and the note disappears; if the batch is cancelled the stock is released back to Available.",
+          "'Outward Movement' shows when that material last left that location — a dispatch / truck loading to a customer, or an issue into production — with the quantity and where it went. Hover it for the exact time and reference.",
           "Use the three search boxes to narrow down by item name, warehouse, or bag size.",
           "Click Reports (PDF) to view or download an Inventory report: Stock Movement for a date range, or Current Stock — filter by warehouse, item, stock type and pack size.",
         ]}

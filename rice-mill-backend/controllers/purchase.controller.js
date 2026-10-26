@@ -11,6 +11,7 @@ const {
   MaterialMaster,
   VarietyMaster,
   GateEntry,
+  GateEntryPurchaseOrder,
   WeightSlip,
 } = require("../models/index");
 const { generatePoNo } = require("../helpers/helperFunction");
@@ -147,7 +148,9 @@ module.exports = {
       const { search, vendor_id, plant_id } = req.query;
 
       const where = { is_deleted: false };
-      if (req.user.role?.role_name !== "admin") where.approval_status = "approved";
+      // Non-admins see approved POs, plus cancelled ones so a cancelled PO can
+      // still be found in the list and deleted from it.
+      if (req.user.role?.role_name !== "admin") where.approval_status = { [Op.in]: ["approved", "cancelled"] };
       if (vendor_id) where.vendor_id = vendor_id;
       if (plant_id) where.plant_id = plant_id;
       if (search) {
@@ -817,6 +820,72 @@ module.exports = {
         success: true,
         msg: `PO ${po_no} rejected successfully`,
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // PATCH /api/purchases/po/:po_no/cancel
+  // Cancels the WHOLE purchase order, at whatever stage it is (pending,
+  // approved, part-received ...). Nothing else is touched: quantities already
+  // received stay on record. Once cancelled, the only thing left to do with the
+  // PO is delete it.
+  cancel: async (req, res, next) => {
+    try {
+      const { po_no } = req.params;
+
+      const rows = await PurchaseOrder.findAll({ where: { po_no, is_deleted: false } });
+      if (!rows.length) throw createError(404, "Purchase order not found");
+      if (rows.every((r) => r.approval_status === "cancelled")) {
+        throw createError(400, `Purchase Order ${po_no} is already cancelled`);
+      }
+
+      await PurchaseOrder.update(
+        { approval_status: "cancelled", updated_by: req.user ? req.user.id : null },
+        { where: { po_no, is_deleted: false } },
+      );
+
+      // Same courtesy the Sales Order cancel gives: say so if trucks are still inside.
+      let warning = null;
+      const links = await GateEntryPurchaseOrder.findAll({
+        where: { po_id: { [Op.in]: rows.map((r) => r.id) }, is_deleted: false },
+        attributes: ["gate_entry_id"],
+      });
+      const entryIds = [...new Set(links.map((l) => Number(l.gate_entry_id)))];
+      if (entryIds.length) {
+        const trucks = await GateEntry.count({
+          where: { id: { [Op.in]: entryIds }, is_deleted: false, gate_status: { [Op.notIn]: ["exited", "rejected"] } },
+        });
+        if (trucks > 0) {
+          warning = `${trucks} truck(s) are still at the gate against this order.`;
+        }
+      }
+
+      const updated = await PurchaseOrder.findAll({ where: { po_no, is_deleted: false }, include: poIncludes });
+      res.status(200).json({ success: true, msg: `PO ${po_no} cancelled`, warning, data: updated });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // DELETE /api/purchases/po/:po_no
+  // Permanently removes (soft delete) a whole PO from the list — only a
+  // CANCELLED one can be deleted.
+  deleteByPoNo: async (req, res, next) => {
+    try {
+      const { po_no } = req.params;
+
+      const rows = await PurchaseOrder.findAll({ where: { po_no, is_deleted: false } });
+      if (!rows.length) throw createError(404, "Purchase order not found");
+      if (rows.some((r) => r.approval_status !== "cancelled")) {
+        throw createError(400, `Cancel Purchase Order ${po_no} first — only a cancelled order can be deleted`);
+      }
+
+      await PurchaseOrder.update(
+        { is_deleted: true, updated_by: req.user ? req.user.id : null },
+        { where: { po_no, is_deleted: false } },
+      );
+      res.status(200).json({ success: true, msg: `PO ${po_no} deleted` });
     } catch (err) {
       next(err);
     }

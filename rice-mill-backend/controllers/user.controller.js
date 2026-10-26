@@ -9,6 +9,7 @@ const {
   RolePermission,
 } = require("../models");
 const { generateCode } = require("../helpers/helperFunction");
+const { releaseDeletedUserIdentifiers, uniqueUserError } = require("../helpers/userIdentity.helper");
 
 module.exports = {
   // ===========================
@@ -130,10 +131,14 @@ module.exports = {
 
       const hash = await bcrypt.hash(password, 10);
 
+      // A previously DELETED user with the same username/email/phone still
+      // holds those unique values — free them so the person can be re-created.
+      await releaseDeletedUserIdentifiers({ username, email, phone });
+
       const user = await User.create({
         username,
         email,
-        phone,
+        phone: phone || null,
         password_hash: hash,
         role_id,
         employee_code: await generateCode(User, "employee_code", "EMP"),
@@ -149,7 +154,7 @@ module.exports = {
         },
       });
     } catch (err) {
-      next(err);
+      next(uniqueUserError(err, createError));
     }
   },
 
@@ -190,6 +195,11 @@ module.exports = {
         if (!role) throw createError(404, "Role not found");
       }
 
+      await releaseDeletedUserIdentifiers(
+        { username: req.body.username, email: req.body.email, phone: req.body.phone },
+        { exceptId: id }
+      );
+
       const updateData = { ...req.body };
 
       if (req.body.password) {
@@ -207,7 +217,7 @@ module.exports = {
         data: user,
       });
     } catch (err) {
-      next(err);
+      next(uniqueUserError(err, createError));
     }
   },
 

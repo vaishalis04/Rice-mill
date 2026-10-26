@@ -1,7 +1,8 @@
 const createError = require("http-errors");
 const { KG_PER_QTL } = require("../helpers/units");
 const { Op } = require("sequelize");
-const { Inventory, StockMovement, Lot, MaterialMaster, WarehouseMaster, FinishedGoods, Packing } = require("../models/index");
+const { Inventory, StockMovement, Lot, MaterialMaster, WarehouseMaster, FinishedGoods, Packing, ProductionBatch } = require("../models/index");
+const { loadFlowData, buildEvents } = require("../helpers/stockFlow.helper");
 
 // Real-time stock ledger across all stages (Module 10)
 // getAll/getById back a raw per-row ledger view. getStockSummary below
@@ -165,6 +166,62 @@ module.exports = {
         });
       }
 
+      // ---- Reserved for production / Available (same rule as Production's warehouse summary) ----
+      // Only PENDING production batches reserve stock: finishing a batch turns the reservation into a real
+      // deduction (the stock itself drops), and deleting / cancelling a pending batch releases it again —
+      // so the figures below always follow the batches' current state with no bookkeeping of their own.
+      // Reservations are tracked per warehouse + material (a batch line doesn't pick a bag-size row), so
+      // every bag-size row of a material at a location shows that material's figures for the location.
+      const locationQty = new Map();
+      for (const r of rowsByKey.values()) {
+        const k = `${Number(r.warehouse_id)}|${r.material_id}`;
+        locationQty.set(k, (locationQty.get(k) || 0) + r.qty_Qtl);
+      }
+      const reservedByLocation = new Map();
+      try {
+        const pendingBatches = await ProductionBatch.findAll({
+          where: { batch_status: "pending", is_deleted: false },
+          attributes: ["id", "batch_no", "warehouse_id", "material_id", "input_qty", "materials_data"],
+        });
+        for (const batch of pendingBatches) {
+          const lines = Array.isArray(batch.materials_data) && batch.materials_data.length > 0
+            ? batch.materials_data
+            : batch.material_id ? [{ material_id: batch.material_id, input_qty: batch.input_qty }] : [];
+          for (const line of lines) {
+            const k = `${Number(batch.warehouse_id)}|${Number(line.material_id)}`;
+            const cur = reservedByLocation.get(k) || { qty: 0, batches: new Set() };
+            cur.qty += Number(line.input_qty || 0);
+            if (batch.batch_no) cur.batches.add(batch.batch_no);
+            reservedByLocation.set(k, cur);
+          }
+        }
+      } catch (reserveErr) {
+        console.warn("Inventory: reserved-for-production figures skipped:", reserveErr.message);
+      }
+
+      // ---- Last OUTWARD movement of each material at each location ----
+      // Outward = stock that left the location: a sales dispatch / truck loading (to a customer) or an issue
+      // into production. Taken from the same movement ledger as the Stock Movement report, so the two agree.
+      const lastOutwardByLocation = new Map();
+      try {
+        const [allWarehouses, allMaterials] = await Promise.all([
+          WarehouseMaster.findAll({ attributes: ["id", "name"] }),
+          MaterialMaster.findAll({ attributes: ["id", "name"] }),
+        ]);
+        const scope = {
+          warehouseById: new Map(allWarehouses.map((w) => [Number(w.id), w])),
+          materialById: new Map(allMaterials.map((m) => [Number(m.id), m])),
+        };
+        for (const e of buildEvents(await loadFlowData(), scope)) {
+          if ((e.type !== "DISPATCH" && e.type !== "ISSUE") || e.warehouse_id == null) continue;
+          const k = `${Number(e.warehouse_id)}|${Number(e.material_id)}`;
+          const cur = lastOutwardByLocation.get(k);
+          if (!cur || e.t >= cur.t) lastOutwardByLocation.set(k, e);
+        }
+      } catch (outErr) {
+        console.warn("Inventory: last outward movement skipped:", outErr.message);
+      }
+
       const now = Date.now();
       const data = Array.from(rowsByKey.values())
         .map((r) => ({
@@ -178,6 +235,29 @@ module.exports = {
             : r.bag_count != null ? Math.floor(r.bag_count) : null,
           last_movement: r.last_movement ? r.last_movement.toISOString() : null,
           idle_days: r.last_movement ? Math.floor((now - r.last_movement.getTime()) / 86400000) : null,
+          ...(() => {
+            const k = `${Number(r.warehouse_id)}|${r.material_id}`;
+            const total = locationQty.get(k) || 0;
+            const reserved = reservedByLocation.get(k);
+            const reservedQty = reserved ? reserved.qty : 0;
+            const out = lastOutwardByLocation.get(k);
+            return {
+              location_qty_Qtl: Math.round(total * 1000) / 1000,
+              reserved_qty_Qtl: Math.round(reservedQty * 1000) / 1000,
+              available_qty_Qtl: Math.round(Math.max(total - reservedQty, 0) * 1000) / 1000,
+              reserved_by: reserved ? [...reserved.batches] : [],
+              last_outward: out
+                ? {
+                    at: new Date(out.t).toISOString(),
+                    type: out.type, // DISPATCH (to a customer) | ISSUE (into production)
+                    qty_Qtl: Math.round(Number(out.qty) * 1000) / 1000,
+                    to: out.to || null,
+                    ref: out.ref || null,
+                    days_ago: Math.max(0, Math.floor((now - out.t) / 86400000)),
+                  }
+                : null,
+            };
+          })(),
         }))
         .filter((r) => r.qty_Qtl > 0.001)
         .sort((a, b) => (b.last_movement || "").localeCompare(a.last_movement || ""));

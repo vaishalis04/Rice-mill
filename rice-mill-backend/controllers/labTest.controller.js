@@ -1,5 +1,21 @@
 const createError = require("http-errors");
-const { Sampling, LabTest, GateEntry, VarietyMaster, User, Negotiation, PurchaseOrder, Vendor, Vehicle } = require("../models/index");
+const PDFDocument = require("pdfkit");
+const { Sampling, LabTest, GateEntry, VarietyMaster, User, Negotiation, PurchaseOrder, Vendor, Vehicle, Customer, MaterialMaster, PlantMaster } = require("../models/index");
+const { drawLabTestReport, fmtDT } = require("../helpers/labTestPdf.helper");
+const { NEW_NUMERIC_KEYS, numOrNull, cleanCustomParams } = require("../helpers/labParams.helper");
+
+// The optional extra parameters from a request body, ready to save:
+// blank numeric -> null, a real 0 stays 0; custom parameters are cleaned up.
+// Only keys the request actually carries are returned (so an edit that doesn't
+// mention them leaves them alone).
+const extraParamFields = (body) => {
+  const out = {};
+  NEW_NUMERIC_KEYS.forEach((k) => {
+    if (body[k] !== undefined) out[k] = numOrNull(body[k]);
+  });
+  if (body.custom_params !== undefined) out.custom_params = cleanCustomParams(body.custom_params);
+  return out;
+};
 
 // Same MariaDB/Sequelize JSON-column quirk fixed elsewhere in this codebase
 // (purchase.controller.js, loading.controller.js, salesOrder.controller.js):
@@ -154,6 +170,7 @@ create: async (req, res, next) => {
       tested_at,
       plant_id,
     } = req.body;
+    const extras = extraParamFields(req.body);
 
     // Required validation
     if (!sampling_id || !verdict) {
@@ -286,9 +303,10 @@ create: async (req, res, next) => {
     const test = await LabTest.create({
       sampling_id,
       material_id: uniqueMaterialIds,
-      moisture_pct,
-      broken_pct,
-      fm_pct,
+      moisture_pct: numOrNull(moisture_pct),
+      broken_pct: numOrNull(broken_pct),
+      fm_pct: numOrNull(fm_pct),
+      ...extras,
       color,
       smell,
       variety_detected: variety_detected || null,
@@ -341,19 +359,41 @@ create: async (req, res, next) => {
 
       const {
         moisture_pct, broken_pct, fm_pct, color, smell,
-        variety_detected, grain_size, comment, tested_at, plant_id,
+        variety_detected, grain_size, comment, tested_at, plant_id, verdict,
       } = req.body;
+
+      // The edit form also carries the verdict — it used to be silently
+      // ignored here, so changing it while editing never took effect.
+      if (verdict !== undefined && verdict !== null && verdict !== "" && !VERDICTS.includes(verdict)) {
+        throw createError(400, `verdict must be one of: ${VERDICTS.join(", ")}`);
+      }
+      const previousVerdict = test.verdict;
 
       if (variety_detected) {
         const variety = await VarietyMaster.findOne({ where: { id: variety_detected, is_deleted: false } });
         if (!variety) throw createError(400, "Invalid variety_detected");
       }
 
-      const updates = { moisture_pct, broken_pct, fm_pct, color, smell, variety_detected, grain_size, comment, tested_at, plant_id };
+      const updates = {
+        moisture_pct: moisture_pct === undefined ? undefined : numOrNull(moisture_pct),
+        broken_pct: broken_pct === undefined ? undefined : numOrNull(broken_pct),
+        fm_pct: fm_pct === undefined ? undefined : numOrNull(fm_pct),
+        ...extraParamFields(req.body),
+        color, smell, variety_detected, grain_size, comment, tested_at, plant_id,
+      };
+      if (verdict) updates.verdict = verdict;
       Object.keys(updates).forEach((key) => updates[key] === undefined && delete updates[key]);
+      if (updates.tested_at === null) delete updates.tested_at; // never blank out the test time
       updates.updated_by = req.user ? req.user.id : null;
 
       await test.update(updates);
+
+      // A changed verdict drives the gate entry (and a negotiation) exactly
+      // like the "Revise Verdict" dropdown does.
+      if (updates.verdict && updates.verdict !== previousVerdict) {
+        await applyVerdictToGateEntry(test.sampling_id, updates.verdict, req.user ? req.user.id : null);
+        await openNegotiationIfNeeded(test, req.user ? req.user.id : null);
+      }
 
       const updated = await LabTest.findByPk(test.id, { include: detailIncludes });
       res.status(200).json({ success: true, msg: "Lab test updated", data: updated });
@@ -384,6 +424,101 @@ create: async (req, res, next) => {
         msg: `Verdict set to '${verdict}'${gateEntry ? ` — gate entry status is now '${gateEntry.gate_status}'` : ""}`,
         data: updated,
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // GET /api/lab-tests/:id/pdf  — downloadable Lab Test Report
+  pdf: async (req, res, next) => {
+    try {
+      const test = await LabTest.findOne({
+        where: { id: req.params.id, is_deleted: false },
+        include: [
+          {
+            model: Sampling, as: "sampling",
+            include: [
+              { model: User, as: "collector", attributes: ["id", "username"] },
+              {
+                model: GateEntry, as: "gateEntry",
+                attributes: ["id", "token_no", "challan_no", "entry_time"],
+                include: [
+                  { model: Vendor, as: "vendor", attributes: ["id", "name"] },
+                  { model: Customer, as: "customer", attributes: ["id", "name"] },
+                  { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
+                ],
+              },
+            ],
+          },
+          { model: VarietyMaster, as: "detectedVariety", attributes: ["id", "variety_name"] },
+          { model: User, as: "tester", attributes: ["id", "username"] },
+        ],
+      });
+      if (!test) throw createError(404, "Lab test not found");
+
+      const sampling = test.sampling;
+      const ge = sampling?.gateEntry;
+
+      const [materials, pos, negotiation, plant] = await Promise.all([
+        MaterialMaster.findAll({ where: { id: parseIdArray(test.material_id).map(Number) }, attributes: ["id", "name"] }),
+        parseIdArray(sampling?.po_id).length
+          ? PurchaseOrder.findAll({ where: { id: parseIdArray(sampling.po_id).map(Number) }, attributes: ["id", "po_no"] })
+          : [],
+        test.verdict === "negotiation"
+          ? Negotiation.findOne({ where: { lab_test_id: test.id, is_deleted: false }, order: [["id", "DESC"]] })
+          : null,
+        test.plant_id || sampling?.plant_id
+          ? PlantMaster.findOne({ where: { id: test.plant_id || sampling.plant_id } })
+          : PlantMaster.findOne({ where: { is_deleted: false }, order: [["id", "ASC"]] }),
+      ]);
+
+      const doc = new PDFDocument({ size: "A4", margin: 0 });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="lab-test-${sampling?.sample_code || test.id}.pdf"`);
+      doc.pipe(res);
+
+      drawLabTestReport(doc, {
+        plant,
+        test_no: `LT-${String(test.id).padStart(5, "0")}`,
+        sample_code: sampling?.sample_code,
+        token_no: ge?.token_no,
+        vehicle_no: ge?.vehicle?.vehicle_no,
+        party: ge?.vendor?.name || ge?.customer?.name,
+        party_label: ge?.vendor ? "Vendor" : ge?.customer ? "Customer" : "Party",
+        po_nos: [...new Set(pos.map((p) => p.po_no).filter(Boolean))].join(", "),
+        challan_no: ge?.challan_no,
+        materials: materials.map((m) => m.name).join(", "),
+        gate_in: fmtDT(ge?.entry_time),
+        collected_at: fmtDT(sampling?.collected_at),
+        sent_to_lab_at: fmtDT(sampling?.sent_to_lab_at),
+        collected_by: sampling?.collector?.username,
+        moisture: test.moisture_pct,
+        broken: test.broken_pct,
+        fm: test.fm_pct,
+        extra_params: [
+          { label: "Pin Broken", value: test.pin_broken_pct, unit: "%" },
+          { label: "Avg Length", value: test.avg_length_mm, unit: "mm" },
+          { label: "DDC", value: test.ddc_pct, unit: "%" },
+          { label: "Kett", value: test.kett },
+          { label: "Light Yellow", value: test.light_yellow_pct, unit: "%" },
+          { label: "Immature", value: test.immature_pct, unit: "%" },
+          { label: "White Belly", value: test.white_belly_pct, unit: "%" },
+          { label: "Add Mixing", value: test.add_mixing_pct, unit: "%" },
+        ],
+        custom_params: cleanCustomParams(test.custom_params),
+        color: test.color,
+        smell: test.smell,
+        variety: test.detectedVariety?.variety_name,
+        grain_size: test.grain_size,
+        verdict: test.verdict,
+        comment: test.comment,
+        tested_by: test.tester?.username,
+        tested_at: fmtDT(test.tested_at),
+        negotiation: negotiation
+          ? { old_rate: negotiation.old_rate, proposed_rate: negotiation.proposed_rate, response: negotiation.vendor_response }
+          : null,
+      });
+      doc.end();
     } catch (err) {
       next(err);
     }

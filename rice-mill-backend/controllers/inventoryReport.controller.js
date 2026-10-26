@@ -6,6 +6,7 @@ const {
 } = require("../models/index");
 const { renderTableReport } = require("../helpers/reportPdf.helper");
 const { buildFlowSection } = require("../helpers/stockFlow.helper");
+const { loadingStockEvents, loadedQtlByFinishedGoods } = require("../helpers/loadingStock.helper");
 
 // JSON columns come back as an array or, on some drivers, as a JSON string.
 // (Was missing — it made the Stock Movement report fail with "asArray is not defined".)
@@ -217,6 +218,13 @@ const addLiveStock = async (store, scope) => {
 
 // Movements inside [from, to] — same sources and rules as stockReport.
 const addMovements = async (store, scope, from, to) => {
+  // Everything gate loadings have taken out of warehouse stock (see
+  // helpers/loadingStock.helper.js). Loading REDUCES FinishedGoods.qty / Inventory,
+  // so (a) it is the Dispatch column below, and (b) what a packing run PRODUCED has
+  // to be rebuilt as "what is left + what was loaded out of it".
+  const loadEvents = await loadingStockEvents();
+  const loadedByFg = loadedQtlByFinishedGoods(loadEvents);
+
   // Inwards: raw stock received after unloading — one Inventory(raw) row is created per
   // unloaded lot with qty_in = accepted qty. (Not Lot.qty / Lot.updated_at: packing lowers
   // Lot.qty and bumps updated_at, so that figure shrinks and moves after every batch.)
@@ -251,7 +259,7 @@ const addMovements = async (store, scope, from, to) => {
     for (const p of packings) {
       if (!p.material_id) continue;
       const fg = fgByPacking.get(Number(p.id));
-      const qtl = fg ? Number(fg.qty || 0) / KG_PER_QTL : 0;
+      const qtl = fg ? Number(fg.qty || 0) / KG_PER_QTL + (loadedByFg.get(Number(fg.id)) || 0) : 0;
       const size = Number(p.pack_size);
       if (fg && scope.inWarehouseScope(fg.warehouse_id)) store.get("fg", fg.warehouse_id, p.material_id, size).production += qtl;
     }
@@ -304,6 +312,14 @@ const addMovements = async (store, scope, from, to) => {
       if (!packing || !packing.material_id) continue;
       store.get("fg", fg.warehouse_id, packing.material_id, Number(packing.pack_size)).dispatch += Number(fg.qty || 0) / KG_PER_QTL;
     }
+  }
+
+  // Dispatch: stock taken out by sales-truck loadings in the range, from the warehouse
+  // each load was taken from.
+  for (const e of loadEvents) {
+    if (e.t < from.getTime() || e.t > to.getTime()) continue;
+    if (!scope.inWarehouseScope(e.warehouse_id)) continue;
+    store.get(e.kind === "raw" ? "raw" : "fg", e.warehouse_id, e.material_id, e.bag_size).dispatch += e.qty_qtl;
   }
 };
 
@@ -581,43 +597,48 @@ module.exports = {
           [r.opening ?? 0, r.closing, r.inwards, r.production, r.dispatch, r.issue].some((v) => Math.abs(v) > 0.0005)
         );
 
-      const qtyOrDash = (v, ok) => (ok ? fmtQty(v) : "—");
-      const groups = groupByWarehouse(rows).map((g) => {
-        const sum = (k) => sumRows(g.rows, k);
-        return {
-          warehouse_name: g.warehouse_name,
-          rows: g.rows.map((r) => ({
-            cells: (n) => [
-              n, r.material_name, STAGE_LABEL[r.stage], sizeLabel(r.size),
-              includesToday && r.bags != null ? fmtCount(r.bags) : "—",
-              qtyOrDash(r.opening, includesToday), fmtQty(r.inwards), fmtQty(r.production),
-              fmtQty(r.dispatch), fmtQty(r.issue), qtyOrDash(r.closing, includesToday),
-            ],
-          })),
-          subtotalCells: [
-            "", `Total - ${g.warehouse_name}`, "", "",
-            includesToday ? fmtCount(sum("bags")) : "—",
-            qtyOrDash(sum("opening"), includesToday), fmtQty(sum("inwards")), fmtQty(sum("production")),
-            fmtQty(sum("dispatch")), fmtQty(sum("issue")), qtyOrDash(sum("closing"), includesToday),
+      // Report layout (same as the stock sheet): S.No, Material, Stock, Pack Size, then
+      // Opening / Inwards / Production-Repacking / Issue / Dispatch / Closing in BAGS,
+      // and the Closing Weight in Qtl. Quantities are stored in Qtl, so bags = Qtl x 100
+      // / bag size (kg). A bulk line has no bags, so it shows its quantity in Qtl instead.
+      const bagsOf = (qty, size) => Math.round(((Number(qty) || 0) * KG_PER_QTL) / Number(size));
+      const fmtBags = (n) => `${n < 0 ? "-" : ""}${fmtCount(Math.abs(n))}`;
+      const bagCell = (r, key, ok = true) => {
+        if (!ok) return "—";
+        return r.size != null ? fmtBags(bagsOf(r[key], r.size)) : `${fmtQty(r[key])} Qtl`;
+      };
+      const sumBags = (list, key) => list.reduce((t, r) => t + (r.size != null ? bagsOf(r[key], r.size) : 0), 0);
+      const totalCells = (list, label) => [
+        "", label, "", "",
+        includesToday ? fmtBags(sumBags(list, "opening")) : "—",
+        fmtBags(sumBags(list, "inwards")),
+        fmtBags(sumBags(list, "production")),
+        fmtBags(sumBags(list, "issue")),
+        fmtBags(sumBags(list, "dispatch")),
+        includesToday ? fmtBags(sumBags(list, "closing")) : "—",
+        includesToday ? fmtQty(sumRows(list, "closing")) : "—",
+      ];
+      const groups = groupByWarehouse(rows).map((g) => ({
+        warehouse_name: g.warehouse_name,
+        rows: g.rows.map((r) => ({
+          cells: (n) => [
+            n, r.material_name, STAGE_LABEL[r.stage], sizeLabel(r.size),
+            bagCell(r, "opening", includesToday), bagCell(r, "inwards"), bagCell(r, "production"),
+            bagCell(r, "issue"), bagCell(r, "dispatch"), bagCell(r, "closing", includesToday),
+            includesToday ? fmtQty(r.closing) : "—",
           ],
-        };
-      });
-      const totalsRow = groups.length > 1
-        ? [
-            "", "GRAND TOTAL", "", "",
-            includesToday ? fmtCount(sumRows(rows, "bags")) : "—",
-            qtyOrDash(sumRows(rows, "opening"), includesToday), fmtQty(sumRows(rows, "inwards")), fmtQty(sumRows(rows, "production")),
-            fmtQty(sumRows(rows, "dispatch")), fmtQty(sumRows(rows, "issue")), qtyOrDash(sumRows(rows, "closing"), includesToday),
-          ]
-        : null;
+        })),
+        subtotalCells: totalCells(g.rows, `Total - ${g.warehouse_name}`),
+      }));
+      const totalsRow = groups.length > 1 ? totalCells(rows, "GRAND TOTAL") : null;
 
       const footnotes = [];
       if (!includesToday) {
         footnotes.push(
-          "Note: Opening and Closing stock (and Bags, which comes from Closing) are only available when the report period ends today - this system does not keep a full stock-movement ledger, so a past running balance can't be reconstructed. Inwards, Production/Repacking, Dispatch and Issue for the period are accurate."
+          "Note: Opening and Closing stock (and Closing Weight) are only available when the report period ends today - this system does not keep a full stock-movement ledger, so a past running balance can't be reconstructed. Inwards, Production/Repacking, Issue and Dispatch for the period are accurate."
         );
       }
-      footnotes.push("Quantities are in Qtl. Production/Repacking and Issue are counted from packing runs, and Dispatch from finished goods dispatched, in the period.");
+      footnotes.push("Opening, Inwards, Production/Repacking, Issue, Dispatch and Closing are in bags (a bulk line, which has no bags, shows its quantity in Qtl); Closing Weight is in Qtl. Totals add up bagged stock only. Production/Repacking and Issue are counted from packing runs, and Dispatch from the stock sales loadings took out of each warehouse (plus finished goods dispatched), in the period.");
 
       const sameDay = ymdLocal(fromRaw) === ymdLocal(toDate);
       const period = sameDay ? `Date: ${fmtDMY(fromRaw)}` : `Period: ${fmtDMY(fromRaw)} to ${fmtDMY(toDate)}`;
@@ -651,13 +672,13 @@ module.exports = {
           { label: "Material", w: 150, align: "left" },
           { label: "Stock", w: 46, align: "center" },
           { label: "Pack Size", w: 50, align: "center" },
-          { label: "Bags", w: 74, align: "right" },
-          { label: "Opening", w: 72, align: "right" },
-          { label: "Inwards", w: 66, align: "right" },
+          { label: "Opening", w: 68, align: "right" },
+          { label: "Inwards", w: 62, align: "right" },
           { label: "Production / Repacking", w: 84, align: "right" },
-          { label: "Dispatch", w: 64, align: "right" },
           { label: "Issue", w: 58, align: "right" },
-          { label: "Closing", w: 76, align: "right" },
+          { label: "Dispatch", w: 62, align: "right" },
+          { label: "Closing", w: 68, align: "right" },
+          { label: "Closing Weight (Qtl)", w: 92, align: "right" },
         ],
         groups,
         totalsRow,

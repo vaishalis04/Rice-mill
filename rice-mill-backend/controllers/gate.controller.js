@@ -1033,6 +1033,15 @@ getById: async (req, res, next) => {
       });
       if (!entry) throw createError(404, "Gate entry not found");
 
+      // Order of the gate flow:  token  ->  Admin attaches PO / SO / Empty-Misc
+      // details  ->  Check-in.  A truck can only be checked in once its details
+      // are attached (that leaves it at "waiting_token" with an entry_type).
+      if (entry.gate_status === "pending_details" || entry.entry_type === "pending") {
+        throw createError(
+          400,
+          "Attach the Purchase Order / Sales Order / Empty-Misc details to this vehicle first (Admin > Gate Entry) — only then can it be checked in.",
+        );
+      }
       if (entry.gate_status !== "waiting_token") {
         throw createError(
           400,
@@ -1040,15 +1049,11 @@ getById: async (req, res, next) => {
         );
       }
 
-      // Check-in now happens right after the Gate generates the token —
-      // before Admin has attached an Entry Type / PO / SO — so we don't
-      // know yet whether this is a Purchase / Sales / Empty truck. It
-      // simply moves to "pending_details", which is what makes it show up
-      // on Admin > Gate Entry to be classified and attached. The actual
-      // routing into the Sampling / Weighment queue (based on entry_type)
-      // happens in `attachDetails` below, once Admin knows what it is.
+      // Check-in is what routes the truck into its first queue, based on the
+      // entry type Admin attached: Purchase -> Sampling, Empty/Misc & Sales -> Weighment.
+      const nextStatus = entry.entry_type === "purchase" ? "waiting_sampling" : "waiting_weighment";
       await entry.update({
-        gate_status: "pending_details",
+        gate_status: nextStatus,
         updated_by: req.user ? req.user.id : null,
       });
 
@@ -1057,7 +1062,9 @@ getById: async (req, res, next) => {
       });
       res.status(200).json({
         success: true,
-        msg: "Vehicle checked in — now waiting for Admin to attach Purchase/Sales Order details.",
+        msg: entry.entry_type === "purchase"
+          ? "Vehicle checked in — moved to the Sampling queue."
+          : "Vehicle checked in — moved to the Weighment queue.",
         data: updated,
       });
     } catch (err) {
@@ -1161,7 +1168,7 @@ getById: async (req, res, next) => {
 // see `attachDetails` below), which is what actually starts the
 // truck's journey (moves it to gate_status "waiting_token" so it can be
 // checked in). Until Admin attaches those details, the entry just sits
-// at gate_status "pending_details".
+// at gate_status "pending_details" — and cannot be checked in.
 generateToken: async (req, res, next) => {
   let transaction;
   try {
@@ -1220,7 +1227,7 @@ generateToken: async (req, res, next) => {
       driver_id,
       driver_photo_url: driver_photo_url || null,
       entry_type: "pending",
-      gate_status: "waiting_token",
+      gate_status: "pending_details",
       plant_id: resolvedPlantId,
       entry_time: new Date(),
       created_by: req.user ? req.user.id : null,
@@ -1247,7 +1254,7 @@ generateToken: async (req, res, next) => {
 
     return res.status(201).json({
       success: true,
-      msg: "Token generated — check the vehicle in once it's physically at the gate. Admin will attach the Purchase/Sales Order details after that.",
+      msg: "Token generated — Admin will now attach the Purchase / Sales Order / Empty-Misc details to this vehicle; it can be checked in after that.",
       token_no,
       data: createdGateEntry,
     });
@@ -1261,12 +1268,11 @@ generateToken: async (req, res, next) => {
 // ATTACH DETAILS (Admin side — Admin > Gate Entry tab)
 // ============================================================
 // Takes an already-tokened gate entry (created above, still sitting at
-// gate_status "pending_details") and attaches the Entry Type, PO/SO +
-// materials, Challan No. and Expected Qty that used to be filled in at
-// the Gate itself. On success the entry moves to gate_status
-// "waiting_token" — exactly the state `generateToken` used to leave it
-// in before this split — so Check-in / Sampling / Weighbridge / etc. all
-// carry on completely unchanged from here.
+// gate_status "pending_details", NOT yet checked in) and attaches the
+// Entry Type, PO/SO + materials, Challan No. and Expected Qty (or the
+// Empty/Misc items). On success the entry moves to gate_status
+// "waiting_token" — attached and ready to be CHECKED IN at the Gate. The
+// check-in (see `checkIn`) is what then routes it into Sampling / Weighment.
 attachDetails: async (req, res, next) => {
   const t = await sequelize.transaction();
 
@@ -1324,10 +1330,16 @@ attachDetails: async (req, res, next) => {
       throw createError(400, `Gate entry ${gate_entry_id} not found`);
     }
 
-    if (pendingEntry.gate_status !== "pending_details") {
+    // Details are attached BEFORE check-in, so the entry must still be a fresh
+    // token: "pending_details" (or a token from before this order that is still
+    // unclassified at "waiting_token"). Anything further along is already attached.
+    const isFreshToken =
+      pendingEntry.gate_status === "pending_details" ||
+      (pendingEntry.gate_status === "waiting_token" && pendingEntry.entry_type === "pending");
+    if (!isFreshToken) {
       throw createError(
         400,
-        `Gate entry ${gate_entry_id} is not waiting on Admin (status '${pendingEntry.gate_status}') — it must be checked in at the Gate first`
+        `Gate entry ${gate_entry_id} is not waiting for details (status '${pendingEntry.gate_status}') — details can only be attached to a new token, before the vehicle is checked in`
       );
     }
 
@@ -1777,6 +1789,10 @@ attachDetails: async (req, res, next) => {
           throw createError(400, `Purchase Order ${po_id} not found`);
         }
 
+        if (purchaseOrder.approval_status === "cancelled") {
+          throw createError(400, `Purchase Order ${purchaseOrder.po_no || po_id} is cancelled`);
+        }
+
         // --------------------------------------------------------
         // VENDOR VALIDATION
         // --------------------------------------------------------
@@ -2071,18 +2087,14 @@ attachDetails: async (req, res, next) => {
     }
 
     // ============================================================
-    // 11. ATTACH DETAILS ONTO THE EXISTING (CHECKED-IN) GATE ENTRY
+    // 11. ATTACH DETAILS ONTO THE EXISTING TOKEN
     // ============================================================
-    // The token was already generated AND the truck already checked in at
-    // the Gate — we only update the row here, we never create a new one.
-    // Since we now know the Entry Type, this is where the truck actually
-    // joins its next queue: Purchase -> Sampling, Empty/Misc & Sales ->
-    // Weighment (this is exactly what `checkIn` used to decide before the
-    // Gate/Admin split — it just runs here now, once entry_type is known).
+    // The token was already generated at the Gate — we only update the row
+    // here, we never create a new one. The truck is NOT checked in yet: it now
+    // waits at "waiting_token" (details attached, ready for check-in), and it is
+    // the Gate's Check-in that routes it into Sampling / Weighment.
 
-    let nextStatus = "waiting_sampling";
-    if (entry_type === "other") nextStatus = "waiting_weighment";
-    else if (entry_type === "sales") nextStatus = "waiting_weighment";
+    const nextStatus = "waiting_token";
 
     const gateEntryUpdates = {
       vendor_id: entry_type === "purchase" ? vendor_id || null : null,
@@ -2307,12 +2319,12 @@ attachDetails: async (req, res, next) => {
       success: true,
       msg:
         entry_type === "sales"
-          ? "Sales Order(s) attached — truck moved to the Weighment queue"
+          ? "Sales Order(s) attached — the vehicle is ready to be checked in at the Gate"
           : entry_type === "purchase"
-          ? "Purchase Order(s) attached — truck moved to the Sampling queue"
+          ? "Purchase Order(s) attached — the vehicle is ready to be checked in at the Gate"
           : validatedMiscItems.length > 0
-          ? "Details attached — truck moved to the Weighment queue and its items logged"
-          : "Details attached — truck moved to the Weighment queue",
+          ? "Details attached and items logged — the vehicle is ready to be checked in at the Gate"
+          : "Details attached — the vehicle is ready to be checked in at the Gate",
       token_no: createdGateEntry.token_no,
       data: createdGateEntry,
       material_details: materialDetails,

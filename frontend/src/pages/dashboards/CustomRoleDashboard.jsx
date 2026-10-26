@@ -8,6 +8,7 @@ import { permissionCode } from "../../config/pageCatalog";
 import GateEntryPage from "../gate/GateEntryPage";
 import SamplingPage from "../quality/SamplingPage";
 import LabTestPage from "../quality/LabTestPage";
+import CompositeReportPage from "../quality/CompositeReportPage";
 import ProductionBatchPage from "../production/ProductionBatchPage";
 import MachinesPage from "../production/MachinesPage";
 import PackingPage from "../production/PackingPage";
@@ -34,6 +35,7 @@ import PurchaseOrderApprovalPage from "../admin/PurchaseOrderApprovalPage";
 import SalesOrderApprovalPage from "../admin/Salesorderapprovalpage";
 import GateEntryAdminPage from "../admin/GateEntryAdminPage";
 import AdvisoryTrucksPage from "../admin/AdvisoryTrucksPage";
+import PaymentSettlementPage from "../advisory/PaymentSettlementPage";
 
 // Every page a built-in role dashboard can show, tagged with the exact
 // page-level permission `code` ("<module>.<page>", from
@@ -51,6 +53,7 @@ const TAB_CATALOG = [
   { code: permissionCode("gate", "entry"), key: "gate:entry", label: "Gate Entry", Component: GateEntryPage },
   { code: permissionCode("lab", "sampling"), key: "lab:sampling", label: "Sampling", Component: SamplingPage },
   { code: permissionCode("lab", "tests"), key: "lab:tests", label: "Lab Tests", Component: LabTestPage },
+  { code: permissionCode("lab", "composite_report"), key: "lab:composite_report", label: "Composite Report", Component: CompositeReportPage },
   { code: permissionCode("production", "batches"), key: "production:batches", label: "Production Batches", Component: ProductionBatchPage },
   { code: permissionCode("production", "machines"), key: "production:machines", label: "Machines", Component: MachinesPage },
   { code: permissionCode("production", "packing"), key: "production:packing", label: "Packing", Component: PackingPage },
@@ -81,6 +84,9 @@ const TAB_CATALOG = [
   { code: permissionCode("admin", "roles"), key: "admin:roles", label: "Roles & Permissions", Component: RolesPage },
   { code: permissionCode("admin", "gate_entry"), key: "admin:gate_entry", label: "Gate Entry (Admin)", Component: GateEntryAdminPage },
   { code: permissionCode("admin", "advisory_trucks"), key: "admin:advisory_trucks", label: "Advisory Trucks", Component: AdvisoryTrucksPage },
+  { code: permissionCode("admin", "payment_settlement"), key: "admin:payment_settlement", label: "Payment Settlement", Component: PaymentSettlementPage },
+  // The Advisory dashboard's own "Payment Settlement Advice" grant also works for a custom role.
+  { code: permissionCode("advisory", "payment_settlement"), key: "advisory:payment_settlement", label: "Payment Settlement Advice", Component: PaymentSettlementPage },
 ];
 
 export default function CustomRoleDashboard() {

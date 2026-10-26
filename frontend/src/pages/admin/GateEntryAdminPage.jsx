@@ -12,16 +12,15 @@ import { useEntityLookup } from "../../hooks/useEntityLookup";
 import "../gate/GateEntry.css";
 
 // This is the other half of the split Gate Entry flow: the Gate only
-// captures Vehicle + Driver + Driver Photo, prints a token, and checks
-// the truck in (see GateEntryPage.jsx). Once checked in, the entry lands
-// here at gate_status "pending_details". Admin picks it, decides its
-// Entry Type, and attaches the approved Purchase Order(s) / Sales
-// Order(s) + materials + Challan No. + Expected Qty — or, for an
-// Empty/Misc truck, logs what items it dropped off and where they were
-// stored. Submitting routes the truck straight into its next queue
-// (Sampling for Purchase, Weighment for Empty/Misc & Sales) — everything
-// downstream from there (Lab, Weighbridge, Warehouse, Loading…) is
-// untouched.
+// captures Vehicle + Driver + Driver Photo and prints a token (see
+// GateEntryPage.jsx). The entry then waits here at gate_status
+// "pending_details". Admin picks it, decides its Entry Type, and attaches the
+// approved Purchase Order(s) / Sales Order(s) + materials + Challan No. +
+// Expected Qty — or, for an Empty/Misc truck, logs what items it dropped off
+// and where they were stored. That leaves the entry "Ready for check-in"
+// (gate_status "waiting_token"); the Gate's Check-in is what then routes the
+// truck into its next queue (Sampling for Purchase, Weighment for Empty/Misc &
+// Sales) — everything downstream from there is untouched.
 
 const emptyAttachForm = {
   entry_type: "purchase",
@@ -37,7 +36,7 @@ const emptyMiscItemRow = { item_name: "", qty: "", unit: "nos", storage_location
 const STATUS_FILTERS = [
   { key: "pending_details", label: "Waiting on Admin" },
   { key: "", label: "All" },
-  { key: "waiting_token", label: "Waiting Token" },
+  { key: "waiting_token", label: "Ready for Check-in" },
   { key: "waiting_sampling", label: "Waiting Sampling" },
   { key: "waiting_weighment", label: "Waiting Weighment" },
   { key: "waiting_loading", label: "Waiting Loading" },
@@ -587,7 +586,7 @@ export default function GateEntryAdminPage() {
       const res = await attachGateEntryDetailsApi(payload);
       setInfo(
         res.data.msg ||
-          "Details attached — the truck has moved into its next queue."
+          "Details attached — the vehicle is ready to be checked in at the Gate."
       );
 
       setSelectedGateEntryId("");
@@ -612,12 +611,13 @@ export default function GateEntryAdminPage() {
     <div>
       <h2 style={{ marginTop: 0 }}>Gate Entry</h2>
       <p className="field-hint" style={{ marginBottom: 12 }}>
-        Trucks are checked in at the Gate with just Vehicle + Driver + Driver Photo — the
-        Entry Type isn't known yet at that point. Pick one below that's "Waiting on
+        The Gate generates a token with just Vehicle + Driver + Driver Photo — the Entry
+        Type isn't known yet at that point. Pick a token below that's "Waiting on
         Admin", choose its Entry Type, and attach the approved Purchase Order or Sales
         Order (with materials, Challan No. and Expected Qty) — or, for an Empty/Misc
-        truck, log what it dropped off and where. Submitting sends the truck straight
-        into its next queue (Sampling for Purchase, Weighment for Empty/Misc & Sales).
+        truck, log what it dropped off and where. The vehicle is then "Ready for
+        check-in": the Gate checks it in, which sends it into its next queue (Sampling
+        for Purchase, Weighment for Empty/Misc & Sales).
       </p>
 
       {error && <div className="dt-error">{error}</div>}
@@ -625,7 +625,7 @@ export default function GateEntryAdminPage() {
 
       <h3 style={{ marginBottom: 4 }}>Attach Details to a Token</h3>
       <div className="sf-field">
-        <label>Checked-in token waiting on Admin</label>
+        <label>Token waiting on Admin</label>
         <EntitySelect
           entity="gate_entry"
           label=""
@@ -635,7 +635,8 @@ export default function GateEntryAdminPage() {
           placeholder="Search by token no…"
         />
         <p className="field-hint">
-          Only tokens that have been checked in at the Gate but not yet classified show up here.
+          Only tokens generated at the Gate that haven't been given their PO / SO / Empty-Misc details yet show up here.
+          Once attached, the vehicle is ready for check-in at the Gate.
         </p>
       </div>
 
@@ -1090,6 +1091,10 @@ export default function GateEntryAdminPage() {
                 <span className="dt-badge" style={{ background: "#fef3c7", color: "#92400e" }}>
                   Waiting on Admin
                 </span>
+              ) : row.gate_status === "waiting_token" ? (
+                <span className="dt-badge" style={{ background: "#dcfce7", color: "#166534" }}>
+                  Ready for check-in
+                </span>
               ) : (
                 <span className="dt-badge">{row.gate_status}</span>
               ),
@@ -1152,12 +1157,12 @@ export default function GateEntryAdminPage() {
       <ModuleGuide
         title="Admin — Gate Entry"
         steps={[
-          "The Gate generates a token (Vehicle + Driver + Driver Photo) and checks the truck in as soon as it's physically at the gate. It shows up here as 'Waiting on Admin' once checked in.",
+          "The Gate generates a token (Vehicle + Driver + Driver Photo) when a truck arrives. It shows up here as 'Waiting on Admin' straight away — before check-in.",
           "Pick that token above (or click 'Attach Details' in the table), choose its Entry Type, and attach the approved Purchase Order(s) or Sales Order(s) — same picker you'd have used at the Gate before, just moved here.",
           "For Purchase, pick one or more approved POs and the materials/quantities being delivered, plus the Challan No. and Expected Qty.",
           "For Sales (Outbound Loading), pick one or more approved SOs and the materials/quantities to be loaded.",
           "For Empty/Miscellaneous, list what the truck dropped off (item, qty, unit) and where it was stored — this isn't tracked in the formal Inventory system, just logged here so it isn't lost track of. Challan No. and Remarks are optional too.",
-          "Submitting routes the truck straight into its next queue: Purchase trucks join Sampling; Empty/Misc and Sales trucks join Weighment. The normal journey from there (Lab, Weighbridge, Warehouse, Loading…) proceeds exactly as before.",
+          "Submitting leaves the vehicle 'Ready for check-in'. The Gate then checks it in, which routes it into its next queue: Purchase trucks join Sampling; Empty/Misc and Sales trucks join Weighment. The normal journey from there (Lab, Weighbridge, Warehouse, Loading…) proceeds exactly as before.",
           "The Misc / Other Items Log below lists everything logged against Empty/Misc trucks — what, how much, and where it's stored.",
         ]}
       />

@@ -8,7 +8,8 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 router.use(
   verifyAccessToken,
   attachUser,
-  authorizeRoleOrModule(["purchase", "admin", "sales", "gate", "warehouse", "lab"], ["purchase", "sales", "gate", "warehouse", "lab"]),
+  // admin.gate_entry (read-only): the admin Gate Entry page lists approved POs to attach.
+  authorizeRoleOrModule(["purchase", "admin", "sales", "gate", "warehouse", "lab"], ["purchase", "sales", "gate", "warehouse", "lab"], { codes: ["admin.gate_entry"], readOnly: true }),
 ); // Protected routes
 
 router.get("/grouped", Controller.getAllGrouped); // must be before "/:id" (GET) or it'd be swallowed as id="grouped"
@@ -32,6 +33,10 @@ router.patch("/po/:po_no/approve", authorize("admin"), Controller.approve);
 
 // Admin rejects entire PO
 router.patch("/po/:po_no/reject", authorize("admin"), Controller.reject);
+
+// Cancel the whole PO at any stage; only a cancelled PO can then be deleted
+router.patch("/po/:po_no/cancel", Controller.cancel);
+router.delete("/po/:po_no", Controller.deleteByPoNo);
 router.put("/po/:po_no/items", Controller.addItem);
 router.post("/po/:po_no/items", Controller.addItem);
 router.put("/po/:po_no/header", Controller.updateHeader);

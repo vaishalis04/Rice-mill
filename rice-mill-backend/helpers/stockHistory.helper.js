@@ -1,5 +1,6 @@
 const { Inventory, ProductionBatch, Packing, FinishedGoods } = require("../models/index");
 const { KG_PER_QTL } = require("./units");
+const { loadingStockEvents } = require("./loadingStock.helper");
 
 // Warehouse stock "before" and "after" a production batch.
 //
@@ -11,6 +12,8 @@ const { KG_PER_QTL } = require("./units");
 //                (unloading completion creates the raw rows; a packing run creates the fg rows)
 //   - outflow    a completed batch's reserved materials (materials_data[].input_qty),
 //                drawn from the batch's source warehouse when the batch was completed
+//   - outflow    stock a sales-truck loading took out of a warehouse (the part that hit
+//                Inventory rows — see helpers/loadingStock.helper.js), at the loading time
 //
 // Starting from the live balance and undoing everything that happened AFTER a
 // batch gives the balance right after it; undoing the batch itself gives the
@@ -188,6 +191,12 @@ const loadStockTimeline = async () => {
   for (const row of inv) {
     if (ownerOfRow.has(row.id)) continue;
     events.push({ t: ts(row.createdAt), key: keyOf(row.warehouse_id, row.material_id), delta: Number(row.qty_in || 0), batchId: null, kind: "inflow" });
+  }
+
+  // Sales-truck loadings reduce the same Inventory balances, so they are part of the history.
+  for (const e of await loadingStockEvents()) {
+    if (!e.inventory_qty) continue;
+    events.push({ t: e.t, key: keyOf(e.warehouse_id, e.material_id), delta: -e.inventory_qty, batchId: null, kind: "dispatch" });
   }
 
   // ---- consistency check: the rebuilt history must add up to the live balance ----

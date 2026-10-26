@@ -5,6 +5,11 @@ const {
 } = require("../models/index");
 const { loadStockTimeline, keyOf, asArray } = require("./stockHistory.helper");
 const { fmtQty, fmtDMY, fmtCount, COLORS } = require("./reportPdf.helper");
+const { loadingStockEvents, loadedQtlByFinishedGoods } = require("./loadingStock.helper");
+
+// What a packing run PRODUCED = what is left of it in FinishedGoods + what sales loadings have taken out
+// of it since (loading lowers FinishedGoods.qty), so a batch's output never shrinks when its goods are sold.
+const loadedByFinishedGoods = async () => loadedQtlByFinishedGoods(await loadingStockEvents());
 
 // Production Summary → "what did each batch take out of which warehouse, where
 // did it go, and what was the stock before / after / now".
@@ -44,11 +49,12 @@ const packedOutputByBatch = async (batchIds) => {
   if (!batchIds.length) return out;
   const packings = await Packing.findAll({ where: { batch_id: { [Op.in]: batchIds }, is_deleted: false }, attributes: ["id", "batch_id"] });
   if (!packings.length) return out;
-  const fgs = await FinishedGoods.findAll({ where: { packing_id: { [Op.in]: packings.map((p) => p.id) }, is_deleted: false }, attributes: ["packing_id", "qty"] });
+  const fgs = await FinishedGoods.findAll({ where: { packing_id: { [Op.in]: packings.map((p) => p.id) }, is_deleted: false }, attributes: ["id", "packing_id", "qty"] });
+  const loaded = await loadedByFinishedGoods();
   const batchOfPacking = new Map(packings.map((p) => [Number(p.id), Number(p.batch_id)]));
   for (const fg of fgs) {
     const b = batchOfPacking.get(Number(fg.packing_id));
-    out.set(b, (out.get(b) || 0) + Number(fg.qty || 0) / KG_PER_QTL);
+    out.set(b, (out.get(b) || 0) + Number(fg.qty || 0) / KG_PER_QTL + (loaded.get(Number(fg.id)) || 0));
   }
   return out;
 };
@@ -71,6 +77,7 @@ const buildBatchMovements = async (batches) => {
   const lotIds = [...new Set(batches.flatMap((b) => asArray(b.materials_data).map((m) => Number(m.lot_id))).filter(Boolean))];
   const lots = lotIds.length ? await Lot.findAll({ where: { id: { [Op.in]: lotIds } }, attributes: ["id", "lot_no"] }) : [];
   const lotNo = new Map(lots.map((l) => [Number(l.id), l.lot_no]));
+  const loadedByFg = await loadedByFinishedGoods();
   const fgByPacking = new Map();
   fgs.forEach((fg) => {
     const arr = fgByPacking.get(Number(fg.packing_id)) || [];
@@ -119,8 +126,9 @@ const buildBatchMovements = async (batches) => {
         const mid = Number(p.material_id);
         const gk = `${fg.warehouse_id}|${mid}`;
         const g = groups.get(gk) || { warehouse_id: fg.warehouse_id, material_id: mid, qty: 0, packs: [] };
-        g.qty += Number(fg.qty || 0) / KG_PER_QTL;
-        g.packs.push({ pack_size: Number(p.pack_size), bags: Number(p.bag_count) || 0, qty: r3(Number(fg.qty || 0) / KG_PER_QTL) });
+        const producedQtl = Number(fg.qty || 0) / KG_PER_QTL + (loadedByFg.get(Number(fg.id)) || 0);
+        g.qty += producedQtl;
+        g.packs.push({ pack_size: Number(p.pack_size), bags: Number(p.bag_count) || 0, qty: r3(producedQtl) });
         groups.set(gk, g);
       }
     }

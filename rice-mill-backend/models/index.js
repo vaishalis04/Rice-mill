@@ -28,6 +28,7 @@ const Visitor = require("./visitor.model");
 const GateEntryPurchaseOrder = require("./gateEntryPurchaseOrder.model");
 const Sampling = require("./sampling.model");
 const LabTest = require("./labTest.model");
+const CompositeReport = require("./compositeReport.model");
 const Negotiation = require("./negotiation.model");
 const WeightSlip = require("./weightSlip.model");
 const Loading = require("./loading.model");
@@ -131,6 +132,8 @@ LabTest.belongsTo(VarietyMaster, {
   as: "detectedVariety",
 });
 LabTest.belongsTo(User, { foreignKey: "tested_by", as: "tester" });
+CompositeReport.belongsTo(LabTest, { foreignKey: "lab_test_id", as: "labTest" });
+CompositeReport.belongsTo(User, { foreignKey: "created_by", as: "creator" });
 Negotiation.belongsTo(LabTest, { foreignKey: "lab_test_id", as: "labTest" });
 Negotiation.belongsTo(User, { foreignKey: "negotiated_by", as: "negotiator" });
 WeightSlip.belongsTo(GateEntry, {
@@ -330,6 +333,7 @@ GateEntry.belongsTo(WarehouseMaster, {
 });
 Sampling.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 LabTest.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
+CompositeReport.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 Negotiation.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 WeightSlip.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
 Loading.belongsTo(PlantMaster, { foreignKey: "plant_id", as: "plant" });
@@ -474,6 +478,7 @@ module.exports = {
   GateEntryPurchaseOrder,
   Sampling,
   LabTest,
+  CompositeReport,
   Negotiation,
   WeightSlip,
   Loading,

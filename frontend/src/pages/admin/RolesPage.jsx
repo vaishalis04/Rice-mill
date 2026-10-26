@@ -15,6 +15,14 @@ import { PAGE_CATALOG, permissionCode } from "../../config/pageCatalog";
 const emptyRoleForm = { role_name: "", description: "" };
 const emptyPermissionForm = { module: "", page: "" };
 
+// Generic CRUD-style permissions (create / read / update / delete / approve /
+// write) are no longer offered here — access is granted purely by choosing
+// PAGES (and the dashboard/tab they belong to). Any such rows still sitting in
+// the permissions table are simply not shown, and are left out of what gets
+// saved, so saving a role's pages also clears them from that role.
+const CRUD_ACTIONS = new Set(["create", "read", "update", "delete", "approve", "write"]);
+const isPagePermission = (p) => !CRUD_ACTIONS.has(String(p.action || "").toLowerCase());
+
 const MODULES = [...new Set(PAGE_CATALOG.map((p) => p.module))];
 const pagesForModule = (moduleName) => PAGE_CATALOG.filter((p) => p.module === moduleName);
 const labelFor = (moduleName, page) =>
@@ -44,7 +52,7 @@ export default function RolesPage() {
     Promise.all([getRoleListApi(), getPermissionsCatalogApi()])
       .then(([rolesRes, permsRes]) => {
         setRoles(rolesRes.data.data ?? rolesRes.data);
-        setPermissions(permsRes.data.data ?? permsRes.data);
+        setPermissions((permsRes.data.data ?? permsRes.data).filter(isPagePermission));
       })
       .catch(() => setError("Failed to load roles/permissions"))
       .finally(() => setLoading(false));
@@ -109,7 +117,9 @@ export default function RolesPage() {
     setError("");
     setInfo("");
     setManagingRoleId(row.id);
-    setCheckedIds(new Set(row.permission_ids || []));
+    // Only page permissions are shown/kept; CRUD ones drop out of the selection.
+    const pageIds = new Set(permissions.map((p) => p.id));
+    setCheckedIds(new Set((row.permission_ids || []).filter((id) => pageIds.has(id))));
   };
 
   const handleTogglePermission = (permId) => {
@@ -273,7 +283,7 @@ export default function RolesPage() {
           {
             key: "permission_count",
             label: "Pages Granted",
-            render: (row) => (row.permission_ids || []).length,
+            render: (row) => (row.permission_ids || []).filter((id) => permissions.some((p) => p.id === id)).length,
           },
           {
             key: "manage",

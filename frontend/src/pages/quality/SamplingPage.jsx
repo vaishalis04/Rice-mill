@@ -692,7 +692,7 @@ export default function SamplingPage() {
           <div className="form-grid" style={styles.formGrid}>
             <div style={styles.formGroup}>
               <EntitySelect
-                entity="gate_entry"
+                entity="gate_entry_party"
                 label="Gate Entry"
                 value={form.gate_entry_id}
                 onChange={(id) => {

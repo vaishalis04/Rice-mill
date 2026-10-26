@@ -269,6 +269,18 @@ export const ENTITY_OPTIONS = {
         row.gate_status ? ` (${row.gate_status})` : ""
       }`,
   },
+  // Same gate entries as "gate_entry", but the label also carries the PARTY
+  // (vendor / customer) name — "GT-…-0001 — Vendor Name (waiting_sampling)" —
+  // so the Sampling page's picker tells you who the truck belongs to.
+  gate_entry_party: {
+    fetch: () => getGateEntriesApi(undefined, undefined, 500).then(unwrap),
+    getLabel: (row) => {
+      const party = row.vendor?.name || row.customer?.name;
+      return `${row.token_no || row.challan_no || `Entry #${row.id}`}${party ? ` — ${party}` : ""}${
+        row.gate_status ? ` (${row.gate_status})` : ""
+      }`;
+    },
+  },
   sampling: {
     // Combines samplings with vendors/materials/POs so the label can show
     // "SAMP0002 — Vendor Name — PO-XXXX — Paddy, Brown Rice" instead of
@@ -276,7 +288,9 @@ export const ENTITY_OPTIONS = {
     // who the delivery was from or what was actually in it.
     fetch: async () => {
       const [samplingRows, vendorRows, materialRows, poRows] = await Promise.all([
-        getSamplingsApi().then(unwrap),
+        // 500: the Lab Test picker needs every open sampling, not just the
+        // newest 20 (the API's default page size).
+        getSamplingsApi(undefined, 500).then(unwrap),
         getVendorsApi().then(unwrap),
         getMasterSettingsApi("material").then(unwrap),
         getPurchaseOrdersGroupedApi().then(unwrap),
@@ -310,14 +324,19 @@ export const ENTITY_OPTIONS = {
 
         return {
           ...row,
-          _vendorName: vendorId ? vendorById.get(String(vendorId)) : null,
+          _token: row.gateEntry?.token_no || null,
+          _vehicleNo: row.gateEntry?.vehicle?.vehicle_no || null,
+          _vendorName: (vendorId ? vendorById.get(String(vendorId)) : null) || row.gateEntry?.vendor?.name || null,
           _materialNames: materialIds.map((id) => materialById.get(String(id)) || `Material ${id}`),
           _poNos: [...new Set(poIds.map((id) => poById.get(String(id))).filter(Boolean))],
         };
       });
     },
     getLabel: (row) => {
+      // "SAMP0008 — GT-…-0001 — MP09 AB 1234 — Vendor — PO-… — Paddy"
       const parts = [row.sample_code];
+      if (row._token) parts.push(row._token);
+      if (row._vehicleNo) parts.push(row._vehicleNo);
       if (row._vendorName) parts.push(row._vendorName);
       if (row._poNos && row._poNos.length) parts.push(row._poNos.join(", "));
       if (row._materialNames && row._materialNames.length) parts.push(row._materialNames.join(", "));

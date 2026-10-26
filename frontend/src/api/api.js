@@ -90,6 +90,11 @@ export const updatePurchaseOrderApi = (id, data) =>
   axiosInstance.put(`/purchases/${id}`, data);
 export const deletePurchaseOrderApi = (id) =>
   axiosInstance.delete(`/purchases/${id}`);
+// Cancel a whole PO (any stage); only a cancelled PO can then be deleted.
+export const cancelPurchaseOrderApi = (po_no) =>
+  axiosInstance.patch(`/purchases/po/${encodeURIComponent(po_no)}/cancel`);
+export const deleteCancelledPurchaseOrderApi = (po_no) =>
+  axiosInstance.delete(`/purchases/po/${encodeURIComponent(po_no)}`);
 
 export const getPurchaseOrderByPoNoApi = (po_no) =>
   axiosInstance.get(`/purchases/po/${po_no}`);
@@ -152,6 +157,14 @@ export const getLoadingByIdApi = (id) => axiosInstance.get(`/loading/${id}`);
 
 export const createLoadingApi = (data) => axiosInstance.post("/loading", data);
 
+// What each warehouse holds of the given materials (per pack size) — for the
+// Loading screen's warehouse picker. exclude_loading_id counts an edited
+// loading's own stock as still available.
+export const getLoadingStockApi = (materialIds, excludeLoadingId) =>
+  axiosInstance.get("/loading/stock-availability", {
+    params: { material_ids: [].concat(materialIds).join(","), ...(excludeLoadingId ? { exclude_loading_id: excludeLoadingId } : {}) },
+  });
+
 export const updateLoadingApi = (id, data) =>
   axiosInstance.put(`/loading/${id}`, data);
 
@@ -197,9 +210,9 @@ export const deleteGateEntryApi = (id) => axiosInstance.delete(`/gate/${id}`);
 export const createSamplingApi = (data) =>
   axiosInstance.post("/sampling", data);
 
-export const getSamplingsApi = (gate_entry_id) =>
+export const getSamplingsApi = (gate_entry_id, limit) =>
   axiosInstance.get("/sampling", {
-    params: gate_entry_id ? { gate_entry_id } : {},
+    params: { ...(gate_entry_id ? { gate_entry_id } : {}), ...(limit ? { limit } : {}) },
   });
 
 export const getSamplingByIdApi = (id) => axiosInstance.get(`/sampling/${id}`);
@@ -219,6 +232,10 @@ export const getLabTestsApi = (params = {}) =>
 
 export const getLabTestByIdApi = (id) => axiosInstance.get(`/lab-tests/${id}`);
 
+// Downloadable Lab Test Report (PDF blob)
+export const getLabTestPdfApi = (id) =>
+  axiosInstance.get(`/lab-tests/${id}/pdf`, { responseType: "blob" });
+
 export const updateLabTestApi = (id, data) =>
   axiosInstance.put(`/lab-tests/${id}`, data);
 
@@ -227,6 +244,20 @@ export const updateLabTestVerdictApi = (id, verdict) =>
 
 export const deleteLabTestApi = (id) =>
   axiosInstance.delete(`/lab-tests/${id}`);
+
+// Composite Report (Incoming Approval Slip) — generated from a tested sample
+export const getCompositeReportsApi = (params = {}) =>
+  axiosInstance.get("/composite-reports", { params });
+export const getCompositeReportSourceApi = (labTestId) =>
+  axiosInstance.get(`/composite-reports/source/${labTestId}`);
+export const createCompositeReportApi = (data) =>
+  axiosInstance.post("/composite-reports", data);
+export const updateCompositeReportApi = (id, data) =>
+  axiosInstance.put(`/composite-reports/${id}`, data);
+export const deleteCompositeReportApi = (id) =>
+  axiosInstance.delete(`/composite-reports/${id}`);
+export const getCompositeReportPdfApi = (id) =>
+  axiosInstance.get(`/composite-reports/${id}/pdf`, { responseType: "blob" });
 
 // ---------------- NEGOTIATION (role: purchase) ----------------
 
@@ -378,6 +409,14 @@ export const getDailyOutwardReportPdfApi = (params = {}) =>
 
 export const getDailyReportPdfApi = (params = {}) =>
   axiosInstance.get("/reports/daily-report-pdf", { params, responseType: "blob" });
+
+// Orders grouped by party (vendor for a PO, customer for an SO): counts by status, ordered vs
+// received / loaded quantity and dates. format = json (default) | pdf | csv; detail = orders | parties (csv).
+export const getPartyOrdersReportApi = (params = {}) =>
+  axiosInstance.get("/reports/party-orders", {
+    params,
+    responseType: params.format === "csv" || params.format === "pdf" ? "blob" : "json",
+  });
 
 // ---------------- ADVISORY TRUCKS (Admin only) ----------------
 export const getAdvisoryTrucksApi = (params = {}) =>

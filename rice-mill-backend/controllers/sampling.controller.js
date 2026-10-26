@@ -1,6 +1,7 @@
 const createError = require("http-errors");
 const { Op } = require("sequelize");
-const { GateEntry, Sampling, User, PurchaseOrder, MaterialMaster,GateEntryPurchaseOrder, Vendor, Vehicle } = require("../models/index");
+const { GateEntry, Sampling, User, PurchaseOrder, MaterialMaster,GateEntryPurchaseOrder, GateEntrySalesOrder, SalesOrder, Vendor, Vehicle, Purchase, Lot } = require("../models/index");
+const { lotCounts } = require("../helpers/materialSlipCalc.helper");
 const { generateCode } = require("../helpers/helperFunction");
 const sequelize = require("../config/db");
 
@@ -31,6 +32,108 @@ const detailIncludes = [
   { model: User, as: "collector", attributes: ["id", "username", "email"] },
 ]; 
 
+// ---------------------------------------------------------------------------
+// "Is the order behind this sampling finished?"
+//
+// Once the PO (purchase) / SO (sales) a sampling belongs to is COMPLETED, the
+// sampling must no longer be offered in the Lab Test dropdown. Each sampling
+// row is returned with a computed `order_completed` flag so the front-end can
+// simply filter on it:
+//   * PO is completed  -> every PO line has received_qty >= ordered qty
+//   * SO is completed  -> so_status is dispatched / closed / cancelled, or
+//                         every SO line has dispatched_qty >= ordered qty
+// A sampling is completed only when ALL the orders it belongs to are; one with
+// no resolvable order is never hidden.
+// ---------------------------------------------------------------------------
+const toIdArray = (value) => {
+  let list = value;
+  if (typeof value === "string" && value.trim()) {
+    try { list = JSON.parse(value); } catch { list = []; }
+  }
+  if (!Array.isArray(list)) list = list ? [list] : [];
+  return list.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+};
+const toItemArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    try { const p = JSON.parse(value); return Array.isArray(p) ? p : []; } catch { return []; }
+  }
+  return [];
+};
+const QTY_TOLERANCE = 0.001;
+// A PO line's received quantity is the stored received_qty when there is one; otherwise it is
+// rebuilt from the unloaded lots of trucks that have exited (same rule the gate / weighbridge
+// controllers use for POs that don't carry per-line received_qty).
+const poIsComplete = (po, receivedByLine) => {
+  const lines = toItemArray(po.items).filter((i) => Number(i?.qty) > 0);
+  return lines.length > 0 && lines.every((i) => {
+    const received = i.received_qty != null
+      ? Number(i.received_qty || 0)
+      : receivedByLine.get(`${Number(po.id)}:${Number(i.material_id)}`) || 0;
+    return received + QTY_TOLERANCE >= Number(i.qty);
+  });
+};
+const soIsComplete = (so) => {
+  if (["dispatched", "closed", "cancelled"].includes(so.so_status)) return true;
+  const lines = toItemArray(so.items).filter((i) => Number(i?.qty) > 0);
+  return lines.length > 0 && lines.every((i) => Number(i.dispatched_qty || 0) + QTY_TOLERANCE >= Number(i.qty));
+};
+
+const attachOrderCompletion = async (input) => {
+  const rows = (Array.isArray(input) ? input : [input]).filter(Boolean);
+  if (!rows.length) return;
+
+  const gateIds = [...new Set(rows.map((r) => Number(r.gate_entry_id)).filter(Boolean))];
+  const [poLinks, soLinks] = await Promise.all([
+    gateIds.length ? GateEntryPurchaseOrder.findAll({ where: { gate_entry_id: gateIds, is_deleted: false }, attributes: ["gate_entry_id", "po_id"] }) : [],
+    gateIds.length ? GateEntrySalesOrder.findAll({ where: { gate_entry_id: gateIds, is_deleted: false }, attributes: ["gate_entry_id", "so_id"] }) : [],
+  ]);
+  const linkedPos = (gid) => poLinks.filter((l) => Number(l.gate_entry_id) === Number(gid)).map((l) => Number(l.po_id));
+  const linkedSos = (gid) => soLinks.filter((l) => Number(l.gate_entry_id) === Number(gid)).map((l) => Number(l.so_id));
+
+  const poIdsFor = (r) => { const own = toIdArray(r.po_id); return own.length ? own : linkedPos(r.gate_entry_id); };
+  const soIdsFor = (r) => linkedSos(r.gate_entry_id);
+
+  const allPoIds = [...new Set(rows.flatMap(poIdsFor))];
+  const allSoIds = [...new Set(rows.flatMap(soIdsFor))];
+  const [pos, sos] = await Promise.all([
+    allPoIds.length ? PurchaseOrder.findAll({ where: { id: allPoIds, is_deleted: false }, attributes: ["id", "items"] }) : [],
+    allSoIds.length ? SalesOrder.findAll({ where: { id: allSoIds, is_deleted: false }, attributes: ["id", "items", "so_status"] }) : [],
+  ]);
+  // Receipts per PO line for POs whose lines carry no stored received_qty.
+  const needRebuild = pos.filter((p) => toItemArray(p.items).some((i) => i?.received_qty == null));
+  const receivedByLine = new Map();
+  if (needRebuild.length) {
+    const purchases = await Purchase.findAll({
+      where: { po_id: needRebuild.map((p) => Number(p.id)), is_deleted: false },
+      attributes: ["id", "po_id"],
+      include: [{ model: GateEntry, as: "gateEntry", attributes: ["id"], where: { is_deleted: false, gate_status: "exited" }, required: true }],
+    });
+    const lots = purchases.length
+      ? await Lot.findAll({
+          where: { purchase_id: purchases.map((p) => Number(p.id)), is_deleted: false, unloading_status: "completed" },
+          attributes: ["purchase_id", "material_id", "bag_size", "accepted_bags", "rejected_bags", "qty", "rejected_qty"],
+        })
+      : [];
+    const poOfPurchase = new Map(purchases.map((p) => [Number(p.id), Number(p.po_id)]));
+    for (const lot of lots) {
+      const key = `${poOfPurchase.get(Number(lot.purchase_id))}:${Number(lot.material_id)}`;
+      // bags x bag size (Lot.qty is lowered later by packing / production)
+      receivedByLine.set(key, (receivedByLine.get(key) || 0) + (lotCounts(lot).total.qtl || 0));
+    }
+  }
+  const poDone = new Map(pos.map((p) => [Number(p.id), poIsComplete(p, receivedByLine)]));
+  const soDone = new Map(sos.map((s) => [Number(s.id), soIsComplete(s)]));
+
+  rows.forEach((r) => {
+    const flags = [
+      ...poIdsFor(r).map((id) => poDone.get(id)),
+      ...soIdsFor(r).map((id) => soDone.get(id)),
+    ].filter((f) => f !== undefined);
+    r.setDataValue("order_completed", flags.length > 0 && flags.every(Boolean));
+  });
+};
+
 module.exports = {
   // GET /api/sampling?gate_entry_id=&page=&limit=
   getAll: async (req, res, next) => {
@@ -51,6 +154,8 @@ module.exports = {
         distinct: true,
       });
 
+      await attachOrderCompletion(rows);
+
       res.status(200).json({
         success: true,
         data: rows,
@@ -69,6 +174,7 @@ module.exports = {
         include: detailIncludes,
       });
       if (!sample) throw createError(404, "Sampling record not found");
+      await attachOrderCompletion(sample);
       res.status(200).json({ success: true, data: sample });
     } catch (err) {
       next(err);

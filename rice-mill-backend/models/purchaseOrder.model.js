@@ -90,7 +90,8 @@ PurchaseOrder.init(
     },
 
     approval_status: {
-      type: DataTypes.ENUM("pending_approval", "approved", "rejected"),
+      // "cancelled" = the whole PO was cancelled, at any stage. Only a cancelled PO can be deleted.
+      type: DataTypes.ENUM("pending_approval", "approved", "rejected", "cancelled"),
       allowNull: false,
       defaultValue: "pending_approval",
     },

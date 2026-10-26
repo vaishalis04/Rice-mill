@@ -114,7 +114,16 @@ module.exports = { attachUser, authorize, requirePermission, authorizeRoleOrModu
 //
 // Usage: router.use(verifyAccessToken, attachUser,
 //   authorizeRoleOrModule(["gate","warehouse","admin"], ["gate"]));
-function authorizeRoleOrModule(roleNames = [], modules = []) {
+//
+// Optional 3rd argument `extra` = { codes: ["admin.gate_entry"], readOnly: true }
+// lets a user through on ONE exact page permission code (not a whole module).
+// `readOnly: true` limits that code to GET/HEAD/OPTIONS — used for the lookup
+// endpoints a page merely reads from (e.g. the POs/SOs the admin Gate Entry
+// page lists), so holding that page never grants write access to them.
+// Omitted => behaves exactly as before.
+function authorizeRoleOrModule(roleNames = [], modules = [], extra = {}) {
+  const extraCodes = (extra.codes || []).map((c) => String(c).toLowerCase());
+  const readMethods = ["GET", "HEAD", "OPTIONS"];
   return async (req, res, next) => {
     try {
       if (!req.user) return next(createError.Unauthorized());
@@ -141,13 +150,21 @@ function authorizeRoleOrModule(roleNames = [], modules = []) {
       const grantedPermissionIds = [
         ...new Set([...roleGrants, ...userGrants].map((g) => g.permission_id)),
       ];
-      const matched = await Permission.count({
-        where: {
-          id: { [Op.in]: grantedPermissionIds },
-          module: { [Op.in]: modules.map((m) => m.toLowerCase()) },
-          is_deleted: false,
-        },
-      });
+      const orConditions = [];
+      if (modules.length) orConditions.push({ module: { [Op.in]: modules.map((m) => m.toLowerCase()) } });
+      if (extraCodes.length && (!extra.readOnly || readMethods.includes(req.method))) {
+        orConditions.push({ code: { [Op.in]: extraCodes } });
+      }
+
+      const matched = orConditions.length
+        ? await Permission.count({
+            where: {
+              id: { [Op.in]: grantedPermissionIds },
+              is_deleted: false,
+              [Op.or]: orConditions,
+            },
+          })
+        : 0;
 
       if (matched === 0) {
         const grantedPermissions = await Permission.findAll({

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   getLabTestsApi,
   createLabTestApi,
@@ -6,10 +6,12 @@ import {
   updateLabTestVerdictApi,
   deleteLabTestApi,
   getMasterSettingsApi,
+  getLabTestPdfApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import ModuleGuide from "../../components/ModuleGuide";
 import EntitySelect from "../../components/EntitySelect";
+import PdfPreviewModal from "../../components/PdfPreviewModal";
 import { useEntityLookup } from "../../hooks/useEntityLookup";
 
 // Same MariaDB/Sequelize JSON-column quirk fixed elsewhere in this codebase:
@@ -31,12 +33,46 @@ const parseIdArray = (value) => {
   return value ? [value] : [];
 };
 
+// More quality parameters — all optional (only the verdict is mandatory).
+const EXTRA_PARAM_FIELDS = [
+  { name: "pin_broken_pct", label: "Pin Broken %" },
+  { name: "avg_length_mm", label: "Avg Length (mm)" },
+  { name: "ddc_pct", label: "DDC %" },
+  { name: "kett", label: "Kett" },
+  { name: "light_yellow_pct", label: "Light Yellow %" },
+  { name: "immature_pct", label: "Immature %" },
+  { name: "white_belly_pct", label: "White Belly %" },
+  { name: "add_mixing_pct", label: "Add Mixing %" },
+];
+
+// custom_params is a JSON column — it can come back as a raw string.
+const parseCustomParams = (value) => {
+  let list = value;
+  if (typeof value === "string" && value.trim()) {
+    try {
+      list = JSON.parse(value);
+    } catch {
+      list = [];
+    }
+  }
+  return Array.isArray(list) ? list.map((p) => ({ name: p?.name ?? "", value: p?.value ?? "" })) : [];
+};
+
 const emptyForm = {
   sampling_id: "",
   material_ids: [],
   moisture_pct: "",
   broken_pct: "",
   fm_pct: "",
+  pin_broken_pct: "",
+  avg_length_mm: "",
+  ddc_pct: "",
+  kett: "",
+  light_yellow_pct: "",
+  immature_pct: "",
+  white_belly_pct: "",
+  add_mixing_pct: "",
+  custom_params: [],
   color: "",
   smell: "",
   variety_detected: "",
@@ -54,7 +90,17 @@ const VERDICT_FILTERS = [
 
 // datetime-local inputs need "YYYY-MM-DDTHH:mm"; API wants full ISO.
 const toIso = (local) => (local ? new Date(local).toISOString() : "");
-const toLocal = (iso) => (iso ? iso.slice(0, 16) : "");
+// Show the stored time in the user's own clock. (iso.slice(0, 16) read the UTC
+// digits as if they were local, so the time shifted on every Edit + Save.)
+const toLocal = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+// "" / null -> null, but a real 0 stays 0 (0% broken is a valid reading).
+const numOrNull = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 
 export default function LabTestPage() {
   const [tests, setTests] = useState([]);
@@ -67,6 +113,9 @@ export default function LabTestPage() {
   const [availableMaterials, setAvailableMaterials] = useState([]);
   const [allMaterials, setAllMaterials] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pdfPreview, setPdfPreview] = useState(null); // { url, fileName, title }
+  const [pdfLoadingId, setPdfLoadingId] = useState(null);
+  const formRef = useRef(null);
 
   const samplings = useEntityLookup("sampling");
 
@@ -92,6 +141,16 @@ export default function LabTestPage() {
   // gets one test now, so once tested it drops off this list instead of
   // being re-selectable).
   useEffect(() => {
+    // EDITING an existing test: its material is fixed and it is, by
+    // definition, already "tested" — the logic below would drop it from the
+    // list and then clear the selection, leaving Save with no material (that
+    // is why Edit never worked). Just show the test's own material.
+    if (editingId) {
+      const own = parseIdArray(form.material_ids);
+      setAvailableMaterials(own.map((id) => ({ id, name: allMaterials[id] || `Material ${id}` })));
+      return;
+    }
+
     if (form.sampling_id) {
       const selectedSampling = samplings.rows.find(
         (row) => String(row.id) === String(form.sampling_id)
@@ -131,7 +190,7 @@ export default function LabTestPage() {
         material_ids: []
       }));
     }
-  }, [form.sampling_id, samplings.rows, allMaterials, tests]);
+  }, [form.sampling_id, samplings.rows, allMaterials, tests, editingId]);
 
   const load = (verdict = verdictFilter) => {
     setLoading(true);
@@ -152,6 +211,17 @@ export default function LabTestPage() {
     const { name, value } = e.target;
     setForm({ ...form, [name]: value });
   };
+
+  // Inline "Additional Parameters": the user adds any quality feature a particular material needs.
+  const addCustomParam = () =>
+    setForm((prev) => ({ ...prev, custom_params: [...prev.custom_params, { name: "", value: "" }] }));
+  const updateCustomParam = (idx, field, value) =>
+    setForm((prev) => ({
+      ...prev,
+      custom_params: prev.custom_params.map((p, i) => (i === idx ? { ...p, [field]: value } : p)),
+    }));
+  const removeCustomParam = (idx) =>
+    setForm((prev) => ({ ...prev, custom_params: prev.custom_params.filter((_, i) => i !== idx) }));
 
   // Only one material can be selected per test now — picking a different
   // one replaces the selection instead of adding to it.
@@ -179,9 +249,13 @@ export default function LabTestPage() {
       const payload = {
         sampling_id: Number(form.sampling_id),
         material_id: form.material_ids.map(Number), // single-element array — one material per test
-        moisture_pct: form.moisture_pct ? Number(form.moisture_pct) : null,
-        broken_pct: form.broken_pct ? Number(form.broken_pct) : null,
-        fm_pct: form.fm_pct ? Number(form.fm_pct) : null,
+        moisture_pct: numOrNull(form.moisture_pct),
+        broken_pct: numOrNull(form.broken_pct),
+        fm_pct: numOrNull(form.fm_pct),
+        ...Object.fromEntries(EXTRA_PARAM_FIELDS.map((f) => [f.name, numOrNull(form[f.name])])),
+        custom_params: form.custom_params
+          .map((p) => ({ name: String(p.name || "").trim(), value: String(p.value ?? "").trim() }))
+          .filter((p) => p.name),
         color: form.color || null,
         smell: form.smell || null,
         variety_detected: form.variety_detected ? Number(form.variety_detected) : null,
@@ -220,6 +294,8 @@ export default function LabTestPage() {
       moisture_pct: row.moisture_pct ?? "",
       broken_pct: row.broken_pct ?? "",
       fm_pct: row.fm_pct ?? "",
+      ...Object.fromEntries(EXTRA_PARAM_FIELDS.map((f) => [f.name, row[f.name] ?? ""])),
+      custom_params: parseCustomParams(row.custom_params),
       color: row.color || "",
       smell: row.smell || "",
       variety_detected: row.variety_detected || "",
@@ -227,6 +303,25 @@ export default function LabTestPage() {
       verdict: row.verdict || "accepted",
       tested_at: toLocal(row.tested_at),
     });
+    setError("");
+    setInfo("");
+    // The form sits above a long table — bring it into view.
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+
+  const handleViewPdf = async (row) => {
+    setError("");
+    setPdfLoadingId(row.id);
+    try {
+      const res = await getLabTestPdfApi(row.id);
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      const code = row.sampling?.sample_code || `test-${row.id}`;
+      setPdfPreview({ url, fileName: `lab-test-${code}.pdf`, title: `Lab Test Report — ${code}` });
+    } catch (err) {
+      setError("Couldn't generate the Lab Test PDF");
+    } finally {
+      setPdfLoadingId(null);
+    }
   };
 
   const handleCancel = () => {
@@ -674,7 +769,7 @@ export default function LabTestPage() {
         </div>
       )}
 
-      <div style={styles.formCard}>
+      <div style={styles.formCard} ref={formRef}>
         <div style={styles.formCardHeader}>
           <h3 style={styles.formCardHeaderH3}>
             {editingId ? "Update Lab Test" : "Create New Lab Test"}
@@ -697,6 +792,9 @@ export default function LabTestPage() {
                 entity="sampling"
                 label="Sampling"
                 value={form.sampling_id}
+                // Once the PO / SO behind a sampling is completed it is no
+                // longer offered here (the backend computes order_completed).
+                filter={(row) => !row.order_completed}
                 onChange={(id) => {
                   setForm({
                     ...emptyForm,
@@ -761,10 +859,7 @@ export default function LabTestPage() {
             )}
 
             <div style={styles.formGroup}>
-              <label style={styles.formLabel}>
-                Moisture %
-                <span style={styles.required}>*</span>
-              </label>
+              <label style={styles.formLabel}>Moisture %</label>
               <input
                 name="moisture_pct"
                 type="number"
@@ -773,15 +868,11 @@ export default function LabTestPage() {
                 style={styles.formInput}
                 value={form.moisture_pct}
                 onChange={handleChange}
-                required
               />
             </div>
 
             <div style={styles.formGroup}>
-              <label style={styles.formLabel}>
-                Broken %
-                <span style={styles.required}>*</span>
-              </label>
+              <label style={styles.formLabel}>Broken %</label>
               <input
                 name="broken_pct"
                 type="number"
@@ -790,15 +881,26 @@ export default function LabTestPage() {
                 style={styles.formInput}
                 value={form.broken_pct}
                 onChange={handleChange}
-                required
               />
             </div>
 
+            {EXTRA_PARAM_FIELDS.map((f) => (
+              <div style={styles.formGroup} key={f.name}>
+                <label style={styles.formLabel}>{f.label}</label>
+                <input
+                  name={f.name}
+                  type="number"
+                  step="any"
+                  className="form-input"
+                  style={styles.formInput}
+                  value={form[f.name]}
+                  onChange={handleChange}
+                />
+              </div>
+            ))}
+
             <div style={styles.formGroup}>
-              <label style={styles.formLabel}>
-                Foreign Matter %
-                <span style={styles.required}>*</span>
-              </label>
+              <label style={styles.formLabel}>Foreign Matter %</label>
               <input
                 name="fm_pct"
                 type="number"
@@ -807,15 +909,11 @@ export default function LabTestPage() {
                 style={styles.formInput}
                 value={form.fm_pct}
                 onChange={handleChange}
-                required
               />
             </div>
 
             <div style={styles.formGroup}>
-              <label style={styles.formLabel}>
-                Color
-                <span style={styles.required}>*</span>
-              </label>
+              <label style={styles.formLabel}>Color</label>
               <input
                 name="color"
                 type="text"
@@ -823,15 +921,11 @@ export default function LabTestPage() {
                 style={styles.formInput}
                 value={form.color}
                 onChange={handleChange}
-                required
               />
             </div>
 
             <div style={styles.formGroup}>
-              <label style={styles.formLabel}>
-                Smell
-                <span style={styles.required}>*</span>
-              </label>
+              <label style={styles.formLabel}>Smell</label>
               <input
                 name="smell"
                 type="text"
@@ -839,7 +933,6 @@ export default function LabTestPage() {
                 style={styles.formInput}
                 value={form.smell}
                 onChange={handleChange}
-                required
               />
             </div>
 
@@ -851,6 +944,43 @@ export default function LabTestPage() {
                 onChange={(id) => setForm({ ...form, variety_detected: id })}
                 creatable
               />
+            </div>
+
+            <div style={styles.formGroupFull}>
+              <label style={styles.formLabel}>
+                Additional Parameters
+                <span style={{ fontWeight: 400, color: "#666", fontSize: "12px" }}>
+                  (optional — add any quality feature this material needs)
+                </span>
+              </label>
+              {form.custom_params.map((cp, idx) => (
+                <div key={idx} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "10px", marginBottom: "8px" }}>
+                  <input
+                    className="form-input"
+                    style={styles.formInput}
+                    placeholder="Parameter name (e.g. Husk %)"
+                    value={cp.name}
+                    maxLength={60}
+                    onChange={(e) => updateCustomParam(idx, "name", e.target.value)}
+                  />
+                  <input
+                    className="form-input"
+                    style={styles.formInput}
+                    placeholder="Value"
+                    value={cp.value}
+                    maxLength={60}
+                    onChange={(e) => updateCustomParam(idx, "value", e.target.value)}
+                  />
+                  <button type="button" className="btn-action" style={styles.btnAction} onClick={() => removeCustomParam(idx)}>
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <div>
+                <button type="button" className="btn-action" style={styles.btnAction} onClick={addCustomParam}>
+                  + Add Parameter
+                </button>
+              </div>
             </div>
 
             <div style={styles.formGroupFull}>
@@ -1009,6 +1139,15 @@ export default function LabTestPage() {
               },
             },
             {
+              key: "report",
+              label: "Report",
+              render: (row) => (
+                <button className="dt-btn" disabled={pdfLoadingId === row.id} onClick={() => handleViewPdf(row)}>
+                  {pdfLoadingId === row.id ? "Generating…" : "PDF"}
+                </button>
+              ),
+            },
+            {
               key: "revise",
               label: "Revise Verdict",
               render: (row) => (
@@ -1033,15 +1172,29 @@ export default function LabTestPage() {
         />
       </div>
 
+      {pdfPreview && (
+        <PdfPreviewModal
+          title={pdfPreview.title}
+          blobUrl={pdfPreview.url}
+          fileName={pdfPreview.fileName}
+          onClose={() => {
+            window.URL.revokeObjectURL(pdfPreview.url);
+            setPdfPreview(null);
+          }}
+        />
+      )}
+
       <ModuleGuide
         title="Lab Tests"
         steps={[
-          "Select a sampling that has materials ready for testing.",
+          "Select a sampling that has materials ready for testing (samplings whose PO / SO is already completed are not listed).",
           "Choose which materials from the sampling you want to test.",
-          "Enter the quality test results (moisture, broken %, FM %, color, smell, etc.).",
+          "Enter the quality test results (moisture, broken, pin broken, avg length, DDC, kett, light yellow, immature, white belly, add mixing, FM %, color, smell). Every parameter is optional - only the verdict is required.",
+          "Need a parameter that isn't listed for this material? Use + Add Parameter to add it inline (name + value).",
           "Select a verdict: Accepted, Rejected, or Negotiation.",
           "Accepted moves the gate entry forward. Rejected stops the load. Negotiation sends it to Sales for rate discussion.",
-          "You can revise a verdict later using the dropdown in the table."
+          "You can revise a verdict later using the dropdown in the table, or use Edit to correct the readings.",
+          "Use the PDF button on any record to view / download its Lab Test Report. Once a sample is tested, the Composite Report tab can generate its composite report."
         ]}
       />
     </div>

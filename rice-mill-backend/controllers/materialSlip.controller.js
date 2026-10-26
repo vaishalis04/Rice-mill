@@ -1,86 +1,47 @@
 const createError = require("http-errors");
-const { KG_PER_QTL } = require("../helpers/units");
 const PDFDocument = require("pdfkit");
 const {
   Lot, MaterialMaster, VarietyMaster, PlantMaster, WarehouseMaster, BinStackMaster, Stack,
   Purchase, PurchaseOrder, GateEntry, Vendor, Vehicle, Driver, WeightSlip,
   Loading, SalesOrder, Customer,
 } = require("../models/index");
+const calc = require("../helpers/materialSlipCalc.helper");
+const { drawInwardSlip, drawOutwardSlip } = require("../helpers/materialSlipPdf.helper");
 
-// Generates the two paper-form-style PDFs the mill already uses on the
-// ground (Material Inward Slip / Material Outward Slip) from live data,
-// laid out to match those forms. Both use the same drawing helpers below.
+// Material Inward Slip / Material Outward Slip PDFs, generated from live data.
+//
+// This controller only GATHERS data. Every figure on the slips is calculated in
+// helpers/materialSlipCalc.helper.js and drawn by helpers/materialSlipPdf.helper.js.
+// Key rules (details in the calc helper):
+//   * received quantity = bags x bag size, never Lot.qty (packing/production
+//     lower Lot.qty after unloading);
+//   * weighbridge readings come from the weight slip: gross / tare / net, with
+//     the "first weighment" column quirk handled for sales trucks;
+//   * the slip also reconciles the scale net against what was counted / loaded.
 
-const PAGE = { size: "A4", margin: 36 };
-
-const drawLetterhead = (doc, plant, title) => {
-  const { left, right } = doc.page.margins;
-  const width = doc.page.width - left - right;
-  doc.rect(doc.page.margins.left - 6, doc.page.margins.top - 6, width + 12, doc.page.height - doc.page.margins.top - doc.page.margins.bottom + 12).stroke();
-  doc.font("Helvetica-Bold").fontSize(22).text((plant?.name || "RICE MILL").toUpperCase(), { align: "center" });
-  if (plant?.address) {
-    doc.font("Helvetica-Bold").fontSize(9).text(`Address: ${plant.address}`, { align: "center" });
-  }
-  doc.moveDown(0.3);
-  doc.font("Helvetica-Bold").fontSize(13).text(title, { align: "center", underline: true });
-  doc.moveDown(0.8);
+const pad2 = (n) => String(n).padStart(2, "0");
+const fmtDate = (d) => {
+  if (!d) return "—";
+  const t = new Date(d);
+  return Number.isNaN(t.getTime()) ? "—" : `${pad2(t.getDate())}-${pad2(t.getMonth() + 1)}-${t.getFullYear()}`;
 };
-
-// One "label: value ___" line, several per row, evenly spaced.
-const drawFieldRow = (doc, fields, width) => {
-  const startX = doc.page.margins.left;
-  const y = doc.y;
-  const colWidth = width / fields.length;
-  fields.forEach((f, i) => {
-    doc.font("Helvetica-Bold").fontSize(9.5).text(f.label, startX + i * colWidth, y, { continued: true });
-    doc.font("Helvetica").fontSize(9.5).text(` ${f.value || "—"}`, { width: colWidth - 10 });
-  });
-  doc.moveDown(0.9);
+const fmtDateTime = (d) => {
+  if (!d) return "—";
+  const t = new Date(d);
+  return Number.isNaN(t.getTime()) ? "—" : `${fmtDate(t)} ${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
 };
+const uniq = (arr) => [...new Set(arr.filter(Boolean))];
 
-// The numbered "Stack Details" grid both forms have — cols cells wide,
-// filled with whatever stack entries are passed (blank boxes otherwise,
-// same as the blank paper form).
-const drawStackGrid = (doc, count, cols, filled, width) => {
-  const startX = doc.page.margins.left;
-  const cellW = width / cols;
-  const cellH = 26;
-  const rows = Math.ceil(count / cols);
-  let y = doc.y;
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const n = r * cols + c + 1;
-      if (n > count) break;
-      const x = startX + c * cellW;
-      doc.rect(x, y, cellW, cellH).stroke();
-      doc.font("Helvetica-Bold").fontSize(8).text(String(n), x + 3, y + 3);
-      const label = filled.get(n);
-      if (label) doc.font("Helvetica").fontSize(7).text(label, x + 3, y + 14, { width: cellW - 6 });
-    }
-    y += cellH;
-  }
-  doc.y = y;
-  doc.moveDown(0.8);
+const startPdf = (res, filename) => {
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  const doc = new PDFDocument({ size: "A4", margin: 0 });
+  doc.pipe(res);
+  return doc;
 };
-
-const drawSignatureFooter = (doc, width) => {
-  const startX = doc.page.margins.left;
-  const y = doc.page.height - doc.page.margins.bottom - 30;
-  const colWidth = width / 3;
-  ["Driver Signature", "Security Signature", "Supervisor Signature"].forEach((label, i) => {
-    doc.font("Helvetica-Bold").fontSize(9.5).text(label, startX + i * colWidth, y, { width: colWidth, align: i === 1 ? "center" : i === 2 ? "right" : "left" });
-  });
-};
-
-const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("en-GB") : "—");
-const fmtDateTime = (d) => (d ? new Date(d).toLocaleString("en-GB") : "—");
 
 module.exports = {
-  // GET /api/material-slips/inward/:lotId
-  // Generated once a lot's unloading is complete (Lot.unloading_status ===
-  // "completed" — see lot.controller.js's bag-count/unloading endpoint,
-  // where Stack rows are also created). One slip per Lot (one material/
-  // variety line per unloading, matching the paper form).
+  // GET /api/material-slips/inward/:lotId  — one slip per completed Lot.
   inwardSlipPdf: async (req, res, next) => {
     try {
       const lot = await Lot.findOne({
@@ -95,16 +56,17 @@ module.exports = {
             include: [{ model: BinStackMaster, as: "bin", attributes: ["id", "bin_code"] }],
           },
           {
-            model: Purchase, as: "purchase", attributes: ["id", "gate_entry_id", "final_qty", "po_id"],
+            model: Purchase, as: "purchase", attributes: ["id", "gate_entry_id", "po_id"],
             include: [
               { model: PurchaseOrder, as: "purchaseOrder", attributes: ["id", "po_no"] },
-              { model: WeightSlip, as: "weightSlip", attributes: ["id", "gross_weight", "tare_weight"] },
+              { model: WeightSlip, as: "weightSlip", attributes: ["id", "slip_no", "gross_weight", "tare_weight"] },
               {
                 model: GateEntry, as: "gateEntry",
-                attributes: ["id", "token_no", "challan_no", "entry_time", "exit_time"],
+                attributes: ["id", "token_no", "challan_no", "entry_time", "exit_time", "expected_qty", "remarks"],
                 include: [
                   { model: Vendor, as: "vendor", attributes: ["id", "name"] },
                   { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
+                  { model: Driver, as: "driver", attributes: ["id", "name"] },
                 ],
               },
             ],
@@ -118,78 +80,75 @@ module.exports = {
 
       const purchase = lot.purchase;
       const ge = purchase?.gateEntry;
-      const ws = purchase?.weightSlip;
 
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="inward-slip-${lot.lot_no}.pdf"`);
+      // Every PO on this truck (a truck can carry several), not just the first.
+      let poNos = [purchase?.purchaseOrder?.po_no];
+      if (ge) {
+        const sameTruck = await Purchase.findAll({
+          where: { gate_entry_id: ge.id, is_deleted: false },
+          attributes: ["id"],
+          include: [{ model: PurchaseOrder, as: "purchaseOrder", attributes: ["po_no"] }],
+        });
+        poNos = [...poNos, ...sameTruck.map((p) => p.purchaseOrder?.po_no)];
+      }
 
-      const doc = new PDFDocument(PAGE);
-      doc.pipe(res);
+      // Whole-truck counted weight: every completed lot of this trip.
+      let truckLots = [lot];
+      if (ge) {
+        const trips = await Purchase.findAll({ where: { gate_entry_id: ge.id, is_deleted: false }, attributes: ["id"] });
+        const found = trips.length
+          ? await Lot.findAll({
+              where: { purchase_id: trips.map((p) => p.id), is_deleted: false, unloading_status: "completed" },
+              attributes: ["id", "bag_size", "accepted_bags", "rejected_bags", "qty", "rejected_qty"],
+            })
+          : [];
+        if (found.length) truckLots = found;
+      }
 
-      const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-      drawLetterhead(doc, lot.plant, "MATERIAL INWARD SLIP");
-
-      drawFieldRow(doc, [
-        { label: "Sr. No. :", value: ge?.token_no || lot.lot_no },
-        { label: "Date :", value: fmtDate(ge?.entry_time || lot.created_at) },
-      ], width);
-      drawFieldRow(doc, [{ label: "Supplier Name M/s :", value: ge?.vendor?.name }], width);
-      drawFieldRow(doc, [{ label: "Commodity :", value: lot.material?.name }], width);
-      drawFieldRow(doc, [{ label: "Variety :", value: lot.variety?.variety_name }], width);
-      drawFieldRow(doc, [
-        { label: "Supplier Bill No. :", value: purchase?.purchaseOrder?.po_no || ge?.challan_no },
-        { label: "Supplier Bill Date :", value: fmtDate(ge?.entry_time) },
-      ], width);
-      drawFieldRow(doc, [{ label: "Vehicle No. :", value: ge?.vehicle?.vehicle_no }], width);
-
-      // "Total Quantity" (Bill) has no distinct declared-by-supplier figure
-      // in this system separate from what was physically counted, so it's
-      // shown as bags presented (accepted + rejected) / the weighbridge
-      // gross weight — the closest equivalents this system actually tracks.
-      const billBags = (lot.accepted_bags || 0) + (lot.rejected_bags || 0);
-      drawFieldRow(doc, [
-        { label: "Total Quantity : Bill Bags :", value: billBags || "—" },
-        { label: "WT :", value: ws?.gross_weight != null ? `${Number(ws.gross_weight).toFixed(0)} kg` : "—" },
-      ], width);
-
-      // Accepted Quantity WT = Lot.qty, which this system already stores in
-      // Qtl as accepted_bags x bag_size / KG_PER_QTL (1 Qtl = 100 kg) — shown here in kg to match
-      // the paper form's units.
-      drawFieldRow(doc, [
-        { label: "Accepted Quantity : (Bags)", value: lot.accepted_bags ?? "—" },
-        { label: "WT :", value: lot.qty != null ? `${(Number(lot.qty) * KG_PER_QTL).toFixed(0)} kg` : "—" },
-      ], width);
-
-      doc.font("Helvetica-Bold").fontSize(10).text("Commodity Stack Details :-");
-      doc.moveDown(0.3);
-      const stackLabels = new Map();
-      (lot.stacks || []).forEach((s, i) => {
-        stackLabels.set(i + 1, `${s.bin?.bin_code || s.stack_code} (${s.qty} Qtl)`);
+      const counts = calc.lotCounts(lot);
+      const weighbridge = calc.readWeighbridge(purchase?.weightSlip, "purchase");
+      const recon = calc.reconcile({
+        countedKg: calc.truckCountedKg(truckLots),
+        netKg: weighbridge?.net,
+        assignedQtl: ge?.expected_qty,
       });
-      drawStackGrid(doc, 20, 5, stackLabels, width);
 
-      drawFieldRow(doc, [{ label: "Remarks :", value: null }], width);
+      const stacks = (lot.stacks || []).map((s) => ({
+        code: s.stack_code,
+        bin: s.bin?.bin_code || "",
+        qty_qtl: Number(s.qty) || 0,
+      }));
 
-      drawFieldRow(doc, [
-        { label: "Time in :", value: fmtDateTime(ge?.entry_time) },
-        { label: "Time Out :", value: fmtDateTime(ge?.exit_time) },
-      ], width);
-
-      drawSignatureFooter(doc, width);
-
+      const doc = startPdf(res, `inward-slip-${lot.lot_no}.pdf`);
+      drawInwardSlip(doc, {
+        plant: lot.plant,
+        slip_no: ge?.token_no || lot.lot_no,
+        lot_no: lot.lot_no,
+        date: fmtDate(ge?.entry_time || lot.created_at),
+        vehicle_no: ge?.vehicle?.vehicle_no,
+        supplier: ge?.vendor?.name,
+        po_no: uniq(poNos).join(", "),
+        challan_no: ge?.challan_no,
+        driver_name: ge?.driver?.name,
+        warehouse: lot.targetWarehouse?.name,
+        commodity: lot.material?.name,
+        variety: lot.variety?.variety_name,
+        time_in: fmtDateTime(ge?.entry_time),
+        time_out: fmtDateTime(ge?.exit_time),
+        remarks: ge?.remarks,
+        counts,
+        weighbridge,
+        recon,
+        truck_lots: truckLots.length,
+        stacks,
+      });
       doc.end();
     } catch (err) {
       next(err);
     }
   },
 
-  // GET /api/material-slips/outward/:loadingId
-  // Generated once a truck's loading is recorded (one Loading row per
-  // gate_entry_id — see loading.controller.js). Dispatch WT on the paper
-  // form is this system's "Net Balance": the weighbridge slip tied to this
-  // exact gate entry, first weighment minus second weighment (gross -
-  // tare) — never a manually entered figure. "—" if no weighbridge slip
-  // has been recorded for this gate entry yet.
+  // GET /api/material-slips/outward/:loadingId  — one slip per Loading pass.
   outwardSlipPdf: async (req, res, next) => {
     try {
       const loading = await Loading.findOne({
@@ -197,7 +156,7 @@ module.exports = {
         include: [
           {
             model: GateEntry, as: "gateEntry",
-            attributes: ["id", "token_no", "challan_no", "entry_time", "exit_time", "plant_id"],
+            attributes: ["id", "token_no", "challan_no", "entry_time", "exit_time", "plant_id", "remarks"],
             include: [
               { model: Vehicle, as: "vehicle", attributes: ["id", "vehicle_no"] },
               { model: Driver, as: "driver", attributes: ["id", "name", "mobile"] },
@@ -216,105 +175,82 @@ module.exports = {
         ? await PlantMaster.findOne({ where: { id: ge.plant_id, is_deleted: false } })
         : await PlantMaster.findOne({ where: { is_deleted: false }, order: [["id", "ASC"]] });
 
-      // Balance Weight: the weighbridge slip tied directly to this gate
-      // entry (real FK, not a guess) — same rule as the Daily Outward /
-      // Daily Report PDFs.
+      // Truck-level weighbridge reading (the scale weighs the whole truck, not one pass).
       const weightSlip = ge
-        ? await WeightSlip.findOne({ where: { gate_entry_id: ge.id, is_deleted: false }, order: [["weighed_at", "DESC"]] })
+        ? await WeightSlip.findOne({ where: { gate_entry_id: ge.id, is_deleted: false }, order: [["id", "DESC"]] })
         : null;
+      const weighbridge = calc.readWeighbridge(weightSlip, "sales");
 
-      let items = loading.items;
-      if (typeof items === "string") {
-        try { items = JSON.parse(items); } catch { items = []; }
-      }
-      if (!Array.isArray(items)) items = [];
-      const materialIds = [...new Set(items.map((it) => it.material_id).filter(Boolean))];
-      const materials = materialIds.length
-        ? await MaterialMaster.findAll({ where: { id: materialIds } })
+      // Every loading pass of this truck, for the "all passes" reconciliation.
+      const passes = ge
+        ? await Loading.findAll({ where: { gate_entry_id: ge.id, is_deleted: false }, order: [["id", "ASC"]] })
+        : [loading];
+      const allPassLines = passes.flatMap((p) => calc.parseItems(p.items).map(calc.outwardLine));
+      const allPassesKg = calc.outwardTotals(allPassLines).kg;
+      const passIndex = Math.max(0, passes.findIndex((p) => Number(p.id) === Number(loading.id)));
+
+      // This pass's lines.
+      const items = calc.parseItems(loading.items).map((it) => ({ ...it, so_id: it.so_id || loading.so_id }));
+      const materialIds = uniq(items.map((it) => it.material_id));
+      const soIds = uniq(items.map((it) => it.so_id));
+      const [materials, sos] = await Promise.all([
+        materialIds.length ? MaterialMaster.findAll({ where: { id: materialIds }, attributes: ["id", "name"] }) : [],
+        soIds.length
+          ? SalesOrder.findAll({
+              where: { id: soIds },
+              attributes: ["id", "so_no", "customer_id"],
+              include: [{ model: Customer, as: "customer", attributes: ["id", "name"] }],
+            })
+          : [],
+      ]);
+      const nameById = new Map(materials.map((m) => [Number(m.id), m.name]));
+      const soById = new Map(sos.map((s) => [Number(s.id), s]));
+      // the warehouse each line was loaded from (chosen on the Loading screen)
+      const warehouseIds = uniq(items.map((it) => Number(it.warehouse_id)));
+      const warehouses = warehouseIds.length
+        ? await WarehouseMaster.findAll({ where: { id: warehouseIds }, attributes: ["id", "name"] })
         : [];
-      const materialNameById = new Map(materials.map((m) => [m.id, m.name]));
+      const warehouseNameById = new Map(warehouses.map((w) => [Number(w.id), w.name]));
 
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="outward-slip-${loading.loading_no}.pdf"`);
-
-      const doc = new PDFDocument(PAGE);
-      doc.pipe(res);
-
-      const width = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-      drawLetterhead(doc, plant, "MATERIAL OUTWARD SLIP");
-
-      drawFieldRow(doc, [
-        { label: "Sr. No. :", value: ge?.token_no || loading.loading_no },
-        { label: "Date :", value: fmtDate(loading.loaded_at || ge?.entry_time) },
-      ], width);
-      drawFieldRow(doc, [{ label: "Party Name M/s :", value: loading.salesOrder?.customer?.name }], width);
-      drawFieldRow(doc, [
-        { label: "Bill No. :", value: ge?.challan_no },
-        { label: "Bill Date :", value: fmtDate(ge?.exit_time || ge?.entry_time) },
-      ], width);
-      drawFieldRow(doc, [
-        { label: "Vehicle No. :", value: ge?.vehicle?.vehicle_no },
-        // No transporter (company) field is tracked in this system any
-        // more — the driver's name is the closest equivalent it has.
-        { label: "Driver Name :", value: ge?.driver?.name },
-      ], width);
-
-      const commodityNames = [...new Set(items.map((it) => materialNameById.get(it.material_id)).filter(Boolean))];
-      drawFieldRow(doc, [
-        { label: "Commodity :", value: commodityNames.join(", ") || "—" },
-        {
-          label: "Net Balance Wt (Dispatch) :",
-          value: weightSlip?.net_weight != null ? `${Number(weightSlip.net_weight).toFixed(0)} kg` : "—",
-        },
-      ], width);
-
-      // ---- Variety table ----
-      doc.moveDown(0.2);
-      const headers = ["S.No", "Product/Quality", "Packaging", "Bags", "Remark (if any)"];
-      const colWidths = [35, width * 0.4, width * 0.2, width * 0.15, width - 35 - width * 0.4 - width * 0.2 - width * 0.15];
-      const startX = doc.page.margins.left;
-      let y = doc.y;
-      const rowH = 18;
-      const drawRow = (cells, bold) => {
-        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(8.5);
-        let x = startX;
-        doc.rect(startX, y, colWidths.reduce((a, b) => a + b, 0), rowH).stroke();
-        cells.forEach((c, i) => {
-          doc.text(String(c ?? ""), x + 3, y + 4, { width: colWidths[i] - 6 });
-          x += colWidths[i];
-          if (i < cells.length - 1) doc.moveTo(x, y).lineTo(x, y + rowH).stroke();
-        });
-        y += rowH;
-      };
-      drawRow(headers, true);
-      const rowCount = Math.max(7, items.length);
-      for (let i = 0; i < rowCount; i++) {
-        const it = items[i];
-        drawRow([
-          i + 1,
-          it ? materialNameById.get(it.material_id) || `Material ${it.material_id}` : "",
-          "—", // Packaging (pack size) isn't recorded on a Loading line item in this system
-          "—", // Bags isn't recorded on a Loading line item — only a total qty in Qtl
-          "",
-        ]);
+      let lines = items.map((it) => ({
+        ...calc.outwardLine(it),
+        name: nameById.get(Number(it.material_id)) || (it.material_id ? `Material ${it.material_id}` : "—"),
+        so_no: soById.get(Number(it.so_id))?.so_no || "",
+        warehouse: warehouseNameById.get(Number(it.warehouse_id)) || "",
+      }));
+      // A loading saved without an item breakdown still prints its total.
+      if (!lines.length && Number(loading.loaded_qty) > 0) {
+        lines = [{ ...calc.outwardLine({ qty: loading.loaded_qty }), name: "Material (not itemised)", so_no: loading.salesOrder?.so_no || "" }];
       }
-      const totalQty = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
-      drawRow(["", "Total →", "", totalQty ? `${totalQty} Qtl` : "", ""], true);
-      doc.y = y + 8;
+      const totals = calc.outwardTotals(lines);
 
-      doc.font("Helvetica-Bold").fontSize(10).text("Stack Details :-");
-      doc.moveDown(0.3);
-      // Not tracked for outward loading in this system (which source stacks
-      // were drawn from) — drawn blank, same as the paper form's unused cells.
-      drawStackGrid(doc, 18, 9, new Map(), width);
+      // Party / SO numbers across every SO on this loading (a truck can serve several).
+      const customers = uniq([...sos.map((s) => s.customer?.name), loading.salesOrder?.customer?.name]);
+      const soNos = uniq([...sos.map((s) => s.so_no), loading.salesOrder?.so_no]);
 
-      drawFieldRow(doc, [
-        { label: "Vehicle Time In:-", value: fmtDateTime(ge?.entry_time) },
-        { label: "Vehicle time Out:-", value: fmtDateTime(ge?.exit_time) },
-      ], width);
+      const recon = calc.reconcile({ countedKg: allPassesKg, netKg: weighbridge?.net });
 
-      drawSignatureFooter(doc, width);
-
+      const doc = startPdf(res, `outward-slip-${loading.loading_no}.pdf`);
+      drawOutwardSlip(doc, {
+        plant,
+        slip_no: ge?.token_no || loading.loading_no,
+        loading_no: loading.loading_no,
+        date: fmtDate(loading.loaded_at || ge?.entry_time),
+        vehicle_no: ge?.vehicle?.vehicle_no,
+        party: customers.join("; "),
+        so_nos: soNos.join(", "),
+        challan_no: ge?.challan_no,
+        driver_name: ge?.driver?.name,
+        passes_label: `${passIndex + 1} of ${passes.length}`,
+        warehouse_names: uniq(lines.map((l) => l.warehouse)).join(", "),
+        time_in: fmtDateTime(ge?.entry_time),
+        time_out: fmtDateTime(ge?.exit_time),
+        remarks: loading.remarks && !/^Loaded \d+ material/.test(loading.remarks) ? loading.remarks : "",
+        lines,
+        totals,
+        weighbridge,
+        recon,
+      });
       doc.end();
     } catch (err) {
       next(err);

@@ -21,6 +21,13 @@
 .gs-panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
 .gs-panel-title { font-size: 1.05rem; font-weight: 700; color: var(--gs-ink); }
 .gs-panel-sub { font-size: 0.8rem; color: var(--gs-muted); }
+/* status mini-tabs inside a tab */
+.gs-subtabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; }
+.gs-subtab { border: 1px solid #cbd5e1; background: #fff; color: #334155; border-radius: 999px; padding: 5px 12px; font-size: 0.82rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; transition: background .15s, border-color .15s; }
+.gs-subtab span { background: #eef2f7; color: #475569; border-radius: 999px; padding: 0 7px; font-size: 0.74rem; min-width: 20px; text-align: center; }
+.gs-subtab:hover { border-color: var(--accent, #64748b); }
+.gs-subtab.on { background: var(--accent, #1e3a8a); border-color: var(--accent, #1e3a8a); color: #fff; }
+.gs-subtab.on span { background: rgba(255, 255, 255, .25); color: #fff; }
 .gs-switch { display: inline-flex; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; }
 .gs-switch button { border: 0; background: #fff; padding: 6px 12px; font-size: 0.82rem; cursor: pointer; color: #334155; }
 .gs-switch button.on { background: #1e3a8a; color: #fff; }

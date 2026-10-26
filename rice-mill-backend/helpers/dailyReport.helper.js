@@ -13,9 +13,10 @@ const { gpNoFor } = require("./gpNumber.helper");
 //
 //   inward   Purchase trucks that came in (against Purchase Orders), grouped by WAREHOUSE —
 //            every warehouse is listed, with the ones that received nothing marked as such.
-//   outward  Sales trucks that went out (against Sales Orders), grouped by plant / mill.
-//   overall  One-page-style day summary (inward by warehouse, outward by plant, net) followed
-//            by the combined vehicle list.
+//   outward  Sales trucks that went out (against Sales Orders), grouped by WAREHOUSE — the
+//            warehouse each truck was loaded from (chosen on the Loading screen).
+//   overall  One-page-style day summary (inward by warehouse, outward by warehouse, net)
+//            followed by the combined vehicle list.
 //
 // Every vehicle row carries its Gate Pass number (GP-IN-0042 / GP-OUT-0042 — the same number
 // the Gate Pass PDF and Payment Settlement use, built by helpers/gpNumber.helper).
@@ -23,10 +24,14 @@ const { gpNoFor } = require("./gpNumber.helper");
 // Weights: Net Wt is strictly the weighbridge figure (1st weighment - 2nd weighment, i.e. gross - tare)
 // of the weight slip tied to that truck, in Kg — never a manually typed quantity. No slip yet = "—".
 //
-// Filters: date (required, defaults to today), plant_id (optional), warehouse_id (optional).
-// Inward trucks are matched to a warehouse through the lots they were unloaded into. Outward trucks
-// are not recorded against a warehouse in this system (Loading has no warehouse), so a warehouse
-// filter narrows outward trucks to that warehouse's plant instead — the PDF says so.
+// Filters: a date RANGE (from / to, both default to today — the old single `date` still works),
+// plant_id (optional) and one OR MORE warehouses (warehouse_ids=1,2,3 — the old single warehouse_id
+// still works). A one-day range gives exactly the single-day report; a longer range adds a Date to
+// every vehicle and, on the overall report, a day-wise totals table.
+// Inward trucks are matched to a warehouse through the lots they were unloaded into; outward trucks
+// through the warehouse named on each line of their loading (Loading items[].warehouse_id), so a
+// warehouse filter works the same way in both directions. A truck that has not been loaded yet — or
+// was loaded before warehouses were recorded on loadings — is listed under its own heading.
 
 const asArray = (v) => {
   if (Array.isArray(v)) return v;
@@ -57,7 +62,27 @@ const parseDate = (value) => {
   return { ymd: raw, date: d };
 };
 
-const loadDay = async ({ ymd, plantId, warehouseId }) => {
+// from / to (or the old single `date`): inclusive, at most a year.
+const parseRange = (q) => {
+  const a = parseDate(q.from || q.date);
+  const b = parseDate(q.to || q.date || q.from);
+  if (a.date > b.date) throw createError(400, "'from' must not be after 'to'");
+  const days = Math.round((b.date - a.date) / 86400000) + 1;
+  if (days > 366) throw createError(400, "The date range is too long (at most 366 days)");
+  return { fromYmd: a.ymd, toYmd: b.ymd, from: a.date, to: b.date, days, isRange: days > 1 };
+};
+
+// warehouse_ids=1,2,3 (or repeated / an array) plus the old single warehouse_id -> unique numbers.
+const parseWarehouseIds = (q) => {
+  const raw = [].concat(q.warehouse_ids ?? [], q.warehouse_id ?? []).flatMap((v) => String(v).split(","));
+  const ids = raw.map((v) => v.trim()).filter(Boolean).map(Number);
+  if (ids.some((n) => !Number.isInteger(n) || n <= 0)) throw createError(400, "'warehouse_ids' must be a list of warehouse ids");
+  return [...new Set(ids)];
+};
+
+const ymdLocal = (d) => (d ? `${new Date(d).getFullYear()}-${pad2(new Date(d).getMonth() + 1)}-${pad2(new Date(d).getDate())}` : null);
+
+const loadDay = async ({ fromYmd, toYmd, plantId, warehouseIds = [] }) => {
   const [allPlants, allWarehouses] = await Promise.all([
     PlantMaster.findAll({ where: { is_deleted: false }, order: [["id", "ASC"]] }),
     WarehouseMaster.findAll({ where: { is_deleted: false }, attributes: ["id", "name", "warehouse_code", "plant_id"], order: [["name", "ASC"]] }),
@@ -70,15 +95,17 @@ const loadDay = async ({ ymd, plantId, warehouseId }) => {
     plant = plantById.get(Number(plantId));
     if (!plant) throw createError(404, "Plant / mill not found");
   }
-  let warehouse = null;
-  if (warehouseId) {
-    warehouse = warehouseById.get(Number(warehouseId));
-    if (!warehouse) throw createError(404, "Warehouse not found");
-  }
+  const warehouses = warehouseIds.map((id) => {
+    const w = warehouseById.get(Number(id));
+    if (!w) throw createError(404, `Warehouse ${id} not found`);
+    return w;
+  });
+  const warehouse = warehouses.length === 1 ? warehouses[0] : null; // the single picked one (if exactly one)
+  const pickedWh = new Set(warehouses.map((w) => Number(w.id)));
 
   // ---------------- inward: purchase trucks ----------------
   const purchases = await Purchase.findAll({
-    where: { is_deleted: false, purchase_date: ymd },
+    where: { is_deleted: false, purchase_date: { [Op.between]: [fromYmd, toYmd] } },
     include: [
       {
         model: GateEntry, as: "gateEntry", attributes: ["id", "vendor_id", "vehicle_id", "material_id", "entry_time", "exit_time"],
@@ -115,6 +142,7 @@ const loadDay = async ({ ymd, plantId, warehouseId }) => {
     return {
       direction: "INWARD",
       id: p.id,
+      date: p.purchase_date,
       gp_no: ge ? gpNoFor("purchase", ge.id) : DASH,
       time: ge ? ge.entry_time : null,
       vehicle: ge?.vehicle?.vehicle_no || DASH,
@@ -131,16 +159,22 @@ const loadDay = async ({ ymd, plantId, warehouseId }) => {
   });
   // plant filter (a record with no plant set is only shown when no plant is picked)
   if (plantId) inward = inward.filter((r) => Number(r.plant_id) === Number(plantId));
-  if (warehouseId) inward = inward.filter((r) => r.warehouse_ids.includes(Number(warehouseId)));
+  if (pickedWh.size) {
+    // keep trucks that touched ANY picked warehouse; list the picked one(s) first so a truck is
+    // grouped under a warehouse that was actually asked for
+    const reorder = (r) => ({ ...r, warehouse_ids: [...r.warehouse_ids.filter((id) => pickedWh.has(id)), ...r.warehouse_ids.filter((id) => !pickedWh.has(id))] });
+    inward = inward.filter((r) => r.warehouse_ids.some((id) => pickedWh.has(id))).map(reorder);
+  }
+  inward.sort((a, b) => String(a.date).localeCompare(String(b.date)) || new Date(a.time || 0) - new Date(b.time || 0) || a.id - b.id);
 
   // ---------------- outward: sales trucks ----------------
   const dayMatch = {
     [Op.or]: [
-      sequelize.where(sequelize.fn("DATE", sequelize.col("exit_time")), ymd),
-      sequelize.where(sequelize.fn("DATE", sequelize.col("entry_time")), ymd),
+      sequelize.where(sequelize.fn("DATE", sequelize.col("exit_time")), { [Op.between]: [fromYmd, toYmd] }),
+      sequelize.where(sequelize.fn("DATE", sequelize.col("entry_time")), { [Op.between]: [fromYmd, toYmd] }),
     ],
   };
-  const outwardPlantId = plantId || (warehouse && warehouse.plant_id) || null;
+  const outwardPlantId = plantId || null;
   const salesWhere = { is_deleted: false, entry_type: "sales" };
   if (outwardPlantId) salesWhere.plant_id = outwardPlantId;
   const gateEntries = await GateEntry.findAll({
@@ -170,15 +204,17 @@ const loadDay = async ({ ymd, plantId, warehouseId }) => {
   slips.forEach((ws) => { if (ws.net_weight != null) netByGate.set(Number(ws.gate_entry_id), Number(ws.net_weight)); });
   const loadedByGate = new Map();
   loadings.forEach((l) => {
-    const cur = loadedByGate.get(Number(l.gate_entry_id)) || { qty: 0, bags: 0, hasBags: false };
+    const cur = loadedByGate.get(Number(l.gate_entry_id)) || { qty: 0, bags: 0, hasBags: false, warehouseIds: [] };
     cur.qty += Number(l.loaded_qty || 0);
     asArray(l.items).forEach((it) => {
       if (it.bags != null && Number.isFinite(Number(it.bags))) { cur.bags += Number(it.bags); cur.hasBags = true; }
+      const wh = Number(it.warehouse_id);
+      if (wh && !cur.warehouseIds.includes(wh)) cur.warehouseIds.push(wh);
     });
     loadedByGate.set(Number(l.gate_entry_id), cur);
   });
 
-  const outward = gateEntries.map((ge) => {
+  let outward = gateEntries.map((ge) => {
     const loaded = loadedByGate.get(Number(ge.id));
     const soNos = [...new Set([...(ge.sales_orders || []).map((r) => r.sales_order?.so_no), ge.salesOrder?.so_no].filter(Boolean))];
     const items = ge.material?.name
@@ -187,6 +223,7 @@ const loadDay = async ({ ymd, plantId, warehouseId }) => {
     return {
       direction: "OUTWARD",
       id: ge.id,
+      date: ymdLocal(ge.exit_time || ge.entry_time),
       gp_no: gpNoFor("sales", ge.id),
       time: ge.exit_time || ge.entry_time,
       vehicle: ge.vehicle?.vehicle_no || DASH,
@@ -200,33 +237,54 @@ const loadDay = async ({ ymd, plantId, warehouseId }) => {
       challan: ge.challan_no || DASH,
       status: String(ge.gate_status || "").replace(/_/g, " "),
       plant_id: ge.plant_id,
+      // warehouse(s) this truck was loaded from; `loaded` tells "not loaded yet" from "loaded, warehouse not recorded"
+      warehouse_ids: loaded ? loaded.warehouseIds : [],
+      loaded: !!loaded,
     };
   });
+  if (pickedWh.size) {
+    const reorder = (r) => ({ ...r, warehouse_ids: [...r.warehouse_ids.filter((id) => pickedWh.has(id)), ...r.warehouse_ids.filter((id) => !pickedWh.has(id))] });
+    outward = outward.filter((r) => r.warehouse_ids.some((id) => pickedWh.has(id))).map(reorder);
+  }
 
-  // warehouses to list: the picked one, else every warehouse of the picked plant (or all of them)
+  // warehouses to list: the picked one(s), else every warehouse of the picked plant (or all of them)
   let listedWarehouses;
-  if (warehouse) listedWarehouses = [warehouse];
+  if (warehouses.length) listedWarehouses = warehouses;
   else if (plantId) listedWarehouses = allWarehouses.filter((w) => !w.plant_id || Number(w.plant_id) === Number(plantId));
   else listedWarehouses = allWarehouses;
 
-  return { allPlants, plantById, warehouseById, plant, warehouse, listedWarehouses, inward, outward, outwardPlantId };
+  return { allPlants, plantById, warehouseById, plant, warehouse, warehouses, listedWarehouses, inward, outward, outwardPlantId };
 };
 
-const letterheadFor = (d) => d.plant
-  || (d.warehouse && d.warehouse.plant_id && d.plantById.get(Number(d.warehouse.plant_id)))
-  || d.allPlants[0]
-  || null;
+// Letterhead plant: the picked plant, else the plant the picked warehouse(s) all belong to, else the first.
+const letterheadFor = (d) => {
+  if (d.plant) return d.plant;
+  const plantIds = [...new Set((d.warehouses || []).map((w) => w.plant_id && Number(w.plant_id)).filter(Boolean))];
+  return (plantIds.length === 1 && d.plantById.get(plantIds[0])) || d.allPlants[0] || null;
+};
 
 const filterLine = (d) => {
-  const parts = [`Plant / Mill: ${d.plant ? d.plant.name : "All"}`, `Warehouse: ${d.warehouse ? d.warehouse.name : "All warehouses"}`];
-  return parts.join("   |   ");
+  const names = (d.warehouses || []).map((w) => w.name);
+  const whText = !names.length ? "All warehouses" : names.length <= 3 ? names.join(", ") : `${names.length} warehouses (${names.slice(0, 3).join(", ")} +${names.length - 3} more)`;
+  return [`Plant / Mill: ${d.plant ? d.plant.name : "All"}`, `Warehouse: ${whText}`].join("   |   ");
 };
 
-const WH_NOTE = "Outward trucks are not recorded against a warehouse in this system, so a warehouse filter narrows outward trucks to that warehouse's plant / mill.";
+// One day -> the report exactly as before; a longer range -> a period line, a Date on every vehicle.
+const periodLine = (d) => (d.range.isRange
+  ? `Period: ${fmtDMY(d.range.from)} to ${fmtDMY(d.range.to)}  (${d.range.days} days)`
+  : `Date: ${fmtDMY(d.range.from)}`);
+const fileTag = (d) => (d.range.isRange ? `${d.range.fromYmd}_to_${d.range.toYmd}` : d.range.fromYmd);
+const dmyShort = (ymd) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || "")); return m ? `${m[3]}-${m[2]}-${m[1].slice(2)}` : DASH; };
+const whenOf = (d, r) => (d.range.isRange ? `${dmyShort(r.date)} ${hhmm(r.time)}` : hhmm(r.time));
+const timeCol = (d) => (d.range.isRange ? { label: "Date / Time", w: 64, align: "center" } : { label: "Time", w: 36, align: "center" });
+const periodWord = (d) => (d.range.isRange ? "the selected period" : "this date");
+
+const OUT_WH_NOTE = "Each outward truck is listed under the warehouse its material was loaded from (chosen on the Loading screen). A truck not loaded yet, or loaded before warehouses were recorded on loadings, is listed under 'NOT YET LOADED / WAREHOUSE NOT RECORDED'.";
+const NO_OUT_WH = "NOT YET LOADED / WAREHOUSE NOT RECORDED";
 const NET_NOTE = "Net Wt = weighbridge 1st weighment - 2nd weighment (gross - tare) in Kg for the weight slip tied to that truck; it shows a dash until the truck has been weighed twice. GP No. is the truck's Gate Pass number.";
 
 // ------------------------------------------------------------------ layout 1: INWARD
-const inwardSpec = (d, ymd, date) => {
+const inwardSpec = (d) => {
   const whName = (id) => d.warehouseById.get(Number(id))?.name || `Warehouse ${id}`;
   const buckets = new Map();
   d.listedWarehouses.forEach((w) => buckets.set(`w${w.id}`, { name: w.name, plantId: w.plant_id, rows: [] }));
@@ -248,10 +306,10 @@ const inwardSpec = (d, ymd, date) => {
       title: `WAREHOUSE: ${String(b.name).toUpperCase()}`,
       meta: rows.length ? `${rows.length} vehicle(s)  |  Net ${kg(sum(rows, (r) => r.net))} Kg${plantName ? `  |  ${plantName}` : ""}` : plantName || "",
       accent: rows.length ? IN_COLOR : "#94A3B8",
-      note: rows.length ? undefined : "No inward vehicles received into this warehouse on this date.",
+      note: rows.length ? undefined : `No inward vehicles received into this warehouse on ${periodWord(d)}.`,
       rows: rows.map((r) => ({
         cells: (n) => [
-          n, { t: r.gp_no, bold: true }, hhmm(r.time), r.vehicle, r.party, r.order_no, r.item, r.lot_nos,
+          n, { t: r.gp_no, bold: true }, whenOf(d, r), r.vehicle, r.party, r.order_no, r.item, r.lot_nos,
           r.bags ? fmtCount(r.bags) : DASH, kg(r.gross), kg(r.tare), { t: kg(r.net), bold: true },
         ],
       })),
@@ -263,9 +321,9 @@ const inwardSpec = (d, ymd, date) => {
   const all = d.inward;
   const used = list.filter((b) => b.rows.length).length;
   return {
-    filename: `daily-inward-report-${ymd}.pdf`,
-    title: "DAILY INWARD REPORT",
-    subtitleLines: [`Date: ${fmtDMY(date)}`, filterLine(d), "Purchase vehicles received against Purchase Orders, by warehouse"],
+    filename: `${d.range.isRange ? "inward-report" : "daily-inward-report"}-${fileTag(d)}.pdf`,
+    title: d.range.isRange ? "INWARD REPORT" : "DAILY INWARD REPORT",
+    subtitleLines: [periodLine(d), filterLine(d), "Purchase vehicles received against Purchase Orders, by warehouse"],
     plant: letterheadFor(d),
     kpis: [
       { label: "Inward vehicles", value: fmtCount(all.length), color: IN_COLOR },
@@ -277,7 +335,7 @@ const inwardSpec = (d, ymd, date) => {
     columns: [
       { label: "S.No", w: 26, align: "center" },
       { label: "GP No", w: 62, align: "center" },
-      { label: "Time", w: 36, align: "center" },
+      timeCol(d),
       { label: "Vehicle No", w: 66, align: "center" },
       { label: "Party / Vendor", w: 118, align: "left" },
       { label: "PO No", w: 82, align: "left" },
@@ -292,32 +350,34 @@ const inwardSpec = (d, ymd, date) => {
     totalsRow: groups.filter((g) => g.rows.length).length > 1
       ? ["", "", "", "", "GRAND TOTAL", "", "", "", fmtCount(sum(all, (r) => r.bags)), kg(sum(all, (r) => r.gross)), kg(sum(all, (r) => r.tare)), kg(sum(all, (r) => r.net))]
       : null,
-    emptyText: "No inward vehicles for the selected date and filters.",
-    footnotes: [NET_NOTE, "Every warehouse is listed; one with no inward vehicle on the day is marked as such. A truck is placed under the warehouse of the lot it was unloaded into."],
+    emptyText: `No inward vehicles for the selected ${d.range.isRange ? "dates" : "date"} and filters.`,
+    footnotes: [NET_NOTE, `Every warehouse is listed; one with no inward vehicle ${d.range.isRange ? "in the period" : "on the day"} is marked as such. A truck is placed under the warehouse of the lot it was unloaded into.`],
   };
 };
 
 // ------------------------------------------------------------------ layout 2: OUTWARD
-const outwardSpec = (d, ymd, date) => {
+const outwardSpec = (d) => {
+  const whName = (id) => d.warehouseById.get(Number(id))?.name || `Warehouse ${id}`;
   const buckets = new Map();
-  const plants = d.plant ? [d.plant] : d.allPlants;
-  plants.forEach((p) => buckets.set(Number(p.id), { name: p.name, rows: [] }));
-  const none = { name: "UNASSIGNED / NO PLANT SET", rows: [] };
+  const none = { name: NO_OUT_WH, plantId: null, rows: [] };
   d.outward.forEach((r) => {
-    const b = buckets.get(Number(r.plant_id));
-    (b || none).rows.push(r);
+    const first = r.warehouse_ids[0];
+    if (!first) { none.rows.push(r); return; }
+    const key = `w${first}`;
+    if (!buckets.has(key)) buckets.set(key, { name: whName(first), plantId: d.warehouseById.get(Number(first))?.plant_id, rows: [] });
+    buckets.get(key).rows.push(r);
   });
-  const list = [...buckets.values()].filter((b) => b.rows.length || buckets.size === 1);
+  const list = [...buckets.values()].sort((a, b) => a.name.localeCompare(b.name));
   if (none.rows.length) list.push(none);
   const all = d.outward;
   const groups = list.map((b) => ({
-    title: `PLANT / MILL: ${String(b.name).toUpperCase()}`,
-    meta: `${b.rows.length} vehicle(s)  |  Net ${kg(sum(b.rows, (r) => r.net))} Kg`,
+    title: `WAREHOUSE: ${String(b.name).toUpperCase()}`,
+    meta: `${b.rows.length} vehicle(s)  |  Net ${kg(sum(b.rows, (r) => r.net))} Kg${b.plantId && d.plantById.get(Number(b.plantId)) ? `  |  ${d.plantById.get(Number(b.plantId)).name}` : ""}`,
     accent: OUT_COLOR,
-    note: b.rows.length ? undefined : "No outward vehicles on this date.",
+    note: b.rows.length ? undefined : `No outward vehicles on ${periodWord(d)}.`,
     rows: b.rows.map((r) => ({
       cells: (n) => [
-        n, { t: r.gp_no, bold: true }, hhmm(r.time), r.vehicle, r.driver, r.party, r.order_no, r.item,
+        n, { t: r.gp_no, bold: true }, whenOf(d, r), r.vehicle, r.driver, r.party, r.order_no, r.item,
         r.bags != null ? fmtCount(r.bags) : DASH, r.loaded_qty != null ? fmtQty(r.loaded_qty) : DASH,
         { t: kg(r.net), bold: true }, r.status || DASH,
       ],
@@ -327,9 +387,9 @@ const outwardSpec = (d, ymd, date) => {
       : undefined,
   }));
   return {
-    filename: `daily-outward-report-${ymd}.pdf`,
-    title: "DAILY OUTWARD REPORT",
-    subtitleLines: [`Date: ${fmtDMY(date)}`, filterLine(d), "Sales vehicles dispatched against Sales Orders, by plant / mill"],
+    filename: `${d.range.isRange ? "outward-report" : "daily-outward-report"}-${fileTag(d)}.pdf`,
+    title: d.range.isRange ? "OUTWARD REPORT" : "DAILY OUTWARD REPORT",
+    subtitleLines: [periodLine(d), filterLine(d), "Sales vehicles dispatched against Sales Orders, by warehouse"],
     plant: letterheadFor(d),
     kpis: [
       { label: "Outward vehicles", value: fmtCount(all.length), color: OUT_COLOR },
@@ -341,7 +401,7 @@ const outwardSpec = (d, ymd, date) => {
     columns: [
       { label: "S.No", w: 26, align: "center" },
       { label: "GP No", w: 64, align: "center" },
-      { label: "Time", w: 36, align: "center" },
+      timeCol(d),
       { label: "Vehicle No", w: 66, align: "center" },
       { label: "Driver", w: 70, align: "left" },
       { label: "Party / Customer", w: 112, align: "left" },
@@ -356,21 +416,20 @@ const outwardSpec = (d, ymd, date) => {
     totalsRow: groups.length > 1
       ? ["", "", "", "", "", "GRAND TOTAL", "", "", fmtCount(sum(all, (r) => r.bags)), fmtQty(sum(all, (r) => r.loaded_qty)), kg(sum(all, (r) => r.net)), ""]
       : null,
-    emptyText: "No outward vehicles for the selected date and filters.",
+    emptyText: `No outward vehicles for the selected ${d.range.isRange ? "dates" : "date"} and filters.`,
     footnotes: [
       NET_NOTE,
       "Bags and Loaded qty come from the truck's loading records; they show a dash if the truck has not been loaded yet.",
-      ...(d.warehouse ? [WH_NOTE] : []),
+      OUT_WH_NOTE,
     ],
   };
 };
 
 // ------------------------------------------------------------------ layout 3: OVERALL
-const overallSpec = (d, ymd, date) => {
+const overallSpec = (d) => {
   const whName = (id) => d.warehouseById.get(Number(id))?.name || `Warehouse ${id}`;
-  const plantName = (id) => (id ? d.plantById.get(Number(id))?.name : null) || "Unassigned / no plant set";
 
-  // summary: inward per warehouse (all listed, zeros included) and outward per plant
+  // summary: inward and outward per warehouse (all listed, zeros included)
   const inByWh = new Map(d.listedWarehouses.map((w) => [Number(w.id), { name: w.name, rows: [] }]));
   const notUnloaded = { name: "Not yet unloaded", rows: [] };
   d.inward.forEach((r) => {
@@ -382,14 +441,16 @@ const overallSpec = (d, ymd, date) => {
   const inwardLines = [...inByWh.values()];
   if (notUnloaded.rows.length) inwardLines.push(notUnloaded);
 
-  const outByPlant = new Map();
-  (d.plant ? [d.plant] : d.allPlants).forEach((p) => outByPlant.set(Number(p.id), { name: p.name, rows: [] }));
+  const outByWh = new Map(d.listedWarehouses.map((w) => [Number(w.id), { name: w.name, rows: [] }]));
+  const notLoaded = { name: "Not yet loaded / warehouse not recorded", rows: [] };
   d.outward.forEach((r) => {
-    const key = r.plant_id ? Number(r.plant_id) : 0;
-    if (!outByPlant.has(key)) outByPlant.set(key, { name: plantName(r.plant_id), rows: [] });
-    outByPlant.get(key).rows.push(r);
+    const first = r.warehouse_ids[0];
+    if (!first) { notLoaded.rows.push(r); return; }
+    if (!outByWh.has(Number(first))) outByWh.set(Number(first), { name: whName(first), rows: [] });
+    outByWh.get(Number(first)).rows.push(r);
   });
-  const outwardLines = [...outByPlant.values()];
+  const outwardLines = [...outByWh.values()];
+  if (notLoaded.rows.length) outwardLines.push(notLoaded);
 
   const line = (color) => (b, i) => ({
     cells: () => [
@@ -409,50 +470,86 @@ const overallSpec = (d, ymd, date) => {
       rows: inwardLines.map(line(IN_COLOR)), subtotalCells: totalsOf("Total inward", d.inward),
     },
     {
-      title: "OUTWARD  -  BY PLANT / MILL", accent: OUT_COLOR, meta: `${d.outward.length} vehicle(s)`,
+      title: "OUTWARD  -  BY WAREHOUSE", accent: OUT_COLOR, meta: `${d.outward.length} vehicle(s)`,
       rows: outwardLines.map(line(OUT_COLOR)), subtotalCells: totalsOf("Total outward", d.outward),
     },
   ];
 
   // detail: every vehicle of the day, in time order, both directions
   const everyone = [...d.inward, ...d.outward].sort((a, b) => new Date(a.time || 0) - new Date(b.time || 0));
-  const placeOf = (r) => (r.direction === "INWARD"
-    ? (r.warehouse_ids.length ? r.warehouse_ids.map(whName).join(", ") : "Not unloaded yet")
-    : plantName(r.plant_id));
+  const placeOf = (r) => (r.warehouse_ids.length
+    ? r.warehouse_ids.map(whName).join(", ")
+    : r.direction === "INWARD" ? "Not unloaded yet" : r.loaded ? "Not recorded" : "Not loaded yet");
   const detail = {
-    title: "DAY LOG  -  ALL INWARD & OUTWARD VEHICLES",
-    subtitleLines: [`Date: ${fmtDMY(date)}`, filterLine(d)],
+    title: d.range.isRange ? "VEHICLE LOG  -  ALL INWARD & OUTWARD VEHICLES" : "DAY LOG  -  ALL INWARD & OUTWARD VEHICLES",
+    subtitleLines: [periodLine(d), filterLine(d)],
     columns: [
       { label: "S.No", w: 26, align: "center" },
       { label: "Direction", w: 56, align: "center" },
       { label: "GP No", w: 64, align: "center" },
-      { label: "Time", w: 36, align: "center" },
+      timeCol(d),
       { label: "Vehicle No", w: 66, align: "center" },
       { label: "Party", w: 118, align: "left" },
       { label: "PO / SO No", w: 84, align: "left" },
       { label: "Item", w: 82, align: "left" },
       { label: "Bags", w: 36, align: "right" },
       { label: "Net Wt (Kg)", w: 58, align: "right" },
-      { label: "Warehouse / Plant", w: 110, align: "left" },
+      { label: "Warehouse", w: 110, align: "left" },
     ],
     groups: everyone.length
       ? [{
           title: `ALL VEHICLES  -  ${everyone.length} movement(s)`, accent: COLORS.NAVY,
           rows: everyone.map((r) => ({
             cells: (n) => [
-              n, { t: r.direction, bold: true, color: r.direction === "INWARD" ? IN_COLOR : OUT_COLOR }, { t: r.gp_no, bold: true }, hhmm(r.time),
+              n, { t: r.direction, bold: true, color: r.direction === "INWARD" ? IN_COLOR : OUT_COLOR }, { t: r.gp_no, bold: true }, whenOf(d, r),
               r.vehicle, r.party, r.order_no, r.item, r.bags != null && r.bags !== 0 ? fmtCount(r.bags) : DASH, { t: kg(r.net), bold: true }, placeOf(r),
             ],
           })),
         }]
       : [],
-    emptyText: "No inward or outward vehicles for the selected date and filters.",
+    emptyText: `No inward or outward vehicles for the selected ${d.range.isRange ? "dates" : "date"} and filters.`,
+  };
+
+  // date range only: one line per day that had movements
+  const daily = new Map();
+  [...d.inward, ...d.outward].forEach((r) => {
+    const key = r.date || DASH;
+    const cur = daily.get(key) || { in: [], out: [] };
+    (r.direction === "INWARD" ? cur.in : cur.out).push(r);
+    daily.set(key, cur);
+  });
+  const dayRows = [...daily.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  const dayWise = {
+    title: "DAY-WISE TOTALS",
+    subtitleLines: [periodLine(d), filterLine(d)],
+    columns: [
+      { label: "S.No", w: 30, align: "center" },
+      { label: "Date", w: 120, align: "center" },
+      { label: "Inward vehicles", w: 80, align: "right" },
+      { label: "Inward net (Kg)", w: 100, align: "right" },
+      { label: "Outward vehicles", w: 84, align: "right" },
+      { label: "Outward net (Kg)", w: 100, align: "right" },
+      { label: "Inward - Outward (Kg)", w: 110, align: "right" },
+    ],
+    groups: dayRows.length
+      ? [{
+          title: `${dayRows.length} day(s) with movements`, accent: COLORS.NAVY,
+          rows: dayRows.map(([ymdKey, v]) => ({
+            cells: (n) => {
+              const inK = sum(v.in, (r) => r.net); const outK = sum(v.out, (r) => r.net);
+              return [n, dmyShort(ymdKey), fmtCount(v.in.length), { t: kg(inK), color: IN_COLOR }, fmtCount(v.out.length), { t: kg(outK), color: OUT_COLOR }, `${inK - outK < 0 ? "-" : ""}${kg(Math.abs(inK - outK))}`];
+            },
+          })),
+          subtotalCells: ["", "Total", fmtCount(d.inward.length), kg(inNet), fmtCount(d.outward.length), kg(outNet), `${inNet - outNet < 0 ? "-" : ""}${kg(Math.abs(inNet - outNet))}`],
+        }]
+      : [],
+    emptyText: "No movements in the selected period.",
   };
 
   return {
-    filename: `daily-overall-report-${ymd}.pdf`,
-    title: "DAILY INWARD / OUTWARD REPORT",
-    subtitleLines: [`Date: ${fmtDMY(date)}`, filterLine(d), "Day summary: inward by warehouse, outward by plant / mill, then the full vehicle log"],
+    filename: `${d.range.isRange ? "overall-report" : "daily-overall-report"}-${fileTag(d)}.pdf`,
+    title: d.range.isRange ? "INWARD / OUTWARD REPORT" : "DAILY INWARD / OUTWARD REPORT",
+    subtitleLines: [periodLine(d), filterLine(d), d.range.isRange ? "Period summary: inward and outward by warehouse, day-wise totals, then the full vehicle log" : "Day summary: inward and outward by warehouse, then the full vehicle log"],
     plant: letterheadFor(d),
     kpis: [
       { label: "Inward vehicles", value: fmtCount(d.inward.length), color: IN_COLOR },
@@ -463,7 +560,7 @@ const overallSpec = (d, ymd, date) => {
     ],
     columns: [
       { label: "S.No", w: 30, align: "center" },
-      { label: "Warehouse / Plant", w: 260, align: "left" },
+      { label: "Warehouse", w: 260, align: "left" },
       { label: "Vehicles", w: 70, align: "right" },
       { label: "Bags", w: 80, align: "right" },
       { label: "Net Wt (Kg)", w: 110, align: "right" },
@@ -472,22 +569,23 @@ const overallSpec = (d, ymd, date) => {
     groups: summaryGroups,
     totalsRow: null,
     emptyText: "Nothing to show.",
-    sections: [detail],
-    footnotes: [NET_NOTE, ...(d.warehouse ? [WH_NOTE] : [])],
+    sections: d.range.isRange ? [dayWise, detail] : [detail],
+    footnotes: [NET_NOTE, OUT_WH_NOTE],
   };
 };
 
 // Builds the renderTableReport spec for GET /api/reports/daily-report-pdf
-//   ?date=YYYY-MM-DD&report_type=inward|outward|overall&plant_id=&warehouse_id=
+//   ?from=YYYY-MM-DD&to=YYYY-MM-DD (or the old single date=)&report_type=inward|outward|overall&plant_id=&warehouse_ids=1,2,3 (or the old warehouse_id=)
 const buildDailyReportSpec = async (query) => {
-  const { ymd, date } = parseDate(query.date);
+  const range = parseRange(query);
   const type = ["inward", "outward", "overall"].includes(String(query.report_type || "").toLowerCase())
     ? String(query.report_type).toLowerCase()
     : "overall";
-  const data = await loadDay({ ymd, plantId: query.plant_id || null, warehouseId: query.warehouse_id || null });
-  if (type === "inward") return inwardSpec(data, ymd, date);
-  if (type === "outward") return outwardSpec(data, ymd, date);
-  return overallSpec(data, ymd, date);
+  const data = await loadDay({ fromYmd: range.fromYmd, toYmd: range.toYmd, plantId: query.plant_id || null, warehouseIds: parseWarehouseIds(query) });
+  data.range = range;
+  if (type === "inward") return inwardSpec(data);
+  if (type === "outward") return outwardSpec(data);
+  return overallSpec(data);
 };
 
 module.exports = { buildDailyReportSpec };

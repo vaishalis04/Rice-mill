@@ -8,7 +8,8 @@ const { verifyAccessToken } = require("../helpers/jwt.helper");
 router.use(
   verifyAccessToken,
   attachUser,
-  authorizeRoleOrModule(["sales", "admin", "gate", "warehouse", "lab", "dispatch"], ["sales", "gate", "warehouse", "lab", "dispatch"]),
+  // admin.gate_entry (read-only): the admin Gate Entry page lists approved SOs to attach.
+  authorizeRoleOrModule(["sales", "admin", "gate", "warehouse", "lab", "dispatch"], ["sales", "gate", "warehouse", "lab", "dispatch"], { codes: ["admin.gate_entry"], readOnly: true }),
 ); // Protected routes
 
 router.get(

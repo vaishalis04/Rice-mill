@@ -5,6 +5,7 @@ const {
   UserRegistrationRequest, User, Role, PlantMaster, Permission, UserPermission,
 } = require("../models/index");
 const { generateCode } = require("../helpers/helperFunction");
+const { releaseDeletedUserIdentifiers, uniqueUserError } = require("../helpers/userIdentity.helper");
 
 // Login page "Register" flow: someone fills in Name/Mobile/Email/Password,
 // which lands here as a pending request — NOT a User yet. An admin reviews
@@ -109,6 +110,8 @@ module.exports = {
         where: { is_deleted: false, [Op.or]: [{ phone: request.mobile }, { email: request.email }] },
       });
       if (clash) throw createError(409, "A user with this mobile number or email was created in the meantime");
+
+      await releaseDeletedUserIdentifiers({ username: request.mobile, email: request.email, phone: request.mobile });
 
       const user = await User.create({
         username: request.mobile, // log in with mobile no. + password, per the brief

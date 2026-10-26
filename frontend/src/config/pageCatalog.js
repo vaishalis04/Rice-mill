@@ -29,6 +29,7 @@ export const PAGE_CATALOG = [
   // ---- Quality (Lab) dashboard ----
   { module: "lab", page: "sampling", label: "Sampling", group: "Quality" },
   { module: "lab", page: "tests", label: "Lab Tests", group: "Quality" },
+  { module: "lab", page: "composite_report", label: "Composite Report", group: "Quality" },
 
   // ---- Production dashboard ----
   { module: "production", page: "batches", label: "Production Batches", group: "Production" },
@@ -60,6 +61,7 @@ export const PAGE_CATALOG = [
   { module: "admin", page: "roles", label: "Roles & Permissions", group: "Other Pages" },
   { module: "admin", page: "gate_entry", label: "Gate Entry (Admin)", group: "Other Pages" },
   { module: "admin", page: "advisory_trucks", label: "Advisory Trucks", group: "Other Pages" },
+  { module: "admin", page: "payment_settlement", label: "Payment Settlement", group: "Other Pages" },
 ];
 
 export const permissionCode = (module, page) => `${module}.${page}`;

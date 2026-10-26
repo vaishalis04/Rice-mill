@@ -8,6 +8,7 @@ import {
   getGateEntryByIdApi,
   getSalesOrderByIdApi,
   getOutwardSlipPdfApi,
+  getLoadingStockApi,
 } from "../../api/api";
 import DataTable from "../../components/DataTable";
 import EntitySelect from "../../components/EntitySelect";
@@ -31,6 +32,13 @@ export default function LoadingPage() {
   // with a real, physical bag count.
   const [materialBagSizes, setMaterialBagSizes] = useState({});
   const [materialBagCounts, setMaterialBagCounts] = useState({});
+  // The warehouse each selected material is loaded FROM (same idea as the
+  // warehouse chosen in Unloading) — the loaded quantity is taken out of it.
+  const [materialWarehouses, setMaterialWarehouses] = useState({});
+  // material_id -> [{ warehouse_id, warehouse_name, available_qtl, packs:[{bag_size,bags,qty_qtl}] }]
+  const [stockByMaterial, setStockByMaterial] = useState({});
+  const [stockLoaded, setStockLoaded] = useState(false);
+  const [stockTick, setStockTick] = useState(0); // bump to re-read stock after a save / delete
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
@@ -54,6 +62,7 @@ export default function LoadingPage() {
   const drivers = useEntityLookup("driver");
   const salesOrders = useEntityLookup("sales_order");
   const materials = useEntityLookup("material");
+  const warehouses = useEntityLookup("warehouse");
 
   const getGateEntryRow = (gate_entry_id) =>
     gateEntries.rows.find((r) => String(r.id) === String(gate_entry_id));
@@ -152,6 +161,47 @@ export default function LoadingPage() {
   }, [form.gate_entry_id, salesOrders.rows, materials.rows, editingId, editingSoId, editingOwnQuantities]);
 
   const availableMaterials = gateEntryMaterials;
+
+  // Live stock per warehouse for the materials on this truck.
+  const stockMaterialKey = [...new Set(availableMaterials.map((m) => m.material_id))].join(",");
+  useEffect(() => {
+    if (!stockMaterialKey) {
+      setStockByMaterial({});
+      setStockLoaded(false);
+      return undefined;
+    }
+    let alive = true;
+    getLoadingStockApi(stockMaterialKey, editingId || undefined)
+      .then((res) => {
+        if (!alive) return;
+        setStockByMaterial(res.data.data || {});
+        setStockLoaded(true);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setStockByMaterial({});
+        setStockLoaded(false); // fall back to the plain warehouse list; the server still checks stock
+      });
+    return () => {
+      alive = false;
+    };
+  }, [stockMaterialKey, editingId, stockTick]);
+
+  // Warehouses to offer for a material: those holding stock of it (with the
+  // quantity), or — if the stock figures couldn't be read — every warehouse.
+  const warehouseOptionsFor = (material) => {
+    if (stockLoaded) return stockByMaterial[material.material_id] || [];
+    return warehouses.rows.map((w) => ({ warehouse_id: w.id, warehouse_name: w.name, available_qtl: null, packs: [] }));
+  };
+  // The chosen warehouse, or the only one with stock.
+  const chosenWarehouse = (material) => {
+    const picked = materialWarehouses[material.id];
+    if (picked !== undefined && picked !== "") return String(picked);
+    const options = warehouseOptionsFor(material);
+    return options.length === 1 ? String(options[0].warehouse_id) : "";
+  };
+  const packLine = (p) => `${p.bag_size != null ? `${p.bag_size} kg` : "bulk"} x ${p.bags ?? "—"} bags (${p.qty_qtl} Qtl)`;
+
   const isAnyMaterialAvailable = availableMaterials.some(m => {
     const available =
       m.remaining_qty > 0 &&
@@ -193,6 +243,7 @@ export default function LoadingPage() {
     setMaterialQuantities({});
     setMaterialBagSizes({});
     setMaterialBagCounts({});
+    setMaterialWarehouses({});
     setGateEntryMaterials([]);
   };
 
@@ -207,14 +258,17 @@ export default function LoadingPage() {
       const newQuantities = { ...materialQuantities };
       const newBagSizes = { ...materialBagSizes };
       const newBagCounts = { ...materialBagCounts };
+      const newWarehouses = { ...materialWarehouses };
       if (!newSelection.includes(materialId)) {
         delete newQuantities[materialId];
         delete newBagSizes[materialId];
         delete newBagCounts[materialId];
+        delete newWarehouses[materialId];
       }
       setMaterialQuantities(newQuantities);
       setMaterialBagSizes(newBagSizes);
       setMaterialBagCounts(newBagCounts);
+      setMaterialWarehouses(newWarehouses);
       
       return newSelection;
     });
@@ -280,12 +334,33 @@ export default function LoadingPage() {
         throw new Error(`Quantity for ${material.material_name} exceeds remaining (${material.remaining_qty})`);
       }
 
+      // Warehouse to load from — and, when the stock figures are available, a
+      // check against what that warehouse really holds (the server checks too).
+      const warehouseId = chosenWarehouse(material);
+      if (!warehouseId) {
+        throw new Error(`Please select the warehouse to load ${material.material_name} from`);
+      }
+      if (stockLoaded) {
+        const option = warehouseOptionsFor(material).find((o) => String(o.warehouse_id) === warehouseId);
+        const pack = option?.packs.find((p) => p.bag_size == null || Math.abs(Number(p.bag_size) - bagSize) < 0.0005);
+        if (!option || !pack) {
+          throw new Error(
+            `No ${bagSize} kg stock of ${material.material_name} in ${option?.warehouse_name || "that warehouse"}` +
+              (option?.packs.length ? ` — it holds ${option.packs.map(packLine).join(", ")}` : "")
+          );
+        }
+        if (qty > pack.qty_qtl + 0.0005) {
+          throw new Error(`Only ${pack.qty_qtl} Qtl (${pack.bags} bags) of ${material.material_name} ${bagSize} kg is in ${option.warehouse_name}; this load needs ${qty} Qtl`);
+        }
+      }
+
       quantities.push({
         so_id: Number(material.so_id),
         material_id: Number(material.material_id),
         bag_size: bagSize,
         bags,
         qty,
+        warehouse_id: Number(warehouseId),
       });
       totalQty += qty;
     }
@@ -345,9 +420,11 @@ export default function LoadingPage() {
       setMaterialQuantities({});
       setMaterialBagSizes({});
       setMaterialBagCounts({});
+      setMaterialWarehouses({});
       setEditingOwnQuantities({});
       setEditingId(null);
       setEditingSoId(null);
+      setStockTick((n) => n + 1);
       load();
     } catch (err) {
       setError(
@@ -398,6 +475,7 @@ export default function LoadingPage() {
       const quantities = {};
       const bagSizes = {};
       const bagCounts = {};
+      const warehouseByKey = {};
       const ownByMaterial = {};
 
       existingBreakdown.forEach((m) => {
@@ -406,6 +484,7 @@ export default function LoadingPage() {
         quantities[uniqueKey] = Number(m.qty) || 0;
         bagSizes[uniqueKey] = m.bag_size ?? "";
         bagCounts[uniqueKey] = m.bags ?? "";
+        warehouseByKey[uniqueKey] = m.warehouse_id ?? ""; // loadings made before warehouses were recorded must be given one
         ownByMaterial[m.material_id] = Number(m.qty) || 0;
       });
 
@@ -413,12 +492,14 @@ export default function LoadingPage() {
       setMaterialQuantities(quantities);
       setMaterialBagSizes(bagSizes);
       setMaterialBagCounts(bagCounts);
+      setMaterialWarehouses(warehouseByKey);
       setEditingOwnQuantities(ownByMaterial);
     } else {
       setSelectedItems([]);
       setMaterialQuantities({});
       setMaterialBagSizes({});
       setMaterialBagCounts({});
+      setMaterialWarehouses({});
       setEditingOwnQuantities({});
     }
   };
@@ -431,6 +512,7 @@ export default function LoadingPage() {
     setMaterialQuantities({});
     setMaterialBagSizes({});
     setMaterialBagCounts({});
+    setMaterialWarehouses({});
     setEditingOwnQuantities({});
   };
 
@@ -438,9 +520,12 @@ export default function LoadingPage() {
     if (!window.confirm("Delete this loading record?")) return;
     try {
       await deleteLoadingApi(id);
+      setStockTick((n) => n + 1); // the stock went back into its warehouse
+      gateEntries.refetch();
+      salesOrders.refetch();
       load();
-    } catch {
-      setError("Delete failed");
+    } catch (err) {
+      setError(err.response?.data?.msg || err.response?.data?.message || "Delete failed");
     }
   };
 
@@ -643,6 +728,46 @@ export default function LoadingPage() {
                               </div>
                             )}
                           </div>
+                          {isSelectable && isSelected && (() => {
+                            const options = warehouseOptionsFor(material);
+                            const chosen = chosenWarehouse(material);
+                            const option = options.find((o) => String(o.warehouse_id) === chosen);
+                            const typedSize = Number(materialBagSizes[material.id] || 0);
+                            const pack = option?.packs.find((p) => p.bag_size == null || Math.abs(Number(p.bag_size) - typedSize) < 0.0005);
+                            return (
+                              <div style={{ marginTop: 6, marginLeft: 28, fontSize: 12 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                                  <label style={{ color: "#475569", fontWeight: 600 }}>Load from warehouse</label>
+                                  <select
+                                    value={chosen}
+                                    onChange={(e) => setMaterialWarehouses((prev) => ({ ...prev, [material.id]: e.target.value }))}
+                                    required
+                                    style={{ padding: "4px 6px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, minWidth: 180 }}
+                                  >
+                                    <option value="">Select warehouse…</option>
+                                    {options.map((o) => (
+                                      <option key={o.warehouse_id} value={o.warehouse_id}>
+                                        {o.warehouse_name}
+                                        {o.available_qtl != null ? ` — ${o.available_qtl} Qtl in stock` : ""}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                {stockLoaded && options.length === 0 && (
+                                  <div style={{ color: "#dc2626", marginTop: 3 }}>
+                                    ⚠️ No stock of {material.material_name} is recorded in any warehouse.
+                                  </div>
+                                )}
+                                {stockLoaded && option && (
+                                  <div style={{ color: pack || !typedSize ? "#475569" : "#dc2626", marginTop: 3 }}>
+                                    In {option.warehouse_name}: {option.packs.map(packLine).join(" · ")}
+                                    {option.reserved_qtl > 0 && ` · ${option.reserved_qtl} Qtl reserved for pending production`}
+                                    {typedSize > 0 && !pack && ` — no ${typedSize} kg stock here`}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                           {isSelected && currentQty > 0 && (
                             <div style={{ fontSize: 11, color: "#64748b", marginTop: 2, marginLeft: 28 }}>
                               {currentQty} Qtl loaded — {round3(material.remaining_qty - currentQty)} Qtl remaining after this truck
@@ -664,6 +789,7 @@ export default function LoadingPage() {
                               setMaterialQuantities({});
                               setMaterialBagSizes({});
                               setMaterialBagCounts({});
+                              setMaterialWarehouses({});
                             }}
                             style={{
                               padding: "2px 8px",
@@ -832,6 +958,15 @@ export default function LoadingPage() {
               );
             },
           },
+          {
+            key: "warehouse",
+            label: "Warehouse",
+            render: (row) => {
+              const ids = [...new Set((Array.isArray(row.items) ? row.items : []).map((m) => m.warehouse_id).filter(Boolean))];
+              if (ids.length === 0) return <span style={{ color: "#94a3b8" }}>Not recorded</span>;
+              return ids.map((id) => warehouses.getLabel(id)).join(", ");
+            },
+          },
           { key: "loaded_qty", label: "Loaded Qty (Qtl)" },
           {
             key: "loaded_at",
@@ -867,7 +1002,9 @@ export default function LoadingPage() {
         steps={[
           "Only sales (outbound) gate entries that are checked in and 'waiting_loading' show up here — that happens right after the first weighment.",
           "Select the gate entry, then choose which materials this truck is carrying.",
-          "Enter Bag Size (kg) and No. of Bags for each selected material, same as Unloading — the quantity is computed automatically.",
+          "For each selected material choose the warehouse it is loaded from — the list shows what each warehouse holds. The loaded quantity is taken out of that warehouse's stock (oldest stock first), so Inventory, Warehouse / Stock and the reports always match what was loaded.",
+          "Enter Bag Size (kg) and No. of Bags for each selected material, same as Unloading — the quantity is computed automatically. The bag size must be one the warehouse actually holds.",
+          "Editing or deleting a loading puts its stock back into the warehouse. Loadings made before warehouses were recorded show 'Not recorded' — edit one to assign its warehouse.",
           "Each vehicle is loaded up to the quantity assigned to that vehicle, then proceeds to its second weighment—even if the overall Sales Order is only partially complete.",
           "After second weighment, the vehicle can be parked and checked out. Any remaining Sales Order quantity stays open for another vehicle.",
           "The Sales Order's dispatched quantity is cumulative across vehicles and is adjusted from the actual weighbridge net weight (within the allowed ±50 Qtl tolerance).",

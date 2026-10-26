@@ -5,6 +5,7 @@ const { Op } = require("sequelize");
 
 const { User, Role, PlantMaster, RolePermission, Permission, UserPermission } = require("../models");
 const { generateCode } = require("../helpers/helperFunction");
+const { releaseDeletedUserIdentifiers, uniqueUserError } = require("../helpers/userIdentity.helper");
 
 const ACCESS_TOKEN_SECRET =
   process.env.ACCESS_TOKEN_SECRET || "access_secret";
@@ -51,6 +52,8 @@ module.exports = {
       }
 
       const password_hash = await bcrypt.hash(password, 10);
+
+      await releaseDeletedUserIdentifiers({ username, email, phone });
 
       const user = await User.create({
         username,

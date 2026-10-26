@@ -18,8 +18,8 @@ import "./GateEntry.css";
 
 // The Gate only ever captures these three things now. Entry Type, the
 // PO/SO to attach, Challan No. and Expected Qty all moved to
-// Admin > Gate Entry — see GateEntryAdminPage.jsx — which is where the
-// token actually gets its details and becomes ready for check-in.
+// Admin > Gate Entry — see GateEntryAdminPage.jsx. Order of the flow:
+// token -> Admin attaches PO / SO / Empty-Misc details -> Check-in here.
 const emptyForm = {
   vehicle_id: "",
   driver_id: "",
@@ -29,7 +29,7 @@ const emptyForm = {
 const STATUS_FILTERS = [
   { key: "", label: "All" },
   { key: "pending_details", label: "Waiting on Admin" },
-  { key: "waiting_token", label: "Waiting Token" },
+  { key: "waiting_token", label: "Ready for Check-in" },
   { key: "waiting_sampling", label: "Waiting Sampling" },
   { key: "sampling_done", label: "Sampling Done" },
   { key: "accepted", label: "Accepted" },
@@ -166,7 +166,7 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
       setLastToken(tokenNo || "");
       setInfo(
         tokenNo
-          ? "Token generated — give this number to the driver, then click Check-in below once the truck is physically at the gate."
+          ? "Token generated — give this number to the driver. Admin now attaches the PO / SO / Empty-Misc details to this vehicle (Admin > Gate Entry); Check-in unlocks after that."
           : "Entry saved (check the list below for the token number)."
       );
 
@@ -275,10 +275,11 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
         <p className="field-hint" style={{ marginBottom: 12 }}>
           Fill this in when a truck arrives at the gate — just the vehicle, the driver
           and (optionally) a quick photo of the driver. This prints a token for the
-          driver right away. Once the truck is physically at the gate, click
-          <strong> Check-in</strong> on it in the list below — it then shows up for
-          Admin to classify (Purchase / Sales / Empty) and attach the approved
-          Purchase Order or Sales Order on the Admin &gt; Gate Entry tab.
+          driver right away. Admin then classifies the vehicle (Purchase / Sales /
+          Empty) and attaches the approved Purchase Order, Sales Order or Empty/Misc
+          items on the Admin &gt; Gate Entry tab. Only after that does
+          <strong> Check-in</strong> appear on the vehicle in the list below — click it
+          once the truck is physically at the gate.
         </p>
 
         <form className="sf-form" onSubmit={handleGenerateToken}>
@@ -446,6 +447,10 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
                   <span className="dt-badge" style={{ background: "#fef3c7", color: "#92400e" }}>
                     Waiting on Admin
                   </span>
+                ) : row.gate_status === "waiting_token" ? (
+                  <span className="dt-badge" style={{ background: "#dcfce7", color: "#166534" }}>
+                    Ready for check-in
+                  </span>
                 ) : (
                   <span className="dt-badge">{row.gate_status}</span>
                 ),
@@ -457,10 +462,10 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {row.gate_status === "pending_details" && (
                     <span className="field-hint" style={{ margin: 0 }}>
-                      → Waiting for Admin to attach details (Admin &gt; Gate Entry)
+                      → Waiting for Admin to attach PO / SO / Empty-Misc details (Admin &gt; Gate Entry) — Check-in unlocks after that
                     </span>
                   )}
-                  {row.gate_status === "waiting_token" && (
+                  {row.gate_status === "waiting_token" && row.entry_type !== "pending" && (
                     <button className="dt-btn" onClick={() => handleCheckin(row.id)}>
                       Check-in
                     </button>
@@ -497,10 +502,10 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
           title="Gate Entry"
           steps={[
             "Fill in the Generate Token form when a truck arrives — just Vehicle, Driver and (optionally) a Driver Photo.",
-            "Submitting prints a token number for the driver and puts the entry at 'Waiting Token' — it isn't classified as Purchase / Sales / Empty yet.",
-            "Click Check-in on that entry as soon as the truck is physically at the gate. This moves it to 'Waiting on Admin' — its journey doesn't continue any further until Admin classifies it.",
-            "Admin now goes to Admin > Gate Entry, picks the Entry Type, and attaches the approved Purchase Order or Sales Order (with materials, Challan No. and Expected Qty) — or, for Empty/Misc trucks, logs what items came in and where they were stored.",
-            "That Admin step is what actually routes the truck onward: Purchase trucks move into the sampling queue; Empty/Misc and Sales trucks move into the weighment queue.",
+            "Submitting prints a token number for the driver and puts the entry at 'Waiting on Admin' — it isn't classified as Purchase / Sales / Empty yet, and it can't be checked in yet.",
+            "Admin goes to Admin > Gate Entry, picks that vehicle's token, chooses the Entry Type, and attaches the approved Purchase Order or Sales Order (with materials, Challan No. and Expected Qty) — or, for Empty/Misc trucks, logs what items came in and where they were stored. The entry then shows 'Ready for check-in'.",
+            "Only now does the Check-in button appear on that entry. Click it once the truck is physically at the gate.",
+            "Check-in is what routes the truck onward: Purchase trucks move into the sampling queue; Empty/Misc and Sales trucks move into the weighment queue.",
             "Purchase trucks flow forward automatically from there: Quality samples and tests it, Weighbridge weighs it, then Warehouse unloads it into a Lot.",
             "Empty/Misc trucks can be weighed on the Weighbridge page if needed, then use 'Send to Warehouse' here (or on the Warehouse page) to close them out — no Lot is created since there's usually no stock to track.",
             "Sales trucks are weighed too, then head to the Loading tab: enter the loaded quantity there, which moves the gate entry to 'loaded' and the Sales Order to 'dispatched'. Only then can the truck check out here.",
