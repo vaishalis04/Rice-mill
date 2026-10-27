@@ -24,7 +24,7 @@ const errorMessageFrom = async (err, fallback) => {
   return data?.message || data?.msg || fallback;
 };
 
-const cell = { padding: "4px 8px", borderBottom: "1px solid #e2e8f0", fontSize: 13 };
+const cell = { padding: "4px 8px", borderBottom: "1px solid #e8e0cc", fontSize: 13 };
 
 export default function GatePassModal({ entry, onClose }) {
   const [data, setData] = useState(null);
@@ -169,7 +169,7 @@ export default function GatePassModal({ entry, onClose }) {
                     <div style={{ overflowX: "auto", marginTop: 4 }}>
                       <table style={{ width: "100%", borderCollapse: "collapse" }}>
                         <thead>
-                          <tr style={{ background: "#f1f5f9", textAlign: "left" }}>
+                          <tr style={{ background: "#f1ebda", textAlign: "left" }}>
                             {["Item", "Lab Decision", "Size", "Total", "Accp", "Rej", "Remarks"].map((h) => (
                               <th key={h} style={{ ...cell, fontWeight: 600 }}>{h}</th>
                             ))}

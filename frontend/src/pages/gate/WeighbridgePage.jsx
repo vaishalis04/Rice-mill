@@ -387,12 +387,12 @@ export default function WeighbridgePage() {
   const getStatusBadge = (status) => {
     const colors = {
       'waiting_weighment': '#f59e0b',
-      'waiting_second_weighment': '#3b82f6',
-      'parked': '#10b981',
-      'accepted': '#8b5cf6',
-      'in_process': '#6b7280',
+      'waiting_second_weighment': '#0f766e',
+      'parked': '#2e9e92',
+      'accepted': '#14201d',
+      'in_process': '#5b6660',
     };
-    return colors[status] || '#6b7280';
+    return colors[status] || '#5b6660';
   };
 
   // Get status label
@@ -411,7 +411,7 @@ export default function WeighbridgePage() {
     <div style={{ padding: '20px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h2 style={{ margin: 0 }}>⚖️ Weighbridge</h2>
-        <div style={{ fontSize: '14px', color: '#6b7280' }}>
+        <div style={{ fontSize: '14px', color: '#5b6660' }}>
           Total Slips: {Array.isArray(slips) ? slips.length : 0}
         </div>
       </div>
@@ -421,10 +421,10 @@ export default function WeighbridgePage() {
         <div style={{
           padding: '12px 16px',
           marginBottom: '16px',
-          backgroundColor: '#fee2e2',
-          color: '#991b1b',
+          backgroundColor: '#fbeae7',
+          color: '#b3261e',
           borderRadius: '4px',
-          border: '1px solid #fecaca'
+          border: '1px solid #efc4be'
         }}>
           ❌ {error}
         </div>
@@ -434,10 +434,10 @@ export default function WeighbridgePage() {
         <div style={{
           padding: '12px 16px',
           marginBottom: '16px',
-          backgroundColor: '#d1fae5',
-          color: '#065f46',
+          backgroundColor: '#e3f1ee',
+          color: '#0b5f58',
           borderRadius: '4px',
-          border: '1px solid #a7f3d0'
+          border: '1px solid #c4e0da'
         }}>
           {info}
         </div>
@@ -455,7 +455,7 @@ export default function WeighbridgePage() {
           {/* Gate Entry Selection */}
           <div className="sf-field">
             <label style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-              Gate Entry <span style={{ color: '#dc2626' }}>*</span>
+              Gate Entry <span style={{ color: '#b3261e' }}>*</span>
             </label>
             <EntitySelect
               entity="gate_entry"
@@ -472,7 +472,7 @@ export default function WeighbridgePage() {
               placeholder="Select a gate entry..."
             />
             {selectedGateEntry && (
-              <div style={{ fontSize: '12px', marginTop: '4px', color: '#6b7280' }}>
+              <div style={{ fontSize: '12px', marginTop: '4px', color: '#5b6660' }}>
                 Status: <span style={{
                   display: 'inline-block',
                   padding: '2px 8px',
@@ -490,12 +490,12 @@ export default function WeighbridgePage() {
                   </span>
                 )}
                 {isSecondWeight && existingFirstSlip && (
-                  <span style={{ marginLeft: '8px', color: '#3b82f6' }}>
+                  <span style={{ marginLeft: '8px', color: '#0f766e' }}>
                     First Weight: {parseFloat(existingFirstSlip.gross_weight).toFixed(2)}
                   </span>
                 )}
                 {existingFirstSlip?.trip_activity && (
-                  <div style={{ marginTop: 6, color: '#334155' }}>
+                  <div style={{ marginTop: 6, color: '#2f3a36' }}>
                     {selectedGateEntry?.entry_type === "sales" ? (
                       <>
                         Loaded this trip: <strong>{Number(existingFirstSlip.trip_activity.loaded_qty || 0).toFixed(3)} Qtl</strong>
@@ -513,7 +513,7 @@ export default function WeighbridgePage() {
           {/* Slip Number - Disabled for second weight */}
           <div className="sf-field">
             <label style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
-              Slip No. <span style={{ color: '#dc2626' }}>*</span>
+              Slip No. <span style={{ color: '#b3261e' }}>*</span>
             </label>
             <input
               name="slip_no"
@@ -525,14 +525,14 @@ export default function WeighbridgePage() {
               style={{
                 width: '100%',
                 padding: '8px 12px',
-                border: '1px solid #d1d5db',
+                border: '1px solid #d9d0bb',
                 borderRadius: '4px',
                 fontSize: '14px',
-                backgroundColor: isSecondWeight ? '#f3f4f6' : 'white'
+                backgroundColor: isSecondWeight ? '#f1ebda' : 'white'
               }}
             />
             {isSecondWeight && (
-              <div style={{ fontSize: '12px', marginTop: '4px', color: '#6b7280' }}>
+              <div style={{ fontSize: '12px', marginTop: '4px', color: '#5b6660' }}>
                 🔒 Slip number from first weight
               </div>
             )}
@@ -542,7 +542,7 @@ export default function WeighbridgePage() {
           <div className="sf-field">
             <label style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
               {isSecondWeight ? "Second Weight (Gross)" : "First Weight (Gross)"}
-              <span style={{ color: '#dc2626' }}>*</span>
+              <span style={{ color: '#b3261e' }}>*</span>
             </label>
             <input
               name="gross_weight"
@@ -555,19 +555,19 @@ export default function WeighbridgePage() {
               style={{
                 width: '100%',
                 padding: '8px 12px',
-                border: '1px solid #d1d5db',
+                border: '1px solid #d9d0bb',
                 borderRadius: '4px',
                 fontSize: '14px',
                 backgroundColor: 'white'
               }}
             />
             {isSecondWeight && existingFirstSlip && (
-              <div style={{ fontSize: '12px', marginTop: '4px', color: '#3b82f6' }}>
+              <div style={{ fontSize: '12px', marginTop: '4px', color: '#0f766e' }}>
                 💡 Either scale order is accepted; net weight is the absolute difference.
               </div>
             )}
             {!isSecondWeight && (
-              <div style={{ fontSize: '12px', marginTop: '4px', color: '#6b7280' }}>
+              <div style={{ fontSize: '12px', marginTop: '4px', color: '#5b6660' }}>
                 💡 Enter the gross weight (truck + load)
               </div>
             )}
@@ -577,7 +577,7 @@ export default function WeighbridgePage() {
           <div className="sf-field">
             <label style={{ fontWeight: 600, display: 'block', marginBottom: '4px' }}>
               {isSecondWeight ? "First Weight (Tare)" : "Second Weight (Optional)"}
-              {isSecondWeight && <span style={{ color: '#dc2626' }}>*</span>}
+              {isSecondWeight && <span style={{ color: '#b3261e' }}>*</span>}
             </label>
             <input
               name="tare_weight"
@@ -590,20 +590,20 @@ export default function WeighbridgePage() {
               style={{
                 width: '100%',
                 padding: '8px 12px',
-                border: '1px solid #d1d5db',
+                border: '1px solid #d9d0bb',
                 borderRadius: '4px',
                 fontSize: '14px',
-                backgroundColor: isSecondWeight ? '#f3f4f6' : 'white'
+                backgroundColor: isSecondWeight ? '#f1ebda' : 'white'
               }}
               disabled={isSecondWeight}
             />
             {isSecondWeight && existingFirstSlip && (
-              <div style={{ fontSize: '12px', marginTop: '4px', color: '#6b7280' }}>
+              <div style={{ fontSize: '12px', marginTop: '4px', color: '#5b6660' }}>
                 🔒 Auto-filled: {parseFloat(existingFirstSlip.gross_weight).toFixed(2)}
               </div>
             )}
             {!editingId && form.gate_entry_id && form.tare_weight !== "" && !isSecondWeight && (
-              <div style={{ fontSize: '12px', marginTop: '4px', color: '#6b7280' }}>
+              <div style={{ fontSize: '12px', marginTop: '4px', color: '#5b6660' }}>
                 🔄 Auto-filled from this vehicle's last weighing
               </div>
             )}
@@ -622,16 +622,16 @@ export default function WeighbridgePage() {
               style={{
                 width: '100%',
                 padding: '8px 12px',
-                border: '1px solid #d1d5db',
+                border: '1px solid #d9d0bb',
                 borderRadius: '4px',
                 fontSize: '14px',
                 fontWeight: 700,
-                color: liveNetWeight !== null && liveNetWeight <= 0 ? '#dc2626' : '#1d4ed8',
-                background: '#f8fafc',
+                color: liveNetWeight !== null && liveNetWeight <= 0 ? '#b3261e' : '#0f766e',
+                background: '#fffcf5',
               }}
             />
             {liveNetWeight !== null && (
-              <div style={{ fontSize: '12px', marginTop: '4px', color: '#059669' }}>
+              <div style={{ fontSize: '12px', marginTop: '4px', color: '#0f766e' }}>
                 ✅ Net weight: {liveNetWeight.toFixed(2)} kg = {(liveNetWeight / KG_PER_QTL).toFixed(3)} Qtl (negative results are treated as 0 by the backend)
               </div>
             )}
@@ -641,8 +641,8 @@ export default function WeighbridgePage() {
                 marginTop: '6px',
                 padding: '6px 8px',
                 borderRadius: '4px',
-                color: toleranceCheck.ok ? '#166534' : '#991b1b',
-                backgroundColor: toleranceCheck.ok ? '#dcfce7' : '#fee2e2',
+                color: toleranceCheck.ok ? '#0b5f58' : '#b3261e',
+                backgroundColor: toleranceCheck.ok ? '#e3f1ee' : '#fbeae7',
               }}>
                 {toleranceCheck.ok ? "✅ Within the allowed range" : "⛔ Outside the allowed range — the second weight will be refused"}
                 : scale {toleranceCheck.scaleQtl.toFixed(3)} Qtl vs {toleranceCheck.type === "sales" ? "loaded" : "unloaded"} {toleranceCheck.recordedQtl.toFixed(3)} Qtl
@@ -665,7 +665,7 @@ export default function WeighbridgePage() {
                 style={{
                   width: '100%',
                   padding: '8px 12px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid #d9d0bb',
                   borderRadius: '4px',
                   fontSize: '14px'
                 }}
@@ -689,12 +689,12 @@ export default function WeighbridgePage() {
                 style={{
                   width: '100%',
                   padding: '8px 12px',
-                  border: '1px solid #d1d5db',
+                  border: '1px solid #d9d0bb',
                   borderRadius: '4px',
                   fontSize: '14px'
                 }}
               />
-              <div style={{ fontSize: '12px', marginTop: '4px', color: '#6b7280' }}>
+              <div style={{ fontSize: '12px', marginTop: '4px', color: '#5b6660' }}>
                 💡 Rate per Qtl
               </div>
             </div>
@@ -706,13 +706,13 @@ export default function WeighbridgePage() {
           <div style={{
             marginTop: '16px',
             padding: '12px',
-            backgroundColor: '#f3f4f6',
+            backgroundColor: '#f1ebda',
             borderRadius: '4px',
             fontSize: '14px'
           }}>
             <strong>Current Status:</strong> {getStatusLabel(selectedGateEntry.gate_status)}
             {isSecondWeight && (
-              <span style={{ marginLeft: '12px', color: '#3b82f6' }}>
+              <span style={{ marginLeft: '12px', color: '#0f766e' }}>
                 → Completing second weight will move to PARKED
               </span>
             )}
@@ -722,12 +722,12 @@ export default function WeighbridgePage() {
               </span>
             )}
             {isOtherEntry && (
-              <span style={{ marginLeft: '12px', color: '#8b5cf6' }}>
+              <span style={{ marginLeft: '12px', color: '#14201d' }}>
                 → Empty/Misc entry - no purchase will be created
               </span>
             )}
             {isSecondWeight && existingFirstSlip && (
-              <div style={{ marginTop: '8px', fontSize: '13px', color: '#374151' }}>
+              <div style={{ marginTop: '8px', fontSize: '13px', color: '#2f3a36' }}>
                 <strong>First Weight Details:</strong> Slip #{existingFirstSlip.slip_no} | 
                 Gross: {parseFloat(existingFirstSlip.gross_weight).toFixed(2)}
               </div>
@@ -743,7 +743,7 @@ export default function WeighbridgePage() {
             disabled={isSubmitting}
             style={{
               padding: '8px 24px',
-              backgroundColor: '#1d4ed8',
+              backgroundColor: '#0f766e',
               color: '#fff',
               border: 'none',
               borderRadius: '4px',
@@ -765,7 +765,7 @@ export default function WeighbridgePage() {
               onClick={handleCancel}
               style={{
                 padding: '8px 24px',
-                backgroundColor: '#6b7280',
+                backgroundColor: '#5b6660',
                 color: '#fff',
                 border: 'none',
                 borderRadius: '4px',
@@ -787,9 +787,9 @@ export default function WeighbridgePage() {
           onClick={() => setTab("pending")}
           style={{
             padding: '8px 16px',
-            backgroundColor: tab === 'pending' ? '#1d4ed8' : 'transparent',
-            color: tab === 'pending' ? '#fff' : '#374151',
-            border: tab === 'pending' ? 'none' : '1px solid #d1d5db',
+            backgroundColor: tab === 'pending' ? '#0f766e' : 'transparent',
+            color: tab === 'pending' ? '#fff' : '#2f3a36',
+            border: tab === 'pending' ? 'none' : '1px solid #d9d0bb',
             borderRadius: '4px',
             cursor: 'pointer',
             fontWeight: 600
@@ -802,9 +802,9 @@ export default function WeighbridgePage() {
           onClick={() => setTab("generated")}
           style={{
             padding: '8px 16px',
-            backgroundColor: tab === 'generated' ? '#1d4ed8' : 'transparent',
-            color: tab === 'generated' ? '#fff' : '#374151',
-            border: tab === 'generated' ? 'none' : '1px solid #d1d5db',
+            backgroundColor: tab === 'generated' ? '#0f766e' : 'transparent',
+            color: tab === 'generated' ? '#fff' : '#2f3a36',
+            border: tab === 'generated' ? 'none' : '1px solid #d9d0bb',
             borderRadius: '4px',
             cursor: 'pointer',
             fontWeight: 600
@@ -817,9 +817,9 @@ export default function WeighbridgePage() {
           onClick={() => setTab("all")}
           style={{
             padding: '8px 16px',
-            backgroundColor: tab === 'all' ? '#1d4ed8' : 'transparent',
-            color: tab === 'all' ? '#fff' : '#374151',
-            border: tab === 'all' ? 'none' : '1px solid #d1d5db',
+            backgroundColor: tab === 'all' ? '#0f766e' : 'transparent',
+            color: tab === 'all' ? '#fff' : '#2f3a36',
+            border: tab === 'all' ? 'none' : '1px solid #d9d0bb',
             borderRadius: '4px',
             cursor: 'pointer',
             fontWeight: 600
@@ -899,7 +899,7 @@ export default function WeighbridgePage() {
               if (net === null) return "—";
               const val = parseFloat(net);
               return !isNaN(val) ? (
-                <strong style={{ color: '#1d4ed8' }}>{val.toFixed(2)}</strong>
+                <strong style={{ color: '#0f766e' }}>{val.toFixed(2)}</strong>
               ) : "—";
             },
           },
@@ -917,7 +917,7 @@ export default function WeighbridgePage() {
               return (
                 <div style={{ minWidth: 135 }}>
                   <div><strong>{title}:</strong> {recordedQtl.toFixed(3)} Qtl</div>
-                  {actualQtl != null && <div style={{ color: Math.abs(difference) <= SCALE_TOLERANCE_QTL ? "#15803d" : "#b91c1c", fontSize: 12 }}>
+                  {actualQtl != null && <div style={{ color: Math.abs(difference) <= SCALE_TOLERANCE_QTL ? "#0b5f58" : "#b3261e", fontSize: 12 }}>
                     Scale {actualQtl.toFixed(3)} Qtl · Δ {difference >= 0 ? "+" : ""}{difference.toFixed(3)}
                   </div>}
                 </div>

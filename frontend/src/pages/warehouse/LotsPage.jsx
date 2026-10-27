@@ -90,7 +90,7 @@ export default function LotsPage() {
       <h2 style={{ marginTop: 0 }}>Lots</h2>
       {error && <div className="dt-error">{error}</div>}
       {info && (
-        <div className="dt-error" style={{ background: "#eaf7ea", color: "#2b7a2b" }}>
+        <div className="dt-error" style={{ background: "#e3f1ee", color: "#0b5f58" }}>
           {info}
         </div>
       )}

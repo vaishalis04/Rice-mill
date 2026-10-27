@@ -650,10 +650,10 @@ export default function PurchaseOrdersPage() {
                 borderRadius: "4px",
                 fontSize: "12px",
                 fontWeight: "bold",
-                backgroundColor: row.approval_status === "approved" ? "#d4edda" :
-                              (row.approval_status === "rejected" || row.approval_status === "cancelled") ? "#f8d7da" : "#fff3cd",
-                color: row.approval_status === "approved" ? "#155724" :
-                       (row.approval_status === "rejected" || row.approval_status === "cancelled") ? "#721c24" : "#856404"
+                backgroundColor: row.approval_status === "approved" ? "#e3f1ee" :
+                              (row.approval_status === "rejected" || row.approval_status === "cancelled") ? "#fbeae7" : "#fdf1d6",
+                color: row.approval_status === "approved" ? "#0b5f58" :
+                       (row.approval_status === "rejected" || row.approval_status === "cancelled") ? "#b3261e" : "#8a5a00"
               }}>
                 {row.approval_status?.replace("_", " ").toUpperCase() || "PENDING"}
               </span>

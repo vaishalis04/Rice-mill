@@ -8,6 +8,7 @@ import FinishedGoodsPage from "../warehouse/FinishedGoodsPage";
 import LoadingPage from "../gate/LoadingPage";
 import { usePermissionFilteredTabs } from "../../hooks/usePermissionFilteredTabs";
 import { permissionCode } from "../../config/pageCatalog";
+import "../../styles/theme-teal.css";
 
 const ALL_TABS = [
   { key: "unloading", label: "Unloading", code: permissionCode("warehouse", "unloading") },
@@ -26,7 +27,7 @@ export default function WarehouseDashboard() {
   const tabs = usePermissionFilteredTabs(ALL_TABS);
 
   return (
-    <DashboardLayout title="Warehouse Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab}>
+    <DashboardLayout title="Warehouse Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab} theme="teal">
       {tab === "unloading" && <UnloadingPage />}
       {tab === "lots" && <LotsPage />}
       {tab === "warehouse" && <WarehousePage />}

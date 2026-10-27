@@ -100,10 +100,10 @@ const computeTotals = (f) => {
 
 // The Excel's AUTO FETCH / MANUAL ENTRY / AUTO CALCULATE tags, next to each field.
 const TAGS = {
-  auto: { text: "AUTO", color: "#0b5cad", bg: "#e3effc" },
-  calc: { text: "AUTO CALC", color: "#046c4e", bg: "#d8f3e8" },
+  auto: { text: "AUTO", color: "#0f766e", bg: "#e3f1ee" },
+  calc: { text: "AUTO CALC", color: "#0b5f58", bg: "#e3f1ee" },
   manual: { text: "MANUAL", color: "#9a5b00", bg: "#fdecc8" },
-  optional: { text: "OPTIONAL", color: "#4b5563", bg: "#eceff3" },
+  optional: { text: "OPTIONAL", color: "#4b5753", bg: "#efe8d3" },
 };
 const Tag = ({ kind }) => {
   const t = TAGS[kind];
@@ -116,7 +116,7 @@ const Tag = ({ kind }) => {
 
 const TYPE_LABEL = { purchase: "Purchase", sales: "Sales", other: "Empty / Misc" };
 const fmtDate = (v) => (v ? new Date(v).toLocaleDateString("en-GB") : "—");
-const hint = { fontSize: 11.5, color: "#64748b", marginTop: 3 };
+const hint = { fontSize: 11.5, color: "#5b6660", marginTop: 3 };
 
 export default function PaymentSettlementPage() {
   const [rows, setRows] = useState([]);
@@ -287,7 +287,7 @@ export default function PaymentSettlementPage() {
       {info && <div className="dt-info">{info}</div>}
 
       {/* ---- find the truck / order ---- */}
-      <div style={{ border: "1px solid #dbe3ee", borderRadius: 8, padding: 14, marginBottom: 16, background: "#f8fafc" }}>
+      <div style={{ border: "1px solid #e8e0cc", borderRadius: 8, padding: 14, marginBottom: 16, background: "#fffcf5" }}>
         <strong>Find the truck to settle</strong>
         <div style={{ display: "flex", gap: 8, margin: "8px 0", flexWrap: "wrap" }}>
           <input
@@ -306,7 +306,7 @@ export default function PaymentSettlementPage() {
             {searching ? "Searching…" : "Search"}
           </button>
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#475569", marginBottom: 6 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#4b5753", marginBottom: 6 }}>
           <input
             type="checkbox"
             checked={showSettled}
@@ -331,13 +331,13 @@ export default function PaymentSettlementPage() {
         <div style={{ maxHeight: 230, overflowY: "auto" }}>
           <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
             <thead>
-              <tr style={{ textAlign: "left", color: "#64748b", fontSize: 12 }}>
+              <tr style={{ textAlign: "left", color: "#5b6660", fontSize: 12 }}>
                 <th>GP No.</th><th>Type</th><th>Party</th><th>SO / PO</th><th>Vehicle</th><th>Exit</th><th></th>
               </tr>
             </thead>
             <tbody>
               {sources.map((s) => (
-                <tr key={s.gate_entry_id} style={{ borderTop: "1px solid #e5eaf1" }}>
+                <tr key={s.gate_entry_id} style={{ borderTop: "1px solid #e8e0cc" }}>
                   <td><strong>{s.gp_no}</strong></td>
                   <td>{TYPE_LABEL[s.entry_type] || s.entry_type}</td>
                   <td>{s.party_name || "—"}</td>
@@ -353,7 +353,7 @@ export default function PaymentSettlementPage() {
                 </tr>
               ))}
               {!sources.length && !searching && (
-                <tr><td colSpan={7} style={{ color: "#64748b", padding: "8px 0" }}>Nothing to settle: no checked-out truck matches, or it has already been settled (tick the box above to see those). Only trucks that have exited the gate can be settled.</td></tr>
+                <tr><td colSpan={7} style={{ color: "#5b6660", padding: "8px 0" }}>Nothing to settle: no checked-out truck matches, or it has already been settled (tick the box above to see those). Only trucks that have exited the gate can be settled.</td></tr>
               )}
             </tbody>
           </table>
@@ -395,7 +395,7 @@ export default function PaymentSettlementPage() {
           <label style={{ fontWeight: 600 }}>Items<Tag kind="auto" /></label>
           <table style={{ width: "100%", marginTop: 4, marginBottom: 8 }}>
             <thead>
-              <tr style={{ textAlign: "left", fontSize: 12, color: "#666" }}>
+              <tr style={{ textAlign: "left", fontSize: 12, color: "#5b6660" }}>
                 <th>Item</th><th>Bags</th><th>Weight (kg, blank = net weight)</th><th>Rate (Rs/kg)</th><th>Amount</th><th></th>
               </tr>
             </thead>
@@ -484,7 +484,7 @@ export default function PaymentSettlementPage() {
             const amt = round2(row.amount);
             return (
               <div key={idx} style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
-                <span style={{ width: 22, color: "#64748b", fontSize: 12 }}>{idx + 1}.</span>
+                <span style={{ width: 22, color: "#5b6660", fontSize: 12 }}>{idx + 1}.</span>
                 <input
                   type="text"
                   placeholder="Name (e.g. Loading Charge)"
@@ -532,7 +532,7 @@ export default function PaymentSettlementPage() {
         </div>
 
         {/* ---- Lorry freight payment details ---- */}
-        <div style={{ gridColumn: "1 / -1", borderTop: "1px solid #e2e8f0", paddingTop: 8 }}>
+        <div style={{ gridColumn: "1 / -1", borderTop: "1px solid #e8e0cc", paddingTop: 8 }}>
           <strong>Lorry Freight Payment Details</strong>
           <span style={{ ...hint, marginLeft: 8 }}>
             Sauda, every load against the order so far, and what's still pending
@@ -551,7 +551,7 @@ export default function PaymentSettlementPage() {
           <label style={{ fontWeight: 600 }}>Inward Details<Tag kind="auto" /></label>
           <table style={{ marginTop: 4, marginBottom: 6 }}>
             <thead>
-              <tr style={{ textAlign: "left", fontSize: 12, color: "#666" }}><th>Date</th><th>Weight (kg)</th><th>Vehicle GP No.</th><th></th></tr>
+              <tr style={{ textAlign: "left", fontSize: 12, color: "#5b6660" }}><th>Date</th><th>Weight (kg)</th><th>Vehicle GP No.</th><th></th></tr>
             </thead>
             <tbody>
               {form.inward_details.map((r, idx) => (

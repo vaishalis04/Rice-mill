@@ -281,11 +281,11 @@ export default function UnloadingPage() {
 
     return (
       <div style={{ 
-        background: '#f8fafc', 
+        background: '#fffcf5', 
         padding: '20px', 
         borderRadius: '8px', 
         marginTop: '20px',
-        border: '2px solid #3b82f6'
+        border: '2px solid #0f766e'
       }}>
         <h3 style={{ marginTop: 0 }}>Complete Unloading - Enter Bag Counts for Each Material</h3>
         
@@ -297,13 +297,13 @@ export default function UnloadingPage() {
 
         {unloadingItems.map((item, index) => (
           <div key={item.lot_id || `${item.material_id || 'new'}-${index}`} style={{ 
-            border: '1px solid #e2e8f0', 
+            border: '1px solid #e8e0cc', 
             padding: '15px', 
             borderRadius: '6px', 
             marginBottom: '15px',
             background: 'white'
           }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#1e293b' }}>
+            <h4 style={{ margin: '0 0 10px 0', color: '#14201d' }}>
               {item.lot_id ? `${item.material_name} (Lot: ${item.lot_no})` : 'New material / variety found'}
             </h4>
             {Number(item.assigned_qty) > 0 && (
@@ -369,7 +369,7 @@ export default function UnloadingPage() {
             <div style={{ 
               marginTop: '10px', 
               padding: '8px 12px', 
-              background: '#f1f5f9', 
+              background: '#f1ebda', 
               borderRadius: '4px',
               display: 'flex',
               gap: '20px',
@@ -428,7 +428,7 @@ export default function UnloadingPage() {
       <h2 style={{ marginTop: 0 }}>Unloading</h2>
       {error && <div className="dt-error">{error}</div>}
       {info && (
-        <div className="dt-error" style={{ background: "#eaf7ea", color: "#2b7a2b" }}>
+        <div className="dt-error" style={{ background: "#e3f1ee", color: "#0b5f58" }}>
           {info}
         </div>
       )}
@@ -460,15 +460,15 @@ export default function UnloadingPage() {
               <div
                 style={{
                   padding: "10px 12px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
+                  background: "#fffcf5",
+                  border: "1px solid #e8e0cc",
                   borderRadius: 6,
                   fontSize: 13,
                   marginTop: -4,
                   marginBottom: 8,
                 }}
               >
-                {loadingWarehouseSummary && <div style={{ color: "#64748b" }}>Loading warehouse details…</div>}
+                {loadingWarehouseSummary && <div style={{ color: "#5b6660" }}>Loading warehouse details…</div>}
                 {!loadingWarehouseSummary && warehouseSummary && (
                   <>
                     <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: warehouseSummary.materials.length ? 8 : 0 }}>
@@ -484,7 +484,7 @@ export default function UnloadingPage() {
                           color:
                             warehouseSummary.remaining_capacity != null && warehouseSummary.remaining_capacity <= 0
                               ? "#dc2626"
-                              : "#166534",
+                              : "#0b5f58",
                           fontWeight: 600,
                         }}
                       >
@@ -497,14 +497,14 @@ export default function UnloadingPage() {
                     {warehouseSummary.materials.length > 0 && (
                       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                         {warehouseSummary.materials.map((m) => (
-                          <span key={m.material_id} style={{ color: "#475569" }}>
+                          <span key={m.material_id} style={{ color: "#4b5753" }}>
                             {m.material_name}: <strong>{fmtQtl(m.qty)} Qtl</strong>
                           </span>
                         ))}
                       </div>
                     )}
                     {warehouseSummary.materials.length === 0 && (
-                      <span style={{ color: "#64748b" }}>No stock currently in this warehouse.</span>
+                      <span style={{ color: "#5b6660" }}>No stock currently in this warehouse.</span>
                     )}
                   </>
                 )}
@@ -579,7 +579,7 @@ export default function UnloadingPage() {
               <button 
                 className="dt-btn" 
                 onClick={() => openBagCountForm(row)}
-                style={{ background: '#3b82f6', color: 'white' }}
+                style={{ background: '#0f766e', color: 'white' }}
               >
                 Enter Bag Count
               </button>
@@ -636,8 +636,8 @@ export default function UnloadingPage() {
                     display: "inline-block",
                     padding: "2px 8px",
                     borderRadius: 10,
-                    background: "#dcfce7",
-                    color: "#166534",
+                    background: "#e3f1ee",
+                    color: "#0b5f58",
                     fontSize: 12,
                     fontWeight: 600,
                   }}

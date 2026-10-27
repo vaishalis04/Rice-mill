@@ -334,12 +334,12 @@ export default function SamplingPage() {
     pageTitle: {
       fontSize: '24px',
       fontWeight: '600',
-      color: '#1a1a1a',
+      color: '#14201d',
       margin: '0 0 4px 0',
     },
     pageSubtitle: {
       fontSize: '14px',
-      color: '#666',
+      color: '#5b6660',
       margin: 0,
     },
     alert: {
@@ -352,14 +352,14 @@ export default function SamplingPage() {
       fontSize: '14px',
     },
     alertError: {
-      background: '#fde8e8',
-      color: '#c62828',
-      border: '1px solid #f5c6c6',
+      background: '#fbeae7',
+      color: '#b3261e',
+      border: '1px solid #efc4be',
     },
     alertSuccess: {
-      background: '#e8f5e9',
-      color: '#2e7d32',
-      border: '1px solid #c8e6c9',
+      background: '#e3f1ee',
+      color: '#0b5f58',
+      border: '1px solid #c4e0da',
     },
     alertIcon: {
       fontWeight: 'bold',
@@ -378,19 +378,19 @@ export default function SamplingPage() {
       alignItems: 'center',
       marginBottom: '20px',
       paddingBottom: '16px',
-      borderBottom: '1px solid #e0e0e0',
+      borderBottom: '1px solid #e8e0cc',
     },
     formCardHeaderH3: {
       fontSize: '18px',
       fontWeight: '600',
-      color: '#1a1a1a',
+      color: '#14201d',
       margin: 0,
     },
     btnCancel: {
       padding: '6px 16px',
       background: 'transparent',
-      color: '#666',
-      border: '1px solid #d0d0d0',
+      color: '#5b6660',
+      border: '1px solid #d9d0bb',
       borderRadius: '4px',
       fontSize: '14px',
       cursor: 'pointer',
@@ -415,41 +415,41 @@ export default function SamplingPage() {
     formLabel: {
       fontSize: '14px',
       fontWeight: '500',
-      color: '#333',
+      color: '#2f3a36',
       display: 'flex',
       alignItems: 'center',
       gap: '8px',
     },
     required: {
-      color: '#d32f2f',
+      color: '#b3261e',
       fontWeight: '600',
     },
     materialCountBadge: {
       fontSize: '12px',
       fontWeight: '400',
-      color: '#666',
-      background: '#f0f0f0',
+      color: '#5b6660',
+      background: '#f1ebda',
       padding: '2px 10px',
       borderRadius: '12px',
       marginLeft: '4px',
     },
     formInput: {
       padding: '8px 12px',
-      border: '1px solid #d0d0d0',
+      border: '1px solid #d9d0bb',
       borderRadius: '4px',
       fontSize: '14px',
       transition: 'border-color 0.2s',
       background: 'white',
     },
     materialListContainer: {
-      border: '1px solid #e0e0e0',
+      border: '1px solid #e8e0cc',
       borderRadius: '6px',
       overflow: 'hidden',
     },
     materialListHeader: {
       padding: '10px 12px',
-      background: '#f8f9fa',
-      borderBottom: '1px solid #e0e0e0',
+      background: '#fffcf5',
+      borderBottom: '1px solid #e8e0cc',
     },
     materialListActions: {
       display: 'flex',
@@ -459,16 +459,16 @@ export default function SamplingPage() {
     btnAction: {
       padding: '4px 12px',
       background: 'white',
-      border: '1px solid #d0d0d0',
+      border: '1px solid #d9d0bb',
       borderRadius: '4px',
       fontSize: '13px',
       cursor: 'pointer',
       transition: 'all 0.2s',
-      color: '#333',
+      color: '#2f3a36',
     },
     selectedCount: {
       fontSize: '13px',
-      color: '#666',
+      color: '#5b6660',
       marginLeft: 'auto',
       fontWeight: '500',
     },
@@ -483,36 +483,36 @@ export default function SamplingPage() {
       padding: '8px 12px',
       cursor: 'pointer',
       transition: 'background 0.15s',
-      borderBottom: '1px solid #f5f5f5',
+      borderBottom: '1px solid #f7f2e5',
     },
     materialItemSelected: {
-      background: '#e3f2fd',
+      background: '#e3f1ee',
     },
     materialCheckbox: {
       marginRight: '10px',
       width: '16px',
       height: '16px',
       cursor: 'pointer',
-      accentColor: '#1976d2',
+      accentColor: '#0f766e',
     },
     materialName: {
       fontSize: '14px',
-      color: '#1a1a1a',
+      color: '#14201d',
       flex: 1,
     },
     materialPo: {
       fontSize: '12px',
-      color: '#888',
-      background: '#f0f0f0',
+      color: '#7b847f',
+      background: '#f1ebda',
       padding: '2px 8px',
       borderRadius: '12px',
     },
     emptyState: {
       padding: '24px',
       textAlign: 'center',
-      background: '#fafafa',
+      background: '#fffcf5',
       borderRadius: '6px',
-      color: '#666',
+      color: '#5b6660',
     },
     emptyIcon: {
       fontSize: '32px',
@@ -521,7 +521,7 @@ export default function SamplingPage() {
     },
     formHint: {
       fontSize: '13px',
-      color: '#d32f2f',
+      color: '#b3261e',
       marginTop: '4px',
     },
     formActions: {
@@ -529,11 +529,11 @@ export default function SamplingPage() {
       gap: '12px',
       marginTop: '24px',
       paddingTop: '20px',
-      borderTop: '1px solid #e0e0e0',
+      borderTop: '1px solid #e8e0cc',
     },
     btnSubmit: {
       padding: '10px 24px',
-      background: '#1976d2',
+      background: '#0f766e',
       color: 'white',
       border: 'none',
       borderRadius: '4px',
@@ -546,14 +546,14 @@ export default function SamplingPage() {
       gap: '8px',
     },
     btnSubmitDisabled: {
-      background: '#90caf9',
+      background: '#9fd0c8',
       cursor: 'not-allowed',
     },
     btnCancelForm: {
       padding: '10px 24px',
       background: 'transparent',
-      color: '#666',
-      border: '1px solid #d0d0d0',
+      color: '#5b6660',
+      border: '1px solid #d9d0bb',
       borderRadius: '4px',
       fontSize: '14px',
       cursor: 'pointer',
@@ -584,13 +584,13 @@ export default function SamplingPage() {
     tableHeaderH3: {
       fontSize: '16px',
       fontWeight: '600',
-      color: '#1a1a1a',
+      color: '#14201d',
       margin: 0,
     },
     recordCount: {
       fontSize: '13px',
-      color: '#888',
-      background: '#f0f0f0',
+      color: '#7b847f',
+      background: '#f1ebda',
       padding: '4px 12px',
       borderRadius: '12px',
     },
@@ -604,31 +604,31 @@ export default function SamplingPage() {
             to { transform: rotate(360deg); }
           }
           .btn-cancel:hover {
-            background: #f5f5f5;
-            border-color: #b0b0b0;
+            background: #f7f2e5;
+            border-color: #b9b19b;
           }
           .btn-action:hover {
-            background: #f0f0f0;
-            border-color: #b0b0b0;
+            background: #f1ebda;
+            border-color: #b9b19b;
           }
           .material-item:hover {
-            background: #f5f8ff;
+            background: #f1f8f6;
           }
           .btn-submit:hover:not(:disabled) {
-            background: #1565c0;
+            background: #0b5f58;
             box-shadow: 0 2px 4px rgba(25,118,210,0.3);
           }
           .btn-cancel-form:hover {
-            background: #f5f5f5;
+            background: #f7f2e5;
           }
           .form-input:focus {
             outline: none;
-            border-color: #1976d2;
+            border-color: #0f766e;
             box-shadow: 0 0 0 2px rgba(25,118,210,0.1);
           }
           .form-input:disabled {
-            background: #f5f5f5;
-            color: #999;
+            background: #f7f2e5;
+            color: #8a928e;
             cursor: not-allowed;
           }
           @media (max-width: 768px) {

@@ -116,13 +116,13 @@ export default function UsersPage() {
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>Users</h2>
-      <p style={{ color: "#666", marginTop: -8 }}>
+      <p style={{ color: "#5b6660", marginTop: -8 }}>
         Create logins for staff and control which role (and therefore which dashboard and permissions) each person has.
       </p>
 
       {error && <div className="dt-error">{error}</div>}
       {info && (
-        <div className="dt-error" style={{ background: "#eaf7ea", color: "#2b7a2b" }}>
+        <div className="dt-error" style={{ background: "#e3f1ee", color: "#0b5f58" }}>
           {info}
         </div>
       )}

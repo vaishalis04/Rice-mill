@@ -42,7 +42,7 @@ export default function PdfPreviewModal({ title, blobUrl, fileName, onClose }) {
             justifyContent: "space-between",
             alignItems: "center",
             padding: "12px 16px",
-            borderBottom: "1px solid #e2e8f0",
+            borderBottom: "1px solid #e8e0cc",
             flexShrink: 0,
           }}
         >

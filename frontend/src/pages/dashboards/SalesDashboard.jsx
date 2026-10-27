@@ -4,6 +4,7 @@ import CustomersPage from "../sales/CustomersPage";
 import SalesOrdersPage from "../sales/SalesOrdersPage";
 import { usePermissionFilteredTabs } from "../../hooks/usePermissionFilteredTabs";
 import { permissionCode } from "../../config/pageCatalog";
+import "../../styles/theme-teal.css";
 
 const ALL_TABS = [
   { key: "customers", label: "Customers", code: permissionCode("sales", "customers") },
@@ -15,7 +16,7 @@ export default function SalesDashboard() {
   const tabs = usePermissionFilteredTabs(ALL_TABS);
 
   return (
-    <DashboardLayout title="Sales Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab}>
+    <DashboardLayout title="Sales Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab} theme="teal">
       {tab === "customers" && <CustomersPage />}
       {tab === "orders" && <SalesOrdersPage />}
     </DashboardLayout>

@@ -235,7 +235,7 @@ export default function RolesPage() {
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>Roles & Permissions</h2>
-      <p style={{ color: "#666", marginTop: -8 }}>
+      <p style={{ color: "#5b6660", marginTop: -8 }}>
         Create custom roles and control exactly which <strong>pages</strong> each one can see — e.g. give the
         Warehouse role just Unloading and Finished Goods, or hand one specific Admin page (like PO Approval) to a
         different role entirely. A role/user only sees pages it's actually been granted here; a dashboard with none
@@ -244,7 +244,7 @@ export default function RolesPage() {
 
       {error && <div className="dt-error">{error}</div>}
       {info && (
-        <div className="dt-error" style={{ background: "#eaf7ea", color: "#2b7a2b" }}>
+        <div className="dt-error" style={{ background: "#e3f1ee", color: "#0b5f58" }}>
           {info}
         </div>
       )}
@@ -303,8 +303,8 @@ export default function RolesPage() {
           style={{
             marginTop: 16,
             padding: 16,
-            background: "#f8fafc",
-            border: "1px solid #e2e8f0",
+            background: "#fffcf5",
+            border: "1px solid #e8e0cc",
             borderRadius: 8,
           }}
         >

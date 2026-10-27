@@ -61,7 +61,7 @@ const sizeOf = (row) => Number(row.pack_size === CUSTOM ? row.custom_pack_size :
 const bagsOf = (row) => (Number(row.accepted_bags) || 0) + (Number(row.rejected_bags) || 0);
 const isBlank = (row) => !row.material_id && !row.accepted_bags && !row.rejected_bags;
 
-const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 4, border: "1px solid #d1d5db", fontSize: 14, background: "#fff", boxSizing: "border-box" };
+const inputStyle = { width: "100%", padding: "8px 10px", borderRadius: 4, border: "1px solid #d9d0bb", fontSize: 14, background: "#fff", boxSizing: "border-box" };
 const GRID = "minmax(190px, 2.2fr) 112px 104px 104px minmax(120px, 1.3fr) 84px 30px";
 
 export default function ProductionOutputPanel({
@@ -173,7 +173,7 @@ export default function ProductionOutputPanel({
 
   // ---------- render ----------
   return (
-    <div style={{ background: "#f0f9ff", padding: 20, borderRadius: 8, marginTop: 20, border: "2px solid #3b82f6" }}>
+    <div style={{ background: "#f1f8f6", padding: 20, borderRadius: 8, marginTop: 20, border: "2px solid #0f766e" }}>
       <h3 style={{ marginTop: 0, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <span>
           Production Output — {batch?.batch_no}
@@ -208,13 +208,13 @@ export default function ProductionOutputPanel({
           const duplicateMaterial = lines.filter((l) => l.material_id === line.material_id).length > 1;
           const canRemoveInput = onRemoveInput && lines.length > 1 && !duplicateMaterial;
           const pct = p.inputKg > 0 ? Math.min(100, (p.usedKg / p.inputKg) * 100) : 0;
-          const barColor = p.over ? "#dc2626" : pct >= 90 ? "#f59e0b" : "#22c55e";
+          const barColor = p.over ? "#b3261e" : pct >= 90 ? "#f59e0b" : "#2e9e92";
           const left = (p.inputKg - p.usedKg) / KG_PER_QTL;
 
           return (
             <div
               key={line.key}
-              style={{ background: "#fff", border: p.over ? "1px solid #fca5a5" : "1px solid #dbeafe", borderRadius: 8, padding: 14, marginBottom: 14 }}
+              style={{ background: "#fff", border: p.over ? "1px solid #efc4be" : "1px solid #e3f1ee", borderRadius: 8, padding: 14, marginBottom: 14 }}
             >
               {/* input header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
@@ -223,7 +223,7 @@ export default function ProductionOutputPanel({
                     INPUT {lines.length > 1 ? `#${lineNo + 1}` : ""}
                   </div>
                   <div style={{ fontSize: 16, fontWeight: 700 }}>{getMaterialLabel(line.material_id)}</div>
-                  <div style={{ fontSize: 13, color: "#475569" }}>
+                  <div style={{ fontSize: 13, color: "#4b5753" }}>
                     {t3(line.input_qty)} Qtl
                     {line.pack_size && line.bag_count ? ` · ${line.bag_count} bags × ${line.pack_size} kg` : ""} · from{" "}
                     {getWarehouseLabel(batch?.warehouse_id)}
@@ -243,10 +243,10 @@ export default function ProductionOutputPanel({
 
               {/* usage bar */}
               <div style={{ margin: "10px 0 12px" }}>
-                <div style={{ height: 8, background: "#e2e8f0", borderRadius: 999, overflow: "hidden" }}>
+                <div style={{ height: 8, background: "#e8e0cc", borderRadius: 999, overflow: "hidden" }}>
                   <div style={{ width: `${pct}%`, height: "100%", background: barColor, transition: "width 0.15s" }} />
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 6, fontSize: 12.5, color: p.over ? "#dc2626" : "#475569" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 6, fontSize: 12.5, color: p.over ? "#b3261e" : "#4b5753" }}>
                   <span><b>Accepted</b> {t3(p.acceptedKg / KG_PER_QTL)} Qtl</span>
                   <span><b>Rejected</b> {t3(p.rejectedKg / KG_PER_QTL)} Qtl</span>
                   <span><b>Output</b> {t3(p.usedKg / KG_PER_QTL)} of {t3(p.inputKg / KG_PER_QTL)} Qtl</span>
@@ -262,7 +262,7 @@ export default function ProductionOutputPanel({
                   <div
                     style={{
                       display: "grid", gridTemplateColumns: GRID, gap: 8, padding: "0 2px 6px",
-                      fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "#64748b",
+                      fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "#5b6660",
                     }}
                   >
                     <span>OUTPUT ITEM</span><span>BAG SIZE (KG)</span><span>ACCEPTED BAGS</span><span>REJECTED BAGS</span><span>REMARK</span><span>QTY (T)</span><span />
@@ -272,7 +272,7 @@ export default function ProductionOutputPanel({
                     const total = (sizeOf(r) * bagsOf(r)) / KG_PER_QTL;
                     return (
                       <div key={r.id} style={{ marginBottom: 8 }}>
-                        <div style={{ fontSize: 11, color: "#64748b", margin: "0 2px 3px", fontWeight: 600 }}>
+                        <div style={{ fontSize: 11, color: "#5b6660", margin: "0 2px 3px", fontWeight: 600 }}>
                           {i === 0 ? "Main output" : `Co-product ${i}`}
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 8, alignItems: "start" }}>
@@ -311,20 +311,20 @@ export default function ProductionOutputPanel({
                           <input
                             type="number" min="0" step="1" placeholder="0" value={r.rejected_bags}
                             onChange={(e) => updateRow(r.id, { rejected_bags: e.target.value })}
-                            style={{ ...inputStyle, borderColor: Number(r.rejected_bags) > 0 ? "#fca5a5" : "#d1d5db" }}
+                            style={{ ...inputStyle, borderColor: Number(r.rejected_bags) > 0 ? "#efc4be" : "#d9d0bb" }}
                           />
                           <input
                             type="text" placeholder="Optional" value={r.remark} maxLength={200}
                             onChange={(e) => updateRow(r.id, { remark: e.target.value })}
                             style={inputStyle}
                           />
-                          <div style={{ padding: "9px 2px", fontSize: 13, fontWeight: 600, color: total > 0 ? "#0f172a" : "#94a3b8" }}>
+                          <div style={{ padding: "9px 2px", fontSize: 13, fontWeight: 600, color: total > 0 ? "#14201d" : "#8a928e" }}>
                             {total > 0 ? t3(total) : "—"}
                           </div>
                           {p.mine.length > 1 ? (
                             <button
                               type="button" title="Remove this output row" onClick={() => removeRow(r.id)}
-                              style={{ border: "none", background: "transparent", color: "#dc2626", fontSize: 18, cursor: "pointer", padding: "6px 0" }}
+                              style={{ border: "none", background: "transparent", color: "#b3261e", fontSize: 18, cursor: "pointer", padding: "6px 0" }}
                             >
                               ×
                             </button>
@@ -346,12 +346,12 @@ export default function ProductionOutputPanel({
         })}
 
         {/* overall + destination */}
-        <div style={{ background: "#fff", border: "1px solid #dbeafe", borderRadius: 8, padding: 14, marginBottom: 14 }}>
+        <div style={{ background: "#fff", border: "1px solid #e3f1ee", borderRadius: 8, padding: 14, marginBottom: 14 }}>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 22, marginBottom: 12, fontSize: 14 }}>
             <span>Total input <b>{t3(totals.input / KG_PER_QTL)} Qtl</b></span>
-            <span style={{ color: "#15803d" }}>Accepted <b>{t3(totals.accepted / KG_PER_QTL)} Qtl</b></span>
-            <span style={{ color: "#b91c1c" }}>Rejected <b>{t3(totals.rejected / KG_PER_QTL)} Qtl</b></span>
-            <span style={{ color: "#475569" }}>Unused / loss <b>{t3((totals.input - totals.accepted - totals.rejected) / KG_PER_QTL)} Qtl</b></span>
+            <span style={{ color: "#0b5f58" }}>Accepted <b>{t3(totals.accepted / KG_PER_QTL)} Qtl</b></span>
+            <span style={{ color: "#b3261e" }}>Rejected <b>{t3(totals.rejected / KG_PER_QTL)} Qtl</b></span>
+            <span style={{ color: "#4b5753" }}>Unused / loss <b>{t3((totals.input - totals.accepted - totals.rejected) / KG_PER_QTL)} Qtl</b></span>
           </div>
           <div style={{ maxWidth: 420 }}>
             <EntitySelect
@@ -364,7 +364,7 @@ export default function ProductionOutputPanel({
             />
           </div>
           {destination && totals.accepted > 0 && (
-            <div style={{ fontSize: 12.5, color: "#475569", marginTop: 6 }}>
+            <div style={{ fontSize: 12.5, color: "#4b5753", marginTop: 6 }}>
               {t3(totals.accepted / KG_PER_QTL)} Qtl will be added to {getWarehouseLabel(destination)}; {t3(totals.input / KG_PER_QTL)} Qtl will be
               deducted from {getWarehouseLabel(batch?.warehouse_id)}.
             </div>

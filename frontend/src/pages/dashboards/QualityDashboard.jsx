@@ -5,6 +5,7 @@ import LabTestPage from "../quality/LabTestPage";
 import CompositeReportPage from "../quality/CompositeReportPage";
 import { usePermissionFilteredTabs } from "../../hooks/usePermissionFilteredTabs";
 import { permissionCode } from "../../config/pageCatalog";
+import "../../styles/theme-teal.css";
 
 const ALL_TABS = [
   { key: "sampling", label: "Sampling", code: permissionCode("lab", "sampling") },
@@ -17,7 +18,7 @@ export default function QualityDashboard() {
   const tabs = usePermissionFilteredTabs(ALL_TABS);
 
   return (
-    <DashboardLayout title="Quality Control Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab}>
+    <DashboardLayout title="Quality Control Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab} theme="teal">
       {tab === "sampling" && <SamplingPage />}
       {tab === "lab-tests" && <LabTestPage />}
       {tab === "composite-report" && <CompositeReportPage />}

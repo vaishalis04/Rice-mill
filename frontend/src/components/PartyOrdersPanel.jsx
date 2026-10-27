@@ -12,12 +12,12 @@ import "./PartyOrdersPanel.css";
 // also produces the PDF and the two CSV exports.
 
 const STATUS_STYLE = {
-  completed: { label: "Completed", color: "#166534", bg: "#dcfce7" },
-  in_progress: { label: "In progress", color: "#1d4ed8", bg: "#dbeafe" },
-  not_started: { label: "Not started", color: "#475569", bg: "#f1f5f9" },
+  completed: { label: "Completed", color: "#0b5f58", bg: "#e3f1ee" },
+  in_progress: { label: "In progress", color: "#0f766e", bg: "#e3f1ee" },
+  not_started: { label: "Not started", color: "#4b5753", bg: "#f1ebda" },
   pending_approval: { label: "Pending approval", color: "#b45309", bg: "#fef3c7" },
-  rejected: { label: "Rejected", color: "#b91c1c", bg: "#fee2e2" },
-  cancelled: { label: "Cancelled", color: "#b91c1c", bg: "#fee2e2" },
+  rejected: { label: "Rejected", color: "#b3261e", bg: "#fbeae7" },
+  cancelled: { label: "Cancelled", color: "#b3261e", bg: "#fbeae7" },
 };
 
 const qtl = (n) => Number(n || 0).toLocaleString("en-IN", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
@@ -180,16 +180,16 @@ export default function PartyOrdersPanel() {
   const parties = data?.parties || [];
   const kpis = s
     ? [
-        { label: "Parties", value: count(s.parties), color: "#0f172a" },
-        { label: "Orders", value: count(s.counts.total), color: "#0f172a" },
-        { label: "Completed", value: count(s.counts.completed), color: "#16a34a" },
-        { label: "In progress", value: count(s.counts.in_progress), color: "#2563eb" },
-        { label: "Not started", value: count(s.counts.not_started), color: "#64748b" },
+        { label: "Parties", value: count(s.parties), color: "#14201d" },
+        { label: "Orders", value: count(s.counts.total), color: "#14201d" },
+        { label: "Completed", value: count(s.counts.completed), color: "#0f766e" },
+        { label: "In progress", value: count(s.counts.in_progress), color: "#0f766e" },
+        { label: "Not started", value: count(s.counts.not_started), color: "#5b6660" },
         { label: "Awaiting approval", value: count(s.counts.pending_approval), color: "#d97706" },
-        { label: "Ordered (Qtl)", value: qtl(s.ordered_qty), color: "#0f172a" },
-        { label: "Received / loaded (Qtl)", value: qtl(s.done_qty), color: "#16a34a" },
-        { label: "Pending (Qtl)", value: qtl(s.pending_qty), color: "#ea580c" },
-        { label: "Completion", value: `${s.completion_pct}%`, color: "#7c3aed" },
+        { label: "Ordered (Qtl)", value: qtl(s.ordered_qty), color: "#14201d" },
+        { label: "Received / loaded (Qtl)", value: qtl(s.done_qty), color: "#0f766e" },
+        { label: "Pending (Qtl)", value: qtl(s.pending_qty), color: "#c2701a" },
+        { label: "Completion", value: `${s.completion_pct}%`, color: "#2e9e92" },
       ]
     : [];
 

@@ -621,13 +621,13 @@ export default function ProductionBatchPage() {
                 style={{
                   gridColumn: "1 / -1",
                   padding: "12px 16px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
+                  background: "#fffcf5",
+                  border: "1px solid #e8e0cc",
                   borderRadius: 6,
                   marginBottom: 8,
                 }}
               >
-                {loadingSummary && <div style={{ color: "#64748b" }}>Loading warehouse details…</div>}
+                {loadingSummary && <div style={{ color: "#5b6660" }}>Loading warehouse details…</div>}
                 {!loadingSummary && warehouseSummary && (
                   <>
                     <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 8 }}>
@@ -665,7 +665,7 @@ export default function ProductionBatchPage() {
                             key={m.material_id}
                             style={{
                               padding: "8px 12px",
-                              background: "#f1f5f9",
+                              background: "#f1ebda",
                               borderRadius: 4,
                             }}
                           >
@@ -674,13 +674,13 @@ export default function ProductionBatchPage() {
                               <strong>{Number(m.qty).toFixed(2)} Qtl</strong>
                             </div>
                             {Number(m.reserved_qty) > 0 && (
-                              <div style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}>
+                              <div style={{ fontSize: 12, color: "#5b6660", marginTop: 3 }}>
                                 Available for production: {Number(m.available_qty).toFixed(2)} Qtl
                                 <span> · Reserved: {Number(m.reserved_qty).toFixed(2)} Qtl</span>
                               </div>
                             )}
                             {m.bags && m.bags.length > 0 && (
-                              <div style={{ marginTop: 4, borderTop: "1px solid #e2e8f0", paddingTop: 4 }}>
+                              <div style={{ marginTop: 4, borderTop: "1px solid #e8e0cc", paddingTop: 4 }}>
                                 {m.bags.map((b, i) => (
                                   <div
                                     key={i}
@@ -688,7 +688,7 @@ export default function ProductionBatchPage() {
                                       display: "flex",
                                       justifyContent: "space-between",
                                       fontSize: 12,
-                                      color: "#475569",
+                                      color: "#4b5753",
                                     }}
                                   >
                                     <span>
@@ -704,7 +704,7 @@ export default function ProductionBatchPage() {
                         ))}
                       </div>
                     ) : (
-                      <span style={{ color: "#64748b" }}>No stock in this warehouse</span>
+                      <span style={{ color: "#5b6660" }}>No stock in this warehouse</span>
                     )}
                   </>
                 )}
@@ -740,8 +740,8 @@ export default function ProductionBatchPage() {
                   style={{
                     padding: "20px",
                     textAlign: "center",
-                    color: "#94a3b8",
-                    border: "1px dashed #e2e8f0",
+                    color: "#8a928e",
+                    border: "1px dashed #e8e0cc",
                     borderRadius: 6,
                   }}
                 >
@@ -769,11 +769,11 @@ export default function ProductionBatchPage() {
                       gridTemplateColumns: "1fr 1fr 1fr auto",
                       gap: 12,
                       padding: "12px",
-                      background: isQuantityExceeded ? "#fef2f2" : "#f8fafc",
+                      background: isQuantityExceeded ? "#fef2f2" : "#fffcf5",
                       borderRadius: 6,
                       marginBottom: 8,
                       alignItems: "end",
-                      border: isQuantityExceeded ? "1px solid #fca5a5" : "1px solid #e2e8f0",
+                      border: isQuantityExceeded ? "1px solid #fca5a5" : "1px solid #e8e0cc",
                     }}
                   >
                     <div className="sf-field" style={{ marginBottom: 0 }}>
@@ -801,7 +801,7 @@ export default function ProductionBatchPage() {
                           width: "100%",
                           padding: "8px 12px",
                           borderRadius: 4,
-                          border: isQuantityExceeded ? "1px solid #fca5a5" : "1px solid #d1d5db",
+                          border: isQuantityExceeded ? "1px solid #fca5a5" : "1px solid #d9d0bb",
                           fontSize: 14,
                           backgroundColor: "white",
                         }}
@@ -812,7 +812,7 @@ export default function ProductionBatchPage() {
                       {item.pack_size === CUSTOM_SENTINEL && (
                         <input type="number" min="0.01" step="0.01" placeholder="Custom kg" value={item.custom_pack_size} onChange={(e) => handleMaterialChange(index, "custom_pack_size", e.target.value)} required />
                       )}
-                      {item.material_id && <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>Available: {availableBags || 0} bags of {packSize || "this size"}</div>}
+                      {item.material_id && <div style={{ fontSize: 12, color: "#5b6660", marginTop: 4 }}>Available: {availableBags || 0} bags of {packSize || "this size"}</div>}
                     </div>
 
                     <div className="sf-field" style={{ marginBottom: 0 }}>
@@ -825,7 +825,7 @@ export default function ProductionBatchPage() {
                         onChange={(e) => handleMaterialChange(index, "bag_count", e.target.value)}
                         required
                       />
-                      {requestedBags > 0 && packSize > 0 && <div style={{ fontSize: 12, color: isQuantityExceeded ? "#dc2626" : "#64748b", marginTop: 4 }}>Input: {lineTons.toFixed(3)} Qtl</div>}
+                      {requestedBags > 0 && packSize > 0 && <div style={{ fontSize: 12, color: isQuantityExceeded ? "#dc2626" : "#5b6660", marginTop: 4 }}>Input: {lineTons.toFixed(3)} Qtl</div>}
                       {isQuantityExceeded && (
                         <div style={{ color: "#dc2626", fontSize: 12, marginTop: 4, fontWeight: 500 }}>
                           ⚠️ {fieldErrors[index] || `Only ${availableBags} bags available`}
@@ -896,7 +896,7 @@ export default function ProductionBatchPage() {
           {addMaterialError && <div className="dt-error">{addMaterialError}</div>}
 
           {addMaterialLoadingSummary && (
-            <div style={{ color: "#64748b" }}>Loading warehouse details…</div>
+            <div style={{ color: "#5b6660" }}>Loading warehouse details…</div>
           )}
 
           {!addMaterialLoadingSummary && (
@@ -929,7 +929,7 @@ export default function ProductionBatchPage() {
                 <label>
                   Bag Size (kg)
                   {addMaterialForm.material_id && (
-                    <span style={{ fontSize: 12, color: "#64748b", fontWeight: 400 }}>
+                    <span style={{ fontSize: 12, color: "#5b6660", fontWeight: 400 }}>
                       {" "}
                       (select the warehouse pack size)
                     </span>
@@ -953,7 +953,7 @@ export default function ProductionBatchPage() {
                         ))}
                       </select>
                       {addMaterialForm.material_id && chosen && (
-                        <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                        <div style={{ fontSize: 12, color: "#5b6660", marginTop: 4 }}>
                           Available: {getAddMaterialBagsAvailable(addMaterialForm.material_id, chosen)} bags of {chosen} kg
                         </div>
                       )}
@@ -1027,8 +1027,8 @@ export default function ProductionBatchPage() {
             render: (row) => {
               const palette = {
                 pending: { bg: "#fff7ed", fg: "#9a3412" },
-                completed: { bg: "#dcfce7", fg: "#15803d" },
-              }[row.batch_status] || { bg: "#eef2f7", fg: "#475569" };
+                completed: { bg: "#e3f1ee", fg: "#0b5f58" },
+              }[row.batch_status] || { bg: "#efe8d3", fg: "#4b5753" };
               return (
                 <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 12, fontWeight: 600, background: palette.bg, color: palette.fg }}>
                   {row.batch_status}

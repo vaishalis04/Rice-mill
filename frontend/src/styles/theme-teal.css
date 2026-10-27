@@ -1,0 +1,1031 @@
+/* =====================================================================
+   TEAL THEME — "Cream Canvas" (Layout 1)
+   White + cream + teal green, black only for emphasis.
+
+   Everything here is scoped to `.theme-teal`, which a role dashboard opts
+   into with `<DashboardLayout theme="teal">` (Admin, Purchase and Sales so
+   far). Roles that don't pass it keep their current look. Colours only: no
+   behaviour, no markup logic. To retune the palette, change the variables
+   just below.
+   ===================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
+
+.theme-teal {
+  --rm-teal: #0f766e;
+  --rm-teal-dark: #0b5f58;
+  --rm-teal-tint: #e3f1ee;
+  --rm-teal-soft: #f1f8f6;
+  --rm-cream: #f7f1e3;
+  --rm-cream-2: #fffcf5;
+  --rm-cream-3: #efe8d3;
+  --rm-line: #e8e0cc;
+  --rm-line-strong: #d9d0bb;
+  --rm-ink: #14201d;
+  --rm-muted: #5b6660;
+  --rm-white: #ffffff;
+  --rm-danger: #b3261e;
+  --rm-danger-tint: #fbeae7;
+  --rm-warn: #8a5a00;
+  --rm-warn-tint: #fdf1d6;
+  --rm-radius: 16px;
+  --rm-radius-sm: 10px;
+  --rm-shadow: 0 1px 2px rgba(70, 58, 20, 0.05);
+  --rm-ring: 0 0 0 3px rgba(15, 118, 110, 0.16);
+}
+
+/* ---------- shell ---------- */
+
+.theme-teal.dash-wrapper {
+  background: var(--rm-cream);
+  color: var(--rm-ink);
+  font-family: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.theme-teal .dash-header {
+  background: var(--rm-cream);
+  border-bottom: 1px solid var(--rm-line);
+  box-shadow: none;
+}
+
+.theme-teal .dash-logo {
+  background: var(--rm-teal);
+  border-radius: 10px;
+}
+
+.theme-teal .dash-header h1 {
+  color: var(--rm-ink);
+  font-weight: 800;
+}
+
+.theme-teal .dash-user {
+  color: var(--rm-muted);
+}
+
+.theme-teal .dash-user strong {
+  color: var(--rm-ink);
+}
+
+.theme-teal .dash-role-pill {
+  background: var(--rm-teal-tint);
+  color: var(--rm-teal-dark);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.theme-teal .dash-logout {
+  background: var(--rm-white);
+  border: 1px solid var(--rm-line-strong);
+  color: var(--rm-ink);
+  border-radius: var(--rm-radius-sm);
+  font-weight: 600;
+  padding: 9px 18px;
+}
+
+.theme-teal .dash-logout:hover {
+  background: var(--rm-ink);
+  border-color: var(--rm-ink);
+  color: var(--rm-cream);
+}
+
+.theme-teal .dash-menu-toggle {
+  background: var(--rm-white);
+  border: 1px solid var(--rm-line-strong);
+  color: var(--rm-ink);
+  border-radius: var(--rm-radius-sm);
+}
+
+/* sidebar */
+
+.theme-teal .dash-sidebar {
+  background: var(--rm-white);
+  border-right: 1px solid var(--rm-line);
+}
+
+.theme-teal .dash-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 8px 18px;
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: var(--rm-ink);
+}
+
+.theme-teal .dash-brand-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--rm-teal);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  letter-spacing: 0.4px;
+}
+
+.theme-teal .dash-sidebar-head {
+  border-bottom-color: var(--rm-line);
+  color: var(--rm-ink);
+}
+
+.theme-teal .dash-sidebar-close {
+  color: var(--rm-muted);
+}
+
+.theme-teal .dash-sidebar-item {
+  color: #3f4b47;
+  border-radius: var(--rm-radius-sm);
+  font-family: inherit;
+  font-size: 0.875rem;
+  padding: 10px 12px;
+}
+
+.theme-teal .dash-sidebar-item:hover {
+  background: var(--rm-teal-soft);
+  color: var(--rm-teal-dark);
+}
+
+.theme-teal .dash-sidebar-item.active {
+  background: var(--rm-teal);
+  color: #fff;
+}
+
+.theme-teal .dash-sidebar-overlay {
+  background: rgba(20, 32, 29, 0.45);
+}
+
+.theme-teal .dash-content {
+  color: var(--rm-ink);
+}
+
+.theme-teal .app-footer {
+  color: var(--rm-muted);
+}
+
+/* the sidebar scrolls on its own whenever the menu is longer than the screen */
+
+.theme-teal .dash-sidebar {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--rm-line-strong) transparent;
+}
+
+.theme-teal .dash-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.theme-teal .dash-sidebar::-webkit-scrollbar-thumb {
+  background: var(--rm-line-strong);
+  border-radius: 6px;
+}
+
+/* desktop / tablet: full-height sidebar on the left, header + content on the right */
+
+@media (min-width: 861px) {
+  .theme-teal.dash-wrapper {
+    display: grid;
+    grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
+  }
+
+  .theme-teal .dash-body {
+    display: contents;
+  }
+
+  .theme-teal .dash-sidebar {
+    grid-column: 1;
+    grid-row: 1 / 4;
+    width: auto;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 22px 14px;
+  }
+
+  .theme-teal .dash-header {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 20px 32px 16px;
+  }
+
+  .theme-teal .dash-header .dash-logo {
+    display: none; /* the brand sits at the top of the sidebar on desktop */
+  }
+
+  .theme-teal .dash-content {
+    grid-column: 2;
+    grid-row: 2;
+    padding: 24px 32px 28px;
+    max-width: 1500px;
+  }
+
+  .theme-teal .app-footer {
+    grid-column: 2;
+    grid-row: 3;
+  }
+}
+
+@media (min-width: 861px) and (max-width: 1100px) {
+  .theme-teal.dash-wrapper {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .theme-teal .dash-header,
+  .theme-teal .dash-content {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+}
+
+@media (max-width: 860px) {
+  .theme-teal .dash-brand {
+    display: none; /* the drawer already has its own header */
+  }
+
+  .theme-teal .dash-sidebar {
+    box-shadow: none;
+    /* dvh keeps the drawer inside the visible screen when the phone's address bar shows */
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    padding-bottom: 28px;
+    box-sizing: border-box;
+  }
+
+  .theme-teal .dash-sidebar.open {
+    box-shadow: 4px 0 18px rgba(20, 32, 29, 0.18);
+  }
+}
+
+/* ---------- headings & text ---------- */
+
+.theme-teal .dash-content h2 {
+  color: var(--rm-ink);
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.2px;
+}
+
+.theme-teal .dash-content h3 {
+  color: var(--rm-ink);
+  font-weight: 800;
+}
+
+.theme-teal .dash-content h4 {
+  color: var(--rm-ink);
+}
+
+.theme-teal .dash-content a {
+  color: var(--rm-teal);
+}
+
+/* ---------- KPI row (top of every Admin page) ---------- */
+
+.theme-teal .kpi-bar {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  margin-bottom: 22px;
+}
+
+.theme-teal .kpi-cards {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 14px;
+}
+
+.theme-teal .kpi-card {
+  background: var(--rm-white);
+  border: 1px solid var(--rm-line);
+  border-radius: var(--rm-radius);
+  padding: 16px;
+  box-shadow: var(--rm-shadow);
+}
+
+.theme-teal .kpi-bar .kpi-card:first-child {
+  background: var(--rm-teal);
+  border-color: var(--rm-teal);
+}
+
+.theme-teal .kpi-value {
+  color: var(--rm-teal);
+  font-size: clamp(1.1rem, 0.9vw + 0.45rem, 1.6rem);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+/* the top bar always holds 7 figures: 7 across on desktop, 4 + 3 on tablet, 2 on phones */
+.theme-teal .kpi-bar .kpi-cards {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.theme-teal .kpi-bar .kpi-card {
+  padding: 14px 12px;
+}
+
+@media (max-width: 1199px) {
+  .theme-teal .kpi-bar .kpi-cards {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.theme-teal .kpi-label {
+  color: var(--rm-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.theme-teal .kpi-bar .kpi-card:first-child .kpi-value,
+.theme-teal .kpi-bar .kpi-card:first-child .kpi-label {
+  color: #fff;
+}
+
+.theme-teal .kpi-trend-toggle {
+  color: var(--rm-teal);
+  font-family: inherit;
+  font-weight: 700;
+}
+
+.theme-teal .kpi-trend {
+  background: var(--rm-white);
+  border: 1px solid var(--rm-line);
+  border-radius: var(--rm-radius);
+  padding: 14px 16px;
+}
+
+.theme-teal .kpi-trend-bar {
+  background: var(--rm-teal);
+  border-radius: 6px 6px 0 0;
+}
+
+.theme-teal .kpi-trend-date {
+  color: var(--rm-muted);
+}
+
+/* ---------- cards / panels ---------- */
+
+.theme-teal .dashboard-panel,
+.theme-teal .sf-form,
+.theme-teal .dt-msg,
+.theme-teal .po-summary-card,
+.theme-teal .so-summary-card,
+.theme-teal .po-detail-header,
+.theme-teal .so-detail-header,
+.theme-teal .po-action-panel,
+.theme-teal .so-action-panel {
+  background: var(--rm-white);
+  border: 1px solid var(--rm-line);
+  border-radius: var(--rm-radius);
+  box-shadow: var(--rm-shadow);
+}
+
+.theme-teal .dashboard-panel {
+  padding: 18px;
+}
+
+.theme-teal .sf-form {
+  padding: 20px 22px;
+}
+
+.theme-teal .dt-msg {
+  color: var(--rm-muted);
+}
+
+.theme-teal .dashboard-panel .dt-msg {
+  background: var(--rm-cream-2);
+  border: 1.5px dashed var(--rm-line-strong);
+  box-shadow: none;
+  border-radius: 12px;
+  padding: 32px 20px;
+}
+
+.theme-teal .module-guide {
+  background: var(--rm-cream-2);
+  border: 1.5px dashed var(--rm-line-strong);
+  border-radius: var(--rm-radius);
+}
+
+.theme-teal .module-guide h4 {
+  color: var(--rm-ink);
+}
+
+.theme-teal .module-guide ol {
+  color: var(--rm-muted);
+}
+
+.theme-teal .po-additem-panel,
+.theme-teal .so-additem-panel,
+.theme-teal .po-entity-add-row,
+.theme-teal .so-entity-add-row,
+.theme-teal .stage-timer,
+.theme-teal .po-edit-panel,
+.theme-teal .so-edit-panel {
+  background: var(--rm-cream-2);
+  border-color: var(--rm-line);
+  border-radius: 12px;
+}
+
+/* ---------- tables ---------- */
+
+.theme-teal .dt-wrapper {
+  background: var(--rm-white);
+  border: 1px solid var(--rm-line);
+  border-radius: var(--rm-radius);
+  box-shadow: var(--rm-shadow);
+}
+
+.theme-teal .dt-table th {
+  background: var(--rm-cream-2);
+  color: var(--rm-ink);
+  border-bottom: 1px solid var(--rm-line);
+  letter-spacing: 0.5px;
+}
+
+.theme-teal .dt-table td {
+  border-bottom: 1px solid #f1ebda;
+  color: var(--rm-ink);
+}
+
+.theme-teal .dt-table tbody tr:hover {
+  background: var(--rm-teal-soft);
+}
+
+.theme-teal .dt-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* ---------- buttons ---------- */
+
+.theme-teal .dt-btn {
+  border: 1px solid var(--rm-line-strong);
+  background: var(--rm-white);
+  color: var(--rm-ink);
+  border-radius: 8px;
+  font-family: inherit;
+  font-weight: 600;
+}
+
+.theme-teal .dt-btn:hover {
+  background: var(--rm-teal-soft);
+  border-color: var(--rm-teal);
+  color: var(--rm-teal-dark);
+}
+
+.theme-teal .dt-btn-danger {
+  border-color: #efc4be;
+  color: var(--rm-danger);
+}
+
+.theme-teal .dt-btn-danger:hover {
+  background: var(--rm-danger-tint);
+  border-color: var(--rm-danger);
+  color: var(--rm-danger);
+}
+
+.theme-teal .sf-submit,
+.theme-teal .po-approve-btn,
+.theme-teal .so-approve-btn,
+.theme-teal .po-view-btn,
+.theme-teal .so-view-btn,
+.theme-teal .stage-start-btn {
+  background: var(--rm-teal);
+  color: #fff;
+  border-radius: var(--rm-radius-sm);
+  font-family: inherit;
+  font-weight: 700;
+}
+
+.theme-teal .sf-submit {
+  height: 42px;
+}
+
+.theme-teal .sf-submit:hover,
+.theme-teal .po-approve-btn:hover,
+.theme-teal .so-approve-btn:hover,
+.theme-teal .po-view-btn:hover,
+.theme-teal .so-view-btn:hover,
+.theme-teal .stage-start-btn:hover {
+  background: var(--rm-teal-dark);
+}
+
+.theme-teal .stage-done-btn {
+  background: var(--rm-ink);
+  color: var(--rm-cream);
+  border-radius: var(--rm-radius-sm);
+}
+
+.theme-teal .stage-done-btn:hover {
+  background: #000;
+}
+
+.theme-teal .sf-cancel,
+.theme-teal .po-cancel-btn,
+.theme-teal .so-cancel-btn {
+  background: var(--rm-white);
+  border: 1px solid var(--rm-line-strong);
+  color: var(--rm-ink);
+  border-radius: var(--rm-radius-sm);
+}
+
+.theme-teal .sf-cancel {
+  height: 42px;
+}
+
+.theme-teal .po-edit-btn,
+.theme-teal .so-edit-btn,
+.theme-teal .po-back-btn,
+.theme-teal .so-back-btn,
+.theme-teal .po-entity-add-toggle,
+.theme-teal .so-entity-add-toggle {
+  color: var(--rm-teal);
+  border-color: var(--rm-teal);
+}
+
+.theme-teal .po-reject-btn,
+.theme-teal .so-reject-btn {
+  border-color: var(--rm-danger);
+  color: var(--rm-danger);
+  border-radius: var(--rm-radius-sm);
+}
+
+.theme-teal .po-reject-confirm-btn,
+.theme-teal .so-reject-confirm-btn {
+  background: var(--rm-danger);
+}
+
+/* ---------- form fields ---------- */
+
+.theme-teal .sf-field label,
+.theme-teal .po-edit-grid label,
+.theme-teal .so-edit-grid label {
+  color: var(--rm-ink);
+  font-weight: 700;
+}
+
+.theme-teal .sf-field input,
+.theme-teal .sf-field select,
+.theme-teal .sf-field textarea,
+.theme-teal .po-edit-grid input,
+.theme-teal .po-edit-grid select,
+.theme-teal .so-edit-grid input,
+.theme-teal .so-edit-grid select,
+.theme-teal .po-reject-box textarea,
+.theme-teal .so-reject-box textarea {
+  background: var(--rm-cream-2);
+  border: 1px solid var(--rm-line-strong);
+  border-radius: var(--rm-radius-sm);
+  color: var(--rm-ink);
+  font-family: inherit;
+  min-height: 42px;
+}
+
+.theme-teal .sf-field input:focus,
+.theme-teal .sf-field select:focus,
+.theme-teal .sf-field textarea:focus,
+.theme-teal .po-edit-grid input:focus,
+.theme-teal .po-edit-grid select:focus,
+.theme-teal .so-edit-grid input:focus,
+.theme-teal .so-edit-grid select:focus,
+.theme-teal .po-reject-box textarea:focus,
+.theme-teal .so-reject-box textarea:focus,
+.theme-teal .so-additem-grid input:focus,
+.theme-teal .so-entity-add-row input:focus,
+.theme-teal .po-entity-add-row input:focus,
+.theme-teal .material-qty-input:focus {
+  outline: none;
+  border-color: var(--rm-teal);
+  box-shadow: var(--rm-ring);
+}
+
+.theme-teal .field-hint {
+  color: var(--rm-muted);
+}
+
+.theme-teal .es-option:hover,
+.theme-teal .es-option.active {
+  background: var(--rm-teal-soft);
+}
+
+/* ---------- tabs, badges, messages ---------- */
+
+.theme-teal .section-tabs {
+  background: var(--rm-cream-3);
+  border-radius: 12px;
+}
+
+.theme-teal .section-tab {
+  color: #4b5753;
+  font-family: inherit;
+}
+
+.theme-teal .section-tab.active {
+  background: var(--rm-teal);
+  color: #fff;
+}
+
+.theme-teal .dt-badge,
+.theme-teal .gs-chip,
+.theme-teal .gs-token {
+  background: var(--rm-teal-tint);
+  color: var(--rm-teal-dark);
+}
+
+.theme-teal .dt-badge-danger {
+  background: var(--rm-danger-tint);
+  color: var(--rm-danger);
+}
+
+.theme-teal .gs-chip.info,
+.theme-teal .gs-party.so,
+.theme-teal .po-kind.customer,
+.theme-teal .po-pill.info {
+  background: var(--rm-teal-tint);
+  color: var(--rm-teal-dark);
+  border-color: #c4e0da;
+}
+
+.theme-teal .gs-chip.muted,
+.theme-teal .gs-subtab span {
+  background: var(--rm-cream-3);
+  color: var(--rm-muted);
+}
+
+.theme-teal .po-material-row.selected {
+  background: var(--rm-teal-soft);
+  border-color: #b9dbd4;
+}
+
+.theme-teal .token-chip {
+  background: var(--rm-teal-tint);
+  color: var(--rm-teal-dark);
+  border-color: #c4e0da;
+}
+
+.theme-teal .dt-error,
+.theme-teal .so-error,
+.theme-teal .po-error {
+  background: var(--rm-danger-tint);
+  color: var(--rm-danger);
+  border-color: #efc4be;
+  border-radius: var(--rm-radius-sm);
+}
+
+.theme-teal .dt-success,
+.theme-teal .po-success,
+.theme-teal .so-success {
+  background: var(--rm-teal-tint);
+  color: var(--rm-teal-dark);
+  border-color: #c4e0da;
+  border-radius: var(--rm-radius-sm);
+}
+
+/* pages reuse .dt-error with an inline green for success banners: bring those into the palette */
+.theme-teal .dt-error[style*="rgb(234, 247, 234)"],
+.theme-teal .dt-error[style*="#eaf7ea"] {
+  background: var(--rm-teal-tint) !important;
+  color: var(--rm-teal-dark) !important;
+  border-color: #c4e0da;
+}
+
+.theme-teal .stage-clock.running {
+  color: var(--rm-teal);
+}
+
+.theme-teal .stage-clock.finished {
+  color: var(--rm-teal-dark);
+}
+
+/* ---------- PO / SO approval pages ---------- */
+
+.theme-teal .po-page-header h2,
+.theme-teal .so-page-header h2,
+.theme-teal .po-detail-header h2,
+.theme-teal .so-detail-header h2 {
+  color: var(--rm-ink);
+}
+
+.theme-teal .po-page-header p,
+.theme-teal .so-page-header p,
+.theme-teal .po-section-header p,
+.theme-teal .so-section-header p,
+.theme-teal .po-summary-label,
+.theme-teal .so-summary-label,
+.theme-teal .po-subtext,
+.theme-teal .so-subtext {
+  color: var(--rm-muted);
+}
+
+.theme-teal .po-summary-number,
+.theme-teal .so-summary-number,
+.theme-teal .po-grand-total strong,
+.theme-teal .so-grand-total strong {
+  color: var(--rm-teal);
+}
+
+.theme-teal .po-status-approved,
+.theme-teal .so-status-approved,
+.theme-teal .po-empty-icon,
+.theme-teal .so-empty-icon {
+  background: var(--rm-teal-tint) !important;
+  color: var(--rm-teal-dark) !important;
+}
+
+.theme-teal .po-status-pending,
+.theme-teal .so-status-pending {
+  background: var(--rm-warn-tint) !important;
+  color: var(--rm-warn) !important;
+}
+
+.theme-teal .po-status-rejected,
+.theme-teal .so-status-rejected {
+  background: var(--rm-danger-tint) !important;
+  color: var(--rm-danger) !important;
+}
+
+.theme-teal .po-amount-list > div,
+.theme-teal .so-amount-list > div {
+  border-bottom-color: var(--rm-line);
+}
+
+/* ---------- mobile / tablet polish ---------- */
+
+@media (max-width: 860px) {
+  .theme-teal .dash-header {
+    padding: 12px 16px;
+  }
+
+  .theme-teal .dash-content {
+    padding: 16px;
+  }
+
+  .theme-teal .dash-content h2 {
+    font-size: 1.4rem;
+  }
+
+  .theme-teal .kpi-value {
+    font-size: 1.3rem;
+  }
+
+  .theme-teal .section-tabs {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .theme-teal .sf-form {
+    padding: 16px;
+  }
+
+  /* 16px inputs stop iOS from zooming the page on focus; taller targets for touch */
+  .theme-teal .dash-content input,
+  .theme-teal .dash-content select,
+  .theme-teal .dash-content textarea {
+    font-size: 16px;
+  }
+
+  .theme-teal .dt-btn,
+  .theme-teal .sf-submit,
+  .theme-teal .sf-cancel {
+    min-height: 40px;
+  }
+
+  .theme-teal .dash-sidebar-item {
+    padding: 13px 14px;
+  }
+}
+
+/* pages that lay out a fixed two-column split inline: stack it on phones / small tablets */
+@media (max-width: 700px) {
+  .theme-teal .dash-content [style*="grid-template-columns: 2fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .theme-teal .kpi-bar .kpi-cards,
+  .theme-teal .kpi-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .theme-teal .kpi-bar .kpi-card:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .theme-teal .dash-user {
+    font-size: 0.74rem;
+  }
+}
+
+/* ---------- dashboards without a menu (e.g. Gate): one column, brand mark stays in the header ---------- */
+
+@media (min-width: 861px) {
+  .theme-teal.no-sidebar.dash-wrapper {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .theme-teal.no-sidebar .dash-header,
+  .theme-teal.no-sidebar .dash-content,
+  .theme-teal.no-sidebar .app-footer {
+    grid-column: 1;
+  }
+
+  .theme-teal.no-sidebar .dash-header .dash-logo {
+    display: flex;
+  }
+
+  .theme-teal.no-sidebar .dash-content {
+    width: 100%;
+    max-width: 1280px;
+    margin: 0 auto;
+    box-sizing: border-box;
+  }
+}
+
+/* info banner (used on several pages without its own style) */
+
+.theme-teal .dt-info {
+  background: var(--rm-teal-tint);
+  color: var(--rm-teal-dark);
+  border: 1px solid #c4e0da;
+  border-radius: var(--rm-radius-sm);
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  margin-bottom: 14px;
+}
+
+/* gate entry: PO / material pick lists */
+
+.theme-teal .po-selection-card {
+  background: var(--rm-white);
+  border-color: var(--rm-line);
+  border-radius: var(--rm-radius-sm);
+}
+
+.theme-teal .po-selection-header {
+  background: var(--rm-cream-2);
+  border-color: var(--rm-line);
+}
+
+.theme-teal .po-material-title {
+  color: var(--rm-ink);
+}
+
+.theme-teal .po-material-row:hover {
+  background: var(--rm-teal-soft);
+}
+
+.theme-teal .material-checkbox small,
+.theme-teal .material-variety {
+  color: var(--rm-muted);
+}
+
+/* ---------- Reports: Gate Summary and Party Orders panels (their own stylesheets use slate + blue) ----------
+   Written with the extra `.dash-wrapper` so they win whichever stylesheet loads last. */
+
+.theme-teal.dash-wrapper .gs {
+  --gs-line: #e8e0cc;
+  --gs-ink: #14201d;
+  --gs-muted: #5b6660;
+}
+
+.theme-teal.dash-wrapper .po {
+  --po-line: #e8e0cc;
+  --po-ink: #14201d;
+  --po-muted: #5b6660;
+}
+
+.theme-teal.dash-wrapper .gs-search,
+.theme-teal.dash-wrapper .gs-switch,
+.theme-teal.dash-wrapper .gs-subtab,
+.theme-teal.dash-wrapper .gs-chip.order,
+.theme-teal.dash-wrapper .gs-empty,
+.theme-teal.dash-wrapper .po-filters input,
+.theme-teal.dash-wrapper .po-filters select {
+  border-color: #d9d0bb;
+}
+
+.theme-teal.dash-wrapper .gs-subtab,
+.theme-teal.dash-wrapper .gs-switch button,
+.theme-teal.dash-wrapper .gs-chip.order,
+.theme-teal.dash-wrapper .po-filters label {
+  color: #2f3a36;
+}
+
+.theme-teal.dash-wrapper .gs-subtab span,
+.theme-teal.dash-wrapper .gs-token {
+  background: #efe8d3;
+  color: #4b5753;
+}
+
+.theme-teal.dash-wrapper .gs-token {
+  color: #2f3a36;
+}
+
+.theme-teal.dash-wrapper .gs-subtab.on {
+  background: var(--accent, #0f766e);
+  border-color: var(--accent, #0f766e);
+  color: #fff;
+}
+
+.theme-teal.dash-wrapper .gs-subtab.on span {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.theme-teal.dash-wrapper .gs-switch button.on {
+  background: #0f766e;
+  color: #fff;
+}
+
+.theme-teal.dash-wrapper .gs-bar,
+.theme-teal.dash-wrapper .po-bar {
+  background: #efe8d3;
+}
+
+.theme-teal.dash-wrapper .gs-bar > span,
+.theme-teal.dash-wrapper .po-bar > span {
+  background: linear-gradient(90deg, #2e9e92, #0f766e);
+}
+
+.theme-teal.dash-wrapper .gs-progress-text,
+.theme-teal.dash-wrapper .po-sub th {
+  color: #4b5753;
+}
+
+.theme-teal.dash-wrapper .gs-order-vehicles,
+.theme-teal.dash-wrapper .po-detail > td {
+  background: #fffcf5;
+}
+
+.theme-teal.dash-wrapper .gs-vehicle:hover,
+.theme-teal.dash-wrapper .po-party-row:hover {
+  background: #f1f8f6;
+}
+
+.theme-teal.dash-wrapper .gs-chip.good,
+.theme-teal.dash-wrapper .gs-party.po,
+.theme-teal.dash-wrapper .gs-chip.info,
+.theme-teal.dash-wrapper .gs-party.so,
+.theme-teal.dash-wrapper .po-kind.vendor,
+.theme-teal.dash-wrapper .po-kind.customer,
+.theme-teal.dash-wrapper .po-pill.good,
+.theme-teal.dash-wrapper .po-pill.info {
+  background: #e3f1ee;
+  color: #0b5f58;
+}
+
+.theme-teal.dash-wrapper .gs-party.po,
+.theme-teal.dash-wrapper .gs-party.so {
+  border-color: #c4e0da;
+}
+
+.theme-teal.dash-wrapper .gs-chip.active {
+  background: #14201d;
+  color: #f7f1e3;
+}
+
+.theme-teal.dash-wrapper .gs-party.other {
+  background: #efe8d3;
+  color: #2f3a36;
+  border-color: #d9d0bb;
+}
+
+.theme-teal.dash-wrapper .po-table th {
+  background: #fffcf5;
+  color: #14201d;
+}
+
+.theme-teal.dash-wrapper .po-table td {
+  border-bottom-color: #f1ebda;
+}
+
+.theme-teal.dash-wrapper .po-sub th {
+  background: #efe8d3;
+}
+
+.theme-teal.dash-wrapper .po-sub td {
+  border-top-color: #f1ebda;
+}
+
+.theme-teal.dash-wrapper .po-pill {
+  background: #efe8d3;
+  color: #4b5753;
+}
+
+.theme-teal.dash-wrapper .po-pill.zero {
+  background: transparent;
+  color: #d9d0bb;
+}
+
+.theme-teal.dash-wrapper .po-pill.good,
+.theme-teal.dash-wrapper .po-pill.info {
+  background: #e3f1ee;
+  color: #0b5f58;
+}

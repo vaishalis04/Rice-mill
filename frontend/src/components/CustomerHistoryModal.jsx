@@ -66,7 +66,7 @@ export default function CustomerHistoryModal({ customerId, onClose }) {
               style={{
                 marginTop: 16,
                 padding: 16,
-                background: "#f7f8fa",
+                background: "#fffcf5",
                 borderRadius: 8,
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
@@ -74,27 +74,27 @@ export default function CustomerHistoryModal({ customerId, onClose }) {
               }}
             >
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>Name</div>
+                <div style={{ fontSize: 12, color: "#5b6660" }}>Name</div>
                 <div style={{ fontWeight: 600 }}>{data.customer.name}</div>
               </div>
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>Customer Code</div>
+                <div style={{ fontSize: 12, color: "#5b6660" }}>Customer Code</div>
                 <div>{data.customer.customer_code}</div>
               </div>
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>GSTIN</div>
+                <div style={{ fontSize: 12, color: "#5b6660" }}>GSTIN</div>
                 <div>{data.customer.gstin || "—"}</div>
               </div>
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>Address</div>
+                <div style={{ fontSize: 12, color: "#5b6660" }}>Address</div>
                 <div>{data.customer.address || "—"}</div>
               </div>
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>Type</div>
+                <div style={{ fontSize: 12, color: "#5b6660" }}>Type</div>
                 <div>{data.customer.customer_type}</div>
               </div>
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>Credit Limit</div>
+                <div style={{ fontSize: 12, color: "#5b6660" }}>Credit Limit</div>
                 <div>{data.customer.credit_limit ?? "—"}</div>
               </div>
             </div>

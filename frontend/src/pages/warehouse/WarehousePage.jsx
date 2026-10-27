@@ -216,8 +216,8 @@ function StockTab() {
             flexWrap: "wrap",
             marginBottom: 16,
             padding: "12px 16px",
-            background: "#f8fafc",
-            border: "1px solid #e2e8f0",
+            background: "#fffcf5",
+            border: "1px solid #e8e0cc",
             borderRadius: 8,
           }}
         >
@@ -228,7 +228,7 @@ function StockTab() {
               value={reportDate}
               onChange={(e) => setReportDate(e.target.value)}
               max={new Date().toISOString().slice(0, 10)}
-              style={{ padding: "8px 12px", borderRadius: 4, border: "1px solid #d1d5db", fontSize: 14 }}
+              style={{ padding: "8px 12px", borderRadius: 4, border: "1px solid #d9d0bb", fontSize: 14 }}
             />
           </div>
           <button type="button" className="dt-btn" disabled={reportLoading} onClick={handleViewStockReport}>
@@ -256,15 +256,15 @@ function StockTab() {
         <div
           style={{
             padding: "16px 20px",
-            background: "#f8fafc",
-            border: "1px solid #e2e8f0",
+            background: "#fffcf5",
+            border: "1px solid #e8e0cc",
             borderRadius: 8,
             marginTop: 16,
             marginBottom: 16,
           }}
         >
           {loading && (
-            <div style={{ color: "#64748b", textAlign: "center", padding: "20px 0" }}>
+            <div style={{ color: "#5b6660", textAlign: "center", padding: "20px 0" }}>
               Loading stock details…
             </div>
           )}
@@ -279,12 +279,12 @@ function StockTab() {
                   alignItems: "center",
                   marginBottom: 16,
                   paddingBottom: 12,
-                  borderBottom: "1px solid #e2e8f0",
+                  borderBottom: "1px solid #e8e0cc",
                 }}
               >
                 <div>
-                  <h3 style={{ margin: 0, color: "#1e293b" }}>{stockDetail.name}</h3>
-                  <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
+                  <h3 style={{ margin: 0, color: "#14201d" }}>{stockDetail.name}</h3>
+                  <div style={{ fontSize: 13, color: "#5b6660", marginTop: 4 }}>
                     {stockDetail.warehouse_code
                       ? `Code: ${stockDetail.warehouse_code} | Type: ${stockDetail.type}`
                       : "Combined across every warehouse"}
@@ -294,10 +294,10 @@ function StockTab() {
                   <div
                     style={{
                       padding: "4px 12px",
-                      background: "#dbeafe",
+                      background: "#e3f1ee",
                       borderRadius: 12,
                       fontSize: 13,
-                      color: "#1e40af",
+                      color: "#0b5f58",
                     }}
                   >
                     ID: {stockDetail.warehouse_id}
@@ -314,25 +314,25 @@ function StockTab() {
                   marginBottom: 16,
                 }}
               >
-                <div style={{ padding: "12px 16px", background: "white", borderRadius: 6, border: "1px solid #e2e8f0" }}>
-                  <div style={{ fontSize: 12, color: "#64748b" }}>Total Capacity</div>
-                  <div style={{ fontSize: 20, fontWeight: 600, color: "#0f172a" }}>
+                <div style={{ padding: "12px 16px", background: "white", borderRadius: 6, border: "1px solid #e8e0cc" }}>
+                  <div style={{ fontSize: 12, color: "#5b6660" }}>Total Capacity</div>
+                  <div style={{ fontSize: 20, fontWeight: 600, color: "#14201d" }}>
                     {stockDetail.capacity != null ? `${stockDetail.capacity.toFixed(2)} Qtl` : "Not set"}
                   </div>
                 </div>
-                <div style={{ padding: "12px 16px", background: "white", borderRadius: 6, border: "1px solid #e2e8f0" }}>
-                  <div style={{ fontSize: 12, color: "#64748b" }}>Current Stock (raw + packed)</div>
-                  <div style={{ fontSize: 20, fontWeight: 600, color: "#0f172a" }}>
+                <div style={{ padding: "12px 16px", background: "white", borderRadius: 6, border: "1px solid #e8e0cc" }}>
+                  <div style={{ fontSize: 12, color: "#5b6660" }}>Current Stock (raw + packed)</div>
+                  <div style={{ fontSize: 20, fontWeight: 600, color: "#14201d" }}>
                     {stockDetail.total_stock.toFixed(2)} Qtl
                   </div>
                 </div>
-                <div style={{ padding: "12px 16px", background: "white", borderRadius: 6, border: "1px solid #e2e8f0" }}>
-                  <div style={{ fontSize: 12, color: "#64748b" }}>Remaining Capacity</div>
+                <div style={{ padding: "12px 16px", background: "white", borderRadius: 6, border: "1px solid #e8e0cc" }}>
+                  <div style={{ fontSize: 12, color: "#5b6660" }}>Remaining Capacity</div>
                   <div
                     style={{
                       fontSize: 20,
                       fontWeight: 600,
-                      color: stockDetail.remaining_capacity <= 0 ? "#dc2626" : "#166534",
+                      color: stockDetail.remaining_capacity <= 0 ? "#dc2626" : "#0b5f58",
                     }}
                   >
                     {stockDetail.remaining_capacity != null ? `${stockDetail.remaining_capacity.toFixed(2)} Qtl` : "Unlimited"}
@@ -342,16 +342,16 @@ function StockTab() {
 
               {stockDetail.capacity != null && stockDetail.capacity > 0 && (
                 <div style={{ marginBottom: 16 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#64748b", marginBottom: 4 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#5b6660", marginBottom: 4 }}>
                     <span>Used: {((stockDetail.total_stock / stockDetail.capacity) * 100).toFixed(1)}%</span>
                     <span>Free: {((stockDetail.remaining_capacity / stockDetail.capacity) * 100).toFixed(1)}%</span>
                   </div>
-                  <div style={{ width: "100%", height: 8, background: "#e2e8f0", borderRadius: 4, overflow: "hidden" }}>
+                  <div style={{ width: "100%", height: 8, background: "#e8e0cc", borderRadius: 4, overflow: "hidden" }}>
                     <div
                       style={{
                         width: `${Math.min((stockDetail.total_stock / stockDetail.capacity) * 100, 100)}%`,
                         height: "100%",
-                        background: stockDetail.remaining_capacity <= 0 ? "#dc2626" : "#3b82f6",
+                        background: stockDetail.remaining_capacity <= 0 ? "#dc2626" : "#0f766e",
                         borderRadius: 4,
                         transition: "width 0.3s ease",
                       }}
@@ -369,7 +369,7 @@ function StockTab() {
                   marginBottom: 20,
                   padding: "12px",
                   background: "white",
-                  border: "1px solid #e2e8f0",
+                  border: "1px solid #e8e0cc",
                   borderRadius: 6,
                 }}
               >
@@ -380,7 +380,7 @@ function StockTab() {
                     placeholder="e.g. Paddy"
                     value={materialNameFilter}
                     onChange={(e) => setMaterialNameFilter(e.target.value)}
-                    style={{ width: "100%", padding: "8px 12px", borderRadius: 4, border: "1px solid #d1d5db", fontSize: 14 }}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: 4, border: "1px solid #d9d0bb", fontSize: 14 }}
                   />
                 </div>
                 <div className="sf-field" style={{ marginBottom: 0 }}>
@@ -388,7 +388,7 @@ function StockTab() {
                   <select
                     value={packSizeFilter}
                     onChange={(e) => setPackSizeFilter(e.target.value)}
-                    style={{ width: "100%", padding: "8px 12px", borderRadius: 4, border: "1px solid #d1d5db", fontSize: 14 }}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: 4, border: "1px solid #d9d0bb", fontSize: 14 }}
                   >
                     <option value="">All bag sizes</option>
                     {availablePackSizes.map((size) => (
@@ -401,7 +401,7 @@ function StockTab() {
               {/* Stock by Material — one box per material, all its bag
                   sizes (raw and packed) listed inside, plus a total. */}
               <div>
-                <h4 style={{ margin: "0 0 12px 0", color: "#1e293b", fontSize: 15 }}>
+                <h4 style={{ margin: "0 0 12px 0", color: "#14201d", fontSize: 15 }}>
                   Stock by Material
                 </h4>
                 {materialGroups.length > 0 ? (
@@ -411,7 +411,7 @@ function StockTab() {
                         key={g.material_id}
                         style={{
                           background: "white",
-                          border: "1px solid #e2e8f0",
+                          border: "1px solid #e8e0cc",
                           borderRadius: 6,
                           padding: "12px 16px",
                         }}
@@ -423,14 +423,14 @@ function StockTab() {
                             alignItems: "baseline",
                             marginBottom: 8,
                             paddingBottom: 8,
-                            borderBottom: "1px solid #f1f5f9",
+                            borderBottom: "1px solid #f1ebda",
                           }}
                         >
                           <div>
-                            <div style={{ fontWeight: 600, color: "#0f172a", fontSize: 14 }}>{g.material_name}</div>
-                            <div style={{ fontSize: 12, color: "#64748b" }}>{g.material_code}</div>
+                            <div style={{ fontWeight: 600, color: "#14201d", fontSize: 14 }}>{g.material_name}</div>
+                            <div style={{ fontSize: 12, color: "#5b6660" }}>{g.material_code}</div>
                           </div>
-                          <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 16 }}>
+                          <div style={{ fontWeight: 700, color: "#14201d", fontSize: 16 }}>
                             {g.total_qty.toFixed(2)} Qtl
                           </div>
                         </div>
@@ -442,13 +442,13 @@ function StockTab() {
                               justifyContent: "space-between",
                               fontSize: 13,
                               padding: "4px 0",
-                              color: "#334155",
+                              color: "#2f3a36",
                             }}
                           >
                             <span>
                               {r.bag_size != null ? `${r.bag_size} kg` : "Bulk"}
                               {r.bag_count != null && ` × ${r.bag_count} bag${r.bag_count === 1 ? "" : "s"}`}
-                              <span style={{ color: "#94a3b8" }}> ({r.stage === "raw" ? "raw" : "packed"})</span>
+                              <span style={{ color: "#8a928e" }}> ({r.stage === "raw" ? "raw" : "packed"})</span>
                             </span>
                             <span style={{ fontWeight: 500 }}>{r.qty.toFixed(3)} Qtl</span>
                           </div>
@@ -457,7 +457,7 @@ function StockTab() {
                     ))}
                   </div>
                 ) : (
-                  <div style={{ padding: "16px", textAlign: "center", color: "#64748b", background: "white", borderRadius: 6, border: "1px solid #e2e8f0" }}>
+                  <div style={{ padding: "16px", textAlign: "center", color: "#5b6660", background: "white", borderRadius: 6, border: "1px solid #e8e0cc" }}>
                     {stockDetail.raw_stock.length === 0 && stockDetail.packed_stock.length === 0
                       ? "No stock currently here."
                       : "No stock matches the current filter."}
@@ -474,7 +474,7 @@ function StockTab() {
       )}
 
       {!hasScope && (
-        <div style={{ textAlign: "center", padding: "40px 20px", color: "#94a3b8", fontSize: 14 }}>
+        <div style={{ textAlign: "center", padding: "40px 20px", color: "#8a928e", fontSize: 14 }}>
           Select a warehouse above, or check "View all warehouses combined", to see stock.
         </div>
       )}

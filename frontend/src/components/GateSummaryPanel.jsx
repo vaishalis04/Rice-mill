@@ -13,12 +13,12 @@ import "./GateSummaryPanel.css";
 // ever hidden. The view refreshes itself every minute (switch off with the tick box).
 
 const TABS = [
-  { key: "po", label: "Purchase Orders", hint: "Purchase trucks, by order", accent: "#059669", orders: true },
-  { key: "so", label: "Sales Orders", hint: "Sales trucks, by order", accent: "#2563eb", orders: true },
-  { key: "lab", label: "Lab Analysis", hint: "Waiting for sampling / lab verdict", accent: "#7c3aed" },
-  { key: "loading", label: "Loading", hint: "Being loaded, or loaded & weighing out", accent: "#db2777" },
-  { key: "unloading", label: "Unloading", hint: "Waiting to unload / unloading", accent: "#ea580c" },
-  { key: "gatepass", label: "Gate Pass Pending", hint: "Finished — waiting for gate pass / exit", accent: "#dc2626" },
+  { key: "po", label: "Purchase Orders", hint: "Purchase trucks, by order", accent: "#0f766e", orders: true },
+  { key: "so", label: "Sales Orders", hint: "Sales trucks, by order", accent: "#14201d", orders: true },
+  { key: "lab", label: "Lab Analysis", hint: "Waiting for sampling / lab verdict", accent: "#2e9e92" },
+  { key: "loading", label: "Loading", hint: "Being loaded, or loaded & weighing out", accent: "#9a7b2f" },
+  { key: "unloading", label: "Unloading", hint: "Waiting to unload / unloading", accent: "#c2701a" },
+  { key: "gatepass", label: "Gate Pass Pending", hint: "Finished — waiting for gate pass / exit", accent: "#b3261e" },
 ];
 
 // Status mini-tabs inside each tab: the vehicles of that tab split by the exact step they are in

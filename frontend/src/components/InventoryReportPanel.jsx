@@ -27,7 +27,7 @@ const QUICK_RANGES = [
   { label: "This month", from: () => ymd(startOfMonth()), to: () => ymd(new Date()) },
 ];
 
-const fieldStyle = { width: "100%", padding: "8px 12px", borderRadius: 4, border: "1px solid #d1d5db", fontSize: 14, background: "#fff" };
+const fieldStyle = { width: "100%", padding: "8px 12px", borderRadius: 4, border: "1px solid #d9d0bb", fontSize: 14, background: "#fff" };
 
 // The PDF endpoint answers with a blob, so a JSON error body has to be read out of it.
 const blobErrorMessage = async (err, fallback) => {
@@ -162,7 +162,7 @@ export default function InventoryReportPanel() {
       </button>
 
       {open && (
-        <div style={{ marginTop: 10, padding: 16, border: "1px solid #e2e8f0", borderRadius: 8, background: "#f8fafc" }}>
+        <div style={{ marginTop: 10, padding: 16, border: "1px solid #e8e0cc", borderRadius: 8, background: "#fffcf5" }}>
           {optionsError && <div className="dt-error">{optionsError}</div>}
           {error && <div className="dt-error">{error}</div>}
 
@@ -238,7 +238,7 @@ export default function InventoryReportPanel() {
 
           {isMovement && (
             <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 12, color: "#64748b" }}>Quick range:</span>
+              <span style={{ fontSize: 12, color: "#5b6660" }}>Quick range:</span>
               {QUICK_RANGES.map((r) => (
                 <button key={r.label} type="button" className="dt-btn" onClick={() => { setFrom(r.from()); setTo(r.to()); }}>
                   {r.label}
@@ -252,7 +252,7 @@ export default function InventoryReportPanel() {
           )}
 
           {isMovement && (
-            <p style={{ margin: "10px 0 0", fontSize: 12, color: "#64748b" }}>
+            <p style={{ margin: "10px 0 0", fontSize: 12, color: "#5b6660" }}>
               Opening and Closing stock are shown when the date range ends today. For a range that ends earlier, only the
               movements (Inwards, Production, Dispatch, Issue) are shown — the system keeps no past running balance.
             </p>

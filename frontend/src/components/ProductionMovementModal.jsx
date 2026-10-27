@@ -7,13 +7,13 @@ import { getProductionBatchMovementApi } from "../api/api";
 // (Stock isn't priced in this system, so "value" is the quantity, in Qtl.)
 
 const fmt = (v) => (v === null || v === undefined ? null : Number(v).toFixed(3));
-const th = { textAlign: "left", fontSize: 12, color: "#64748b", padding: "6px 8px", borderBottom: "1px solid #e2e8f0", fontWeight: 600 };
-const td = { padding: "7px 8px", borderBottom: "1px solid #eef2f7", fontSize: 13.5 };
+const th = { textAlign: "left", fontSize: 12, color: "#5b6660", padding: "6px 8px", borderBottom: "1px solid #e8e0cc", fontWeight: 600 };
+const td = { padding: "7px 8px", borderBottom: "1px solid #efe8d3", fontSize: 13.5 };
 const num = { ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" };
 
 function StockCell({ value, completed }) {
   const f = fmt(value);
-  if (f === null) return <td style={{ ...num, color: "#94a3b8" }}>{completed ? "n/a" : "—"}</td>;
+  if (f === null) return <td style={{ ...num, color: "#8a928e" }}>{completed ? "n/a" : "—"}</td>;
   return <td style={num}>{f}</td>;
 }
 
@@ -22,7 +22,7 @@ function Section({ title, color, subtitle, children }) {
     <div style={{ marginTop: 16 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <span style={{ background: color, color: "#fff", borderRadius: 6, padding: "2px 10px", fontSize: 12, fontWeight: 700, letterSpacing: 0.3 }}>{title}</span>
-        <span style={{ fontSize: 13, color: "#475569" }}>{subtitle}</span>
+        <span style={{ fontSize: 13, color: "#4b5753" }}>{subtitle}</span>
       </div>
       <div style={{ overflowX: "auto", marginTop: 6 }}>{children}</div>
     </div>
@@ -65,17 +65,17 @@ export default function ProductionMovementModal({ batch, onClose }) {
             </p>
 
             {/* the flow at a glance: source -> destination */}
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 16px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, background: "#fffcf5", border: "1px solid #e8e0cc", borderRadius: 10, padding: "12px 16px" }}>
               <div>
                 <div style={{ fontSize: 11, color: "#9a3412", fontWeight: 700 }}>USED FROM</div>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>{m.source_warehouse.name}</div>
-                <div style={{ fontSize: 12.5, color: "#64748b" }}>{m.completed ? "used" : "reserved"} {Number(m.input_qty).toFixed(3)} Qtl</div>
+                <div style={{ fontSize: 12.5, color: "#5b6660" }}>{m.completed ? "used" : "reserved"} {Number(m.input_qty).toFixed(3)} Qtl</div>
               </div>
-              <div style={{ fontSize: 26, color: "#94a3b8" }}>→</div>
+              <div style={{ fontSize: 26, color: "#8a928e" }}>→</div>
               <div>
-                <div style={{ fontSize: 11, color: "#166534", fontWeight: 700 }}>TRANSFERRED INTO</div>
+                <div style={{ fontSize: 11, color: "#0b5f58", fontWeight: 700 }}>TRANSFERRED INTO</div>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>{m.destination_warehouses.length ? m.destination_warehouses.join(", ") : "— not packed yet —"}</div>
-                <div style={{ fontSize: 12.5, color: "#64748b" }}>
+                <div style={{ fontSize: 12.5, color: "#5b6660" }}>
                   {m.completed ? `packed ${Number(m.output_qty).toFixed(3)} Qtl` : "stock is moved when the batch is completed"}
                   {m.recovery_pct != null ? ` · recovery ${m.recovery_pct}%` : ""}
                 </div>
@@ -110,7 +110,7 @@ export default function ProductionMovementModal({ batch, onClose }) {
               </table>
             </Section>
 
-            <Section title="TRANSFERRED INTO" color="#166534" subtitle="packed goods added to the destination warehouse">
+            <Section title="TRANSFERRED INTO" color="#0b5f58" subtitle="packed goods added to the destination warehouse">
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr><th style={th}>Material</th><th style={th}>Packing</th><th style={th}>Warehouse</th><th style={{ ...th, textAlign: "right" }}>Qty (Qtl)</th><th style={{ ...th, textAlign: "right" }}>Stock before</th><th style={{ ...th, textAlign: "right" }}>Stock after</th><th style={{ ...th, textAlign: "right" }}>Current stock</th></tr>

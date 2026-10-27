@@ -314,7 +314,7 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
                 <img
                   src={photoPreview}
                   alt="Driver"
-                  style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: "1px solid #cbd5e1" }}
+                  style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: "1px solid #d9d0bb" }}
                 />
               ) : (
                 <div
@@ -322,8 +322,8 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
                     width: 48,
                     height: 48,
                     borderRadius: 6,
-                    background: "#f8fafc",
-                    border: "1px dashed #cbd5e1",
+                    background: "#fffcf5",
+                    border: "1px dashed #d9d0bb",
                   }}
                 />
               )}
@@ -448,7 +448,7 @@ export default function GateEntryPage({ prefillSoId, onPrefillConsumed } = {}) {
                     Waiting on Admin
                   </span>
                 ) : row.gate_status === "waiting_token" ? (
-                  <span className="dt-badge" style={{ background: "#dcfce7", color: "#166534" }}>
+                  <span className="dt-badge" style={{ background: "#e3f1ee", color: "#0b5f58" }}>
                     Ready for check-in
                   </span>
                 ) : (

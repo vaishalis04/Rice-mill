@@ -5,6 +5,7 @@ import PurchaseOrdersPage from "../purchase/PurchaseOrdersPage";
 import NegotiationsPage from "../purchase/NegotiationsPage";
 import { usePermissionFilteredTabs } from "../../hooks/usePermissionFilteredTabs";
 import { permissionCode } from "../../config/pageCatalog";
+import "../../styles/theme-teal.css";
 
 const ALL_TABS = [
   { key: "vendors", label: "Vendors", code: permissionCode("purchase", "vendors") },
@@ -17,7 +18,7 @@ export default function PurchaseDashboard() {
   const tabs = usePermissionFilteredTabs(ALL_TABS);
 
   return (
-    <DashboardLayout title="Purchase Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab}>
+    <DashboardLayout title="Purchase Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab} theme="teal">
       {tab === "vendors" && <VendorsPage />}
       {tab === "orders" && <PurchaseOrdersPage />}
       {tab === "negotiations" && <NegotiationsPage />}

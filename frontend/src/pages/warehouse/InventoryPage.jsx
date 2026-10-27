@@ -97,7 +97,7 @@ export default function InventoryPage() {
             placeholder="Search item…"
             value={itemFilter}
             onChange={(e) => setItemFilter(e.target.value)}
-            style={{ width: "100%", padding: "8px 12px", borderRadius: 4, border: "1px solid #d1d5db", fontSize: 14 }}
+            style={{ width: "100%", padding: "8px 12px", borderRadius: 4, border: "1px solid #d9d0bb", fontSize: 14 }}
           />
         </div>
         <div className="sf-field" style={{ marginBottom: 0 }}>
@@ -107,7 +107,7 @@ export default function InventoryPage() {
             placeholder="Search location…"
             value={locationFilter}
             onChange={(e) => setLocationFilter(e.target.value)}
-            style={{ width: "100%", padding: "8px 12px", borderRadius: 4, border: "1px solid #d1d5db", fontSize: 14 }}
+            style={{ width: "100%", padding: "8px 12px", borderRadius: 4, border: "1px solid #d9d0bb", fontSize: 14 }}
           />
         </div>
         <div className="sf-field" style={{ marginBottom: 0 }}>
@@ -117,7 +117,7 @@ export default function InventoryPage() {
             placeholder="Search bag size (kg), or 'Bulk'…"
             value={bagSizeFilter}
             onChange={(e) => setBagSizeFilter(e.target.value)}
-            style={{ width: "100%", padding: "8px 12px", borderRadius: 4, border: "1px solid #d1d5db", fontSize: 14 }}
+            style={{ width: "100%", padding: "8px 12px", borderRadius: 4, border: "1px solid #d9d0bb", fontSize: 14 }}
           />
         </div>
       </div>
@@ -132,11 +132,11 @@ export default function InventoryPage() {
             render: (row) => (
               <div>
                 <div style={{ fontWeight: 500 }}>{row.material_name}</div>
-                <div style={{ fontSize: 12, color: "#94a3b8" }}>{formatIdleLabel(row)}</div>
+                <div style={{ fontSize: 12, color: "#8a928e" }}>{formatIdleLabel(row)}</div>
                 {/* Same wording as Production's warehouse card; shown only while a pending batch holds stock. */}
                 {Number(row.reserved_qty_Qtl) > 0 && (
                   <div
-                    style={{ fontSize: 12, color: "#64748b", marginTop: 3 }}
+                    style={{ fontSize: 12, color: "#5b6660", marginTop: 3 }}
                     title={row.reserved_by?.length ? `Reserved by pending batch: ${row.reserved_by.join(", ")}` : undefined}
                   >
                     Available for production: {Number(row.available_qty_Qtl).toFixed(3)} Qtl
@@ -181,7 +181,7 @@ export default function InventoryPage() {
               row.last_outward ? (
                 <div title={`${new Date(row.last_outward.at).toLocaleString()}${row.last_outward.ref ? ` · ${row.last_outward.ref}` : ""}`}>
                   <div>{formatOutwardAge(row.last_outward)}</div>
-                  <div style={{ fontSize: 12, color: "#94a3b8" }}>{formatOutwardDetail(row.last_outward)}</div>
+                  <div style={{ fontSize: 12, color: "#8a928e" }}>{formatOutwardDetail(row.last_outward)}</div>
                 </div>
               ) : (
                 "—"

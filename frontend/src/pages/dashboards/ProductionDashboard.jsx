@@ -5,6 +5,7 @@ import MachinesPage from "../production/MachinesPage";
 import PackingPage from "../production/PackingPage";
 import { usePermissionFilteredTabs } from "../../hooks/usePermissionFilteredTabs";
 import { permissionCode } from "../../config/pageCatalog";
+import "../../styles/theme-teal.css";
 
 const ALL_TABS = [
   { key: "batches", label: "Production Batches", code: permissionCode("production", "batches") },
@@ -17,7 +18,7 @@ export default function ProductionDashboard() {
   const tabs = usePermissionFilteredTabs(ALL_TABS);
 
   return (
-    <DashboardLayout title="Production Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab}>
+    <DashboardLayout title="Production Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab} theme="teal">
       {tab === "batches" && <ProductionBatchPage />}
       {tab === "machines" && <MachinesPage />}
       {tab === "packing" && <PackingPage />}

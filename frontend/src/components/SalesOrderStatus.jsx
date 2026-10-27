@@ -5,23 +5,23 @@
 // COMPLETED.
 
 export const STATUS_META = {
-  pending: { label: "Pending", bg: "#fff8e1", fg: "#8a6100", dot: "#f9a825" },
-  confirmed: { label: "Confirmed", bg: "#e8f5e9", fg: "#1b5e20", dot: "#43a047" },
+  pending: { label: "Pending", bg: "#fdf1d6", fg: "#8a5a00", dot: "#d99a1c" },
+  confirmed: { label: "Confirmed", bg: "#e3f1ee", fg: "#0b5f58", dot: "#0f766e" },
   allocated: { label: "Allocated", bg: "#fff3e0", fg: "#a64b00", dot: "#fb8c00" },
-  dispatched: { label: "Completed", bg: "#e3f2fd", fg: "#0d47a1", dot: "#1e88e5" },
-  closed: { label: "Closed", bg: "#eceff1", fg: "#455a64", dot: "#78909c" },
-  cancelled: { label: "Cancelled", bg: "#ffebee", fg: "#b71c1c", dot: "#e53935" },
+  dispatched: { label: "Completed", bg: "#0f766e", fg: "#ffffff", dot: "#bfe8e1" },
+  closed: { label: "Closed", bg: "#efe8d3", fg: "#5b6660", dot: "#a39d8a" },
+  cancelled: { label: "Cancelled", bg: "#fbeae7", fg: "#b3261e", dot: "#d9483b" },
 };
 
 export const statusLabel = (status) => (STATUS_META[status] || { label: status || "—" }).label;
 
 // The tabs above the list. `match` decides which orders (by their order status) belong to it.
 export const SO_TABS = [
-  { key: "all", label: "All", color: "#1d4ed8", match: () => true },
-  { key: "confirmed", label: "Confirmed", color: "#43a047", match: (s) => ["pending", "confirmed", "allocated"].includes(s) },
-  { key: "completed", label: "Completed", color: "#1e88e5", match: (s) => s === "dispatched" },
-  { key: "closed", label: "Closed", color: "#78909c", match: (s) => s === "closed" },
-  { key: "cancelled", label: "Cancelled", color: "#e53935", match: (s) => s === "cancelled" },
+  { key: "all", label: "All", color: "#0f766e", match: () => true },
+  { key: "confirmed", label: "Confirmed", color: "#2e9e92", match: (s) => ["pending", "confirmed", "allocated"].includes(s) },
+  { key: "completed", label: "Completed", color: "#0b4f4a", match: (s) => s === "dispatched" },
+  { key: "closed", label: "Closed", color: "#a39d8a", match: (s) => s === "closed" },
+  { key: "cancelled", label: "Cancelled", color: "#d9483b", match: (s) => s === "cancelled" },
 ];
 
 // Where an order with this status is listed (used to point the user at the right tab).
@@ -33,7 +33,7 @@ export const orderStatusOf = (order) => order?.order_status || order?.so_status 
 export const lineStatusOf = (item, order) => item?.line_status || item?.so_status || order?.so_status || "confirmed";
 
 export function StatusChip({ status, small }) {
-  const m = STATUS_META[status] || { label: status || "—", bg: "#eef2f7", fg: "#475569", dot: "#94a3b8" };
+  const m = STATUS_META[status] || { label: status || "—", bg: "#efe8d3", fg: "#5b6660", dot: "#a39d8a" };
   return (
     <span
       style={{
@@ -66,7 +66,7 @@ export function StatusTabs({ active, counts, onChange }) {
         gap: 6,
         margin: "4px 0 16px",
         padding: 4,
-        background: "#e8edf4",
+        background: "#efe8d3",
         borderRadius: 12,
         width: "fit-content",
         maxWidth: "100%",
@@ -92,7 +92,7 @@ export function StatusTabs({ active, counts, onChange }) {
               fontSize: "0.84rem",
               fontWeight: 700,
               background: isActive ? "#fff" : "transparent",
-              color: isActive ? "#0f172a" : "#475569",
+              color: isActive ? "#14201d" : "#4b5753",
               boxShadow: isActive ? "0 1px 3px rgba(15, 23, 42, 0.18)" : "none",
               transition: "background 0.15s",
             }}
@@ -107,7 +107,7 @@ export function StatusTabs({ active, counts, onChange }) {
                 borderRadius: 999,
                 fontSize: "0.72rem",
                 fontWeight: 700,
-                background: isActive ? t.color : "#d5dce8",
+                background: isActive ? t.color : "#e1d9c1",
                 color: isActive ? "#fff" : "#475569",
               }}
             >

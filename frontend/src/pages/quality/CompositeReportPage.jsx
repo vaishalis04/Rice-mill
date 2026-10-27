@@ -80,8 +80,8 @@ const parseIdList = (value) => {
 
 const s = {
   container: { padding: "20px", maxWidth: "1200px", margin: "0 auto" },
-  title: { fontSize: "24px", fontWeight: 600, color: "#1a1a1a", margin: "0 0 4px 0" },
-  subtitle: { fontSize: "14px", color: "#666", margin: "0 0 20px 0" },
+  title: { fontSize: "24px", fontWeight: 600, color: "#14201d", margin: "0 0 4px 0" },
+  subtitle: { fontSize: "14px", color: "#5b6660", margin: "0 0 20px 0" },
   card: {
     background: "white",
     borderRadius: "8px",
@@ -95,16 +95,16 @@ const s = {
     alignItems: "center",
     marginBottom: "20px",
     paddingBottom: "16px",
-    borderBottom: "1px solid #e0e0e0",
+    borderBottom: "1px solid #e8e0cc",
   },
-  h3: { fontSize: "18px", fontWeight: 600, color: "#1a1a1a", margin: 0 },
+  h3: { fontSize: "18px", fontWeight: 600, color: "#14201d", margin: 0 },
   grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px 20px" },
   group: { display: "flex", flexDirection: "column", gap: "6px" },
   full: { gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: "6px" },
-  label: { fontSize: "14px", fontWeight: 500, color: "#333" },
+  label: { fontSize: "14px", fontWeight: 500, color: "#2f3a36" },
   input: {
     padding: "8px 12px",
-    border: "1px solid #d0d0d0",
+    border: "1px solid #d9d0bb",
     borderRadius: "4px",
     fontSize: "14px",
     background: "white",
@@ -115,15 +115,15 @@ const s = {
   btn: {
     padding: "8px 16px",
     background: "white",
-    border: "1px solid #d0d0d0",
+    border: "1px solid #d9d0bb",
     borderRadius: "4px",
     fontSize: "13px",
     cursor: "pointer",
-    color: "#333",
+    color: "#2f3a36",
   },
   btnPrimary: {
     padding: "10px 24px",
-    background: "#1976d2",
+    background: "#0f766e",
     color: "white",
     border: "none",
     borderRadius: "4px",
@@ -131,14 +131,14 @@ const s = {
     fontWeight: 500,
     cursor: "pointer",
   },
-  btnDisabled: { background: "#90caf9", cursor: "not-allowed" },
+  btnDisabled: { background: "#9fd0c8", cursor: "not-allowed" },
   alert: { padding: "12px 16px", borderRadius: "6px", marginBottom: "16px", fontSize: "14px" },
-  alertError: { background: "#fde8e8", color: "#c62828", border: "1px solid #f5c6c6" },
-  alertOk: { background: "#e8f5e9", color: "#2e7d32", border: "1px solid #c8e6c9" },
+  alertError: { background: "#fbeae7", color: "#b3261e", border: "1px solid #efc4be" },
+  alertOk: { background: "#e3f1ee", color: "#0b5f58", border: "1px solid #c4e0da" },
   table: { width: "100%", borderCollapse: "collapse", fontSize: "14px" },
-  th: { textAlign: "left", padding: "8px 10px", background: "#f1f3f6", border: "1px solid #dfe3ea", fontWeight: 600 },
-  td: { padding: "6px 8px", border: "1px solid #e4e7ee", verticalAlign: "middle" },
-  hint: { fontSize: "12px", color: "#666" },
+  th: { textAlign: "left", padding: "8px 10px", background: "#f1ebda", border: "1px solid #e8e0cc", fontWeight: 600 },
+  td: { padding: "6px 8px", border: "1px solid #e8e0cc", verticalAlign: "middle" },
+  hint: { fontSize: "12px", color: "#5b6660" },
 };
 
 export default function CompositeReportPage() {
@@ -366,7 +366,7 @@ export default function CompositeReportPage() {
         <div style={s.grid}>
           <div style={s.full}>
             <label style={s.label}>
-              Sample Report (Lab Test) <span style={{ color: "#d32f2f" }}>*</span>
+              Sample Report (Lab Test) <span style={{ color: "#b3261e" }}>*</span>
             </label>
             <select
               style={s.input}
@@ -433,7 +433,7 @@ export default function CompositeReportPage() {
                     <tbody>
                       {params.length === 0 && (
                         <tr>
-                          <td style={{ ...s.td, color: "#666" }} colSpan={4}>
+                          <td style={{ ...s.td, color: "#5b6660" }} colSpan={4}>
                             This sample report has no readings. Add parameters below.
                           </td>
                         </tr>
@@ -478,7 +478,7 @@ export default function CompositeReportPage() {
 
               <div style={s.full}>
                 <label style={s.label}>
-                  Add Parameter <span style={{ fontWeight: 400, color: "#666", fontSize: 12 }}>(optional — for any extra quality feature)</span>
+                  Add Parameter <span style={{ fontWeight: 400, color: "#5b6660", fontSize: 12 }}>(optional — for any extra quality feature)</span>
                 </label>
                 <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr auto", gap: "10px" }}>
                   <select
@@ -558,7 +558,7 @@ export default function CompositeReportPage() {
           )}
         </div>
 
-        <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #e0e0e0" }}>
+        <div style={{ marginTop: 24, paddingTop: 20, borderTop: "1px solid #e8e0cc" }}>
           <button
             type="submit"
             style={{ ...s.btnPrimary, ...(canSubmit ? {} : s.btnDisabled) }}

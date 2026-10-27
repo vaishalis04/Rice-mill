@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import "../../styles/theme-teal.css";
 import { useAuth } from "../../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { ROLE_NAME } from "../../constants/roles";
@@ -17,10 +18,12 @@ import "./Dashboard.css";
  * slide-in drawer on mobile. Dashboards with only one section (e.g.
  * Dispatch) can omit `tabs` entirely and just pass `children`.
  *
- * `theme` is optional and purely visual: when set (e.g. "admin") the shell
+ * `theme` is purely visual and defaults to "teal" (the Cream Canvas look in
+ * styles/theme-teal.css, used by every role). Pass `theme={null}` to render the
+ * legacy look. When set (e.g. "teal") the shell
  * gets a `theme-<name>` class that a role-specific stylesheet can hook into
- * (see styles/admin-theme.css), plus a brand block at the top of the sidebar.
- * Left out, the shell renders exactly as before.
+ * (see styles/theme-teal.css), plus a brand block at the top of the sidebar.
+ * With `theme={null}` the shell renders exactly as it did before the redesign.
  */
 export default function DashboardLayout({
   title,
@@ -29,12 +32,42 @@ export default function DashboardLayout({
   onTabChange,
   children,
   roleLabel,
-  theme,
+  theme = "teal",
 }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const hasSidebar = Array.isArray(tabs) && tabs.length > 0;
+  const sidebarRef = useRef(null);
+
+  // Long menus: keep the active item in view inside the sidebar (it scrolls on
+  // its own), and open it scrolled to that item on mobile.
+  useEffect(() => {
+    const nav = sidebarRef.current;
+    const item = nav && nav.querySelector(".dash-sidebar-item.active");
+    if (!nav || !item) return;
+    const pad = 8;
+    if (item.offsetTop < nav.scrollTop + pad) {
+      nav.scrollTop = Math.max(0, item.offsetTop - pad);
+    } else if (item.offsetTop + item.offsetHeight > nav.scrollTop + nav.clientHeight - pad) {
+      nav.scrollTop = item.offsetTop + item.offsetHeight - nav.clientHeight + pad;
+    }
+  }, [activeTab, sidebarOpen]);
+
+  // Switching tabs starts the new page at the top instead of mid-scroll.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [activeTab]);
+
+  // While the mobile menu is open, the page behind it must not scroll.
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [sidebarOpen]);
 
   const handleLogout = async () => {
     await logout();
@@ -47,7 +80,7 @@ export default function DashboardLayout({
   };
 
   return (
-    <div className={`dash-wrapper${theme ? ` theme-${theme}` : ""}`}>
+    <div className={`dash-wrapper${theme ? ` theme-${theme}` : ""}${theme && !hasSidebar ? " no-sidebar" : ""}`}>
       <header className="dash-header">
         <div className="dash-header-left">
           {hasSidebar && (
@@ -85,7 +118,7 @@ export default function DashboardLayout({
                 onClick={() => setSidebarOpen(false)}
               />
             )}
-            <nav className={`dash-sidebar ${sidebarOpen ? "open" : ""}`}>
+            <nav ref={sidebarRef} className={`dash-sidebar ${sidebarOpen ? "open" : ""}`}>
               {theme && (
                 <div className="dash-brand">
                   <span className="dash-brand-mark">RM</span>

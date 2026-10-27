@@ -7,7 +7,7 @@ export default function Unauthorized() {
       <div className="auth-card" style={{ textAlign: "center" }}>
         <h1>403 — Not Allowed</h1>
         <p className="subtitle">Your account doesn't have access to this page.</p>
-        <Link to="/login" style={{ color: "#b5623a" }}>
+        <Link to="/login" style={{ color: "#0f766e" }}>
           Back to login
         </Link>
       </div>

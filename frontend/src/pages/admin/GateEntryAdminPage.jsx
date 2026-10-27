@@ -656,7 +656,7 @@ export default function GateEntryAdminPage() {
                 <img
                   src={selectedGateEntry.driver_photo_url}
                   alt="Driver"
-                  style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: "1px solid #cbd5e1" }}
+                  style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: "1px solid #d9d0bb" }}
                 />
               )}
             </div>
@@ -692,7 +692,7 @@ export default function GateEntryAdminPage() {
                     disabled={fetchingPODetails}
                   />
                   {fetchingPODetails && (
-                    <p className="field-hint" style={{ color: "#2563eb" }}>Loading PO details...</p>
+                    <p className="field-hint" style={{ color: "#0f766e" }}>Loading PO details...</p>
                   )}
                   <p className="field-hint">
                     You can select multiple approved Purchase Orders. After selecting a PO,
@@ -723,7 +723,7 @@ export default function GateEntryAdminPage() {
 
                           {materials.length === 0 ? (
                             <div className="po-material-list">
-                              <div className="field-hint" style={{ padding: "8px", color: "#dc2626" }}>
+                              <div className="field-hint" style={{ padding: "8px", color: "#b3261e" }}>
                                 No materials found for this PO. Please check the PO details.
                               </div>
                             </div>
@@ -825,7 +825,7 @@ export default function GateEntryAdminPage() {
                     disabled={fetchingSODetails}
                   />
                   {fetchingSODetails && (
-                    <p className="field-hint" style={{ color: "#2563eb" }}>Loading SO details...</p>
+                    <p className="field-hint" style={{ color: "#0f766e" }}>Loading SO details...</p>
                   )}
                   <p className="field-hint">
                     You can select multiple approved Sales Orders. After selecting an SO,
@@ -856,7 +856,7 @@ export default function GateEntryAdminPage() {
 
                           {materials.length === 0 ? (
                             <div className="po-material-list">
-                              <div className="field-hint" style={{ padding: "8px", color: "#dc2626" }}>
+                              <div className="field-hint" style={{ padding: "8px", color: "#b3261e" }}>
                                 No materials found for this SO. Please check the SO details.
                               </div>
                             </div>
@@ -1092,7 +1092,7 @@ export default function GateEntryAdminPage() {
                   Waiting on Admin
                 </span>
               ) : row.gate_status === "waiting_token" ? (
-                <span className="dt-badge" style={{ background: "#dcfce7", color: "#166534" }}>
+                <span className="dt-badge" style={{ background: "#e3f1ee", color: "#0b5f58" }}>
                   Ready for check-in
                 </span>
               ) : (

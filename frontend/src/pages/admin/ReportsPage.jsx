@@ -221,19 +221,19 @@ const DAILY_REPORTS = [
     type: "inward",
     label: "Inward Report",
     hint: "Purchase trucks received, by warehouse — every warehouse listed, with GP No.",
-    accent: "#059669",
+    accent: "#0f766e",
   },
   {
     type: "outward",
     label: "Outward Report",
     hint: "Sales trucks dispatched, by plant / mill — with GP No., bags and loaded qty.",
-    accent: "#2563eb",
+    accent: "#14201d",
   },
   {
     type: "overall",
     label: "Overall Inward / Outward",
     hint: "Day summary of inward and outward plus the full vehicle log — with GP No.",
-    accent: "#7c3aed",
+    accent: "#2e9e92",
   },
 ];
 
@@ -255,19 +255,19 @@ function WarehouseMultiSelect({ plantId, value, onChange }) {
       <label>Warehouses (optional — all if none ticked)</label>
       <details style={{ position: "relative" }}>
         <summary
-          style={{ listStyle: "none", cursor: "pointer", padding: "9px 12px", border: "1px solid #cbd5e1", borderRadius: 8, background: "#fff", display: "flex", justifyContent: "space-between", gap: 8 }}
+          style={{ listStyle: "none", cursor: "pointer", padding: "9px 12px", border: "1px solid #d9d0bb", borderRadius: 8, background: "#fff", display: "flex", justifyContent: "space-between", gap: 8 }}
         >
           <span>{summary}</span>
           <span aria-hidden="true">▾</span>
         </summary>
         <div
-          style={{ position: "absolute", zIndex: 20, left: 0, right: 0, marginTop: 4, background: "#fff", border: "1px solid #cbd5e1", borderRadius: 8, boxShadow: "0 6px 18px rgba(15,23,42,.12)", maxHeight: 260, overflowY: "auto", padding: 8 }}
+          style={{ position: "absolute", zIndex: 20, left: 0, right: 0, marginTop: 4, background: "#fff", border: "1px solid #d9d0bb", borderRadius: 8, boxShadow: "0 6px 18px rgba(15,23,42,.12)", maxHeight: 260, overflowY: "auto", padding: 8 }}
         >
           <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
             <button type="button" className="dt-btn" onClick={() => onChange(options.map((w) => String(w.id)))}>Select all</button>
             <button type="button" className="dt-btn" onClick={() => onChange([])}>Clear</button>
           </div>
-          {options.length === 0 && <div style={{ color: "#64748b", fontSize: "0.85rem" }}>No warehouses.</div>}
+          {options.length === 0 && <div style={{ color: "#5b6660", fontSize: "0.85rem" }}>No warehouses.</div>}
           {options.map((w) => (
             <label key={w.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 2px", cursor: "pointer", fontSize: "0.9rem" }}>
               <input type="checkbox" checked={picked.has(String(w.id))} onChange={() => toggleOne(w.id)} />
@@ -353,7 +353,7 @@ function DailyReportTab() {
           <div
             key={r.type}
             style={{
-              border: "1px solid #e2e8f0",
+              border: "1px solid #e8e0cc",
               borderTop: `4px solid ${r.accent}`,
               borderRadius: 12,
               background: "#fff",
@@ -363,8 +363,8 @@ function DailyReportTab() {
               gap: 8,
             }}
           >
-            <div style={{ fontWeight: 700, fontSize: "1rem", color: "#0f172a" }}>{r.label}</div>
-            <div style={{ fontSize: "0.82rem", color: "#64748b", flex: 1 }}>{r.hint}</div>
+            <div style={{ fontWeight: 700, fontSize: "1rem", color: "#14201d" }}>{r.label}</div>
+            <div style={{ fontSize: "0.82rem", color: "#5b6660", flex: 1 }}>{r.hint}</div>
             <button
               type="button"
               className="sf-submit"
@@ -406,7 +406,7 @@ function Pager({ meta, onPage }) {
       >
         Prev
       </button>
-      <span style={{ fontSize: "0.85rem", color: "#64748b" }}>
+      <span style={{ fontSize: "0.85rem", color: "#5b6660" }}>
         Page {meta.page} of {meta.totalPages}
       </span>
       <button

@@ -208,8 +208,8 @@ export default function VisitorSection() {
                   borderRadius: 10,
                   fontSize: 12,
                   fontWeight: 600,
-                  background: row.status === "checked_out" ? "#e2e8f0" : "#dcfce7",
-                  color: row.status === "checked_out" ? "#475569" : "#166534",
+                  background: row.status === "checked_out" ? "#e8e0cc" : "#e3f1ee",
+                  color: row.status === "checked_out" ? "#4b5753" : "#0b5f58",
                 }}
               >
                 {row.status === "checked_out" ? "Checked Out" : "Checked In"}

@@ -567,8 +567,8 @@ export default function LoadingPage() {
               <div
                 style={{
                   padding: "8px 10px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
+                  background: "#fffcf5",
+                  border: "1px solid #e8e0cc",
                   borderRadius: 6,
                   fontSize: 13,
                 }}
@@ -585,18 +585,18 @@ export default function LoadingPage() {
               <div
                 style={{
                   padding: "8px 10px",
-                  background: "#f8fafc",
-                  border: "1px solid #e2e8f0",
+                  background: "#fffcf5",
+                  border: "1px solid #e8e0cc",
                   borderRadius: 6,
                   fontSize: 13,
                 }}
               >
                 {loadingMaterials && (
-                  <div style={{ color: "#64748b" }}>Loading materials...</div>
+                  <div style={{ color: "#5b6660" }}>Loading materials...</div>
                 )}
                 
                 {!loadingMaterials && availableMaterials.length === 0 && (
-                  <div style={{ color: "#64748b" }}>
+                  <div style={{ color: "#5b6660" }}>
                     No materials found for this gate entry.
                   </div>
                 )}
@@ -616,7 +616,7 @@ export default function LoadingPage() {
                           style={{
                             marginTop: idx === 0 ? 0 : 8,
                             paddingTop: idx === 0 ? 0 : 8,
-                            borderTop: idx === 0 ? "none" : "1px solid #e2e8f0",
+                            borderTop: idx === 0 ? "none" : "1px solid #e8e0cc",
                             opacity: !isSelectable ? 0.6 : 1,
                           }}
                         >
@@ -636,10 +636,10 @@ export default function LoadingPage() {
                             />
                             <div style={{ flex: 1 }}>
                               <strong>{material.material_name}</strong>
-                              <span style={{ marginLeft: 8, color: "#64748b", fontSize: 12 }}>
+                              <span style={{ marginLeft: 8, color: "#5b6660", fontSize: 12 }}>
                                 SO: {material.so_no}
                               </span>
-                              <div style={{ marginTop: 2, fontSize: 12, color: "#475569" }}>
+                              <div style={{ marginTop: 2, fontSize: 12, color: "#4b5753" }}>
                                 Ordered: <strong>{material.ordered_qty}</strong> Qtl
                                 {" · "}
                                 Dispatched so far: <strong>{material.dispatched_qty}</strong> Qtl
@@ -653,8 +653,8 @@ export default function LoadingPage() {
                                     marginTop: 4,
                                     padding: "1px 6px",
                                     borderRadius: 10,
-                                    background: "#dcfce7",
-                                    color: "#166534",
+                                    background: "#e3f1ee",
+                                    color: "#0b5f58",
                                     fontSize: 11,
                                     fontWeight: 600,
                                   }}
@@ -701,13 +701,13 @@ export default function LoadingPage() {
                                   style={{
                                     width: 80,
                                     padding: "4px 6px",
-                                    border: "1px solid #d1d5db",
+                                    border: "1px solid #d9d0bb",
                                     borderRadius: 4,
                                     fontSize: 13,
                                   }}
                                   required
                                 />
-                                <span style={{ fontSize: 12, color: "#64748b" }}>kg x</span>
+                                <span style={{ fontSize: 12, color: "#5b6660" }}>kg x</span>
                                 <input
                                   type="number"
                                   step="1"
@@ -718,13 +718,13 @@ export default function LoadingPage() {
                                   style={{
                                     width: 70,
                                     padding: "4px 6px",
-                                    border: "1px solid #d1d5db",
+                                    border: "1px solid #d9d0bb",
                                     borderRadius: 4,
                                     fontSize: 13,
                                   }}
                                   required
                                 />
-                                <span style={{ fontSize: 12, color: "#64748b" }}>bags = {currentQty || 0} Qtl</span>
+                                <span style={{ fontSize: 12, color: "#5b6660" }}>bags = {currentQty || 0} Qtl</span>
                               </div>
                             )}
                           </div>
@@ -737,12 +737,12 @@ export default function LoadingPage() {
                             return (
                               <div style={{ marginTop: 6, marginLeft: 28, fontSize: 12 }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                                  <label style={{ color: "#475569", fontWeight: 600 }}>Load from warehouse</label>
+                                  <label style={{ color: "#4b5753", fontWeight: 600 }}>Load from warehouse</label>
                                   <select
                                     value={chosen}
                                     onChange={(e) => setMaterialWarehouses((prev) => ({ ...prev, [material.id]: e.target.value }))}
                                     required
-                                    style={{ padding: "4px 6px", border: "1px solid #d1d5db", borderRadius: 4, fontSize: 13, minWidth: 180 }}
+                                    style={{ padding: "4px 6px", border: "1px solid #d9d0bb", borderRadius: 4, fontSize: 13, minWidth: 180 }}
                                   >
                                     <option value="">Select warehouse…</option>
                                     {options.map((o) => (
@@ -759,7 +759,7 @@ export default function LoadingPage() {
                                   </div>
                                 )}
                                 {stockLoaded && option && (
-                                  <div style={{ color: pack || !typedSize ? "#475569" : "#dc2626", marginTop: 3 }}>
+                                  <div style={{ color: pack || !typedSize ? "#4b5753" : "#dc2626", marginTop: 3 }}>
                                     In {option.warehouse_name}: {option.packs.map(packLine).join(" · ")}
                                     {option.reserved_qtl > 0 && ` · ${option.reserved_qtl} Qtl reserved for pending production`}
                                     {typedSize > 0 && !pack && ` — no ${typedSize} kg stock here`}
@@ -769,7 +769,7 @@ export default function LoadingPage() {
                             );
                           })()}
                           {isSelected && currentQty > 0 && (
-                            <div style={{ fontSize: 11, color: "#64748b", marginTop: 2, marginLeft: 28 }}>
+                            <div style={{ fontSize: 11, color: "#5b6660", marginTop: 2, marginLeft: 28 }}>
                               {currentQty} Qtl loaded — {round3(material.remaining_qty - currentQty)} Qtl remaining after this truck
                             </div>
                           )}
@@ -778,7 +778,7 @@ export default function LoadingPage() {
                     })}
                     
                     {selectedItems.length > 0 && (
-                      <div style={{ marginTop: 8, padding: "6px 8px", background: "#e6f7e6", borderRadius: 4 }}>
+                      <div style={{ marginTop: 8, padding: "6px 8px", background: "#e3f1ee", borderRadius: 4 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
                           <strong>Selected: {selectedItems.length} material(s)</strong>
                           <span>Total to load: {totalLoadedQty} Qtl</span>
@@ -963,7 +963,7 @@ export default function LoadingPage() {
             label: "Warehouse",
             render: (row) => {
               const ids = [...new Set((Array.isArray(row.items) ? row.items : []).map((m) => m.warehouse_id).filter(Boolean))];
-              if (ids.length === 0) return <span style={{ color: "#94a3b8" }}>Not recorded</span>;
+              if (ids.length === 0) return <span style={{ color: "#8a928e" }}>Not recorded</span>;
               return ids.map((id) => warehouses.getLabel(id)).join(", ");
             },
           },

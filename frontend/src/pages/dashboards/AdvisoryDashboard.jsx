@@ -4,6 +4,7 @@ import AdvisoryTrucksPage from "../admin/AdvisoryTrucksPage";
 import PaymentSettlementPage from "../advisory/PaymentSettlementPage";
 import { usePermissionFilteredTabs } from "../../hooks/usePermissionFilteredTabs";
 import { permissionCode } from "../../config/pageCatalog";
+import "../../styles/theme-teal.css";
 
 // Advisory Trucks is unchanged on Admin > Advisory Trucks — this just also
 // gives the new Advisory role its own home for the same page, plus the new
@@ -18,7 +19,7 @@ export default function AdvisoryDashboard() {
   const tabs = usePermissionFilteredTabs(ALL_TABS);
 
   return (
-    <DashboardLayout title="Advisory Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab}>
+    <DashboardLayout title="Advisory Dashboard" tabs={tabs} activeTab={tab} onTabChange={setTab} theme="teal">
       {tab === "advisoryTrucks" && <AdvisoryTrucksPage />}
       {tab === "paymentSettlement" && <PaymentSettlementPage />}
     </DashboardLayout>

@@ -91,7 +91,7 @@ export default function PurchaseOrderDetailModal({ poNo, onClose }) {
               style={{
                 marginTop: 16,
                 padding: 16,
-                background: "#f7f8fa",
+                background: "#fffcf5",
                 borderRadius: 8,
                 display: "grid",
                 gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
@@ -99,29 +99,29 @@ export default function PurchaseOrderDetailModal({ poNo, onClose }) {
               }}
             >
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>Vendor</div>
+                <div style={{ fontSize: 12, color: "#5b6660" }}>Vendor</div>
                 <div style={{ fontWeight: 600 }}>
                   {data.vendor ? `${data.vendor.name} (${data.vendor.vendor_code})` : "—"}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>PO Date</div>
+                <div style={{ fontSize: 12, color: "#5b6660" }}>PO Date</div>
                 <div>{data.po_date ? new Date(data.po_date).toLocaleDateString() : "—"}</div>
               </div>
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>Validity</div>
+                <div style={{ fontSize: 12, color: "#5b6660" }}>Validity</div>
                 <div>{data.validity ? new Date(data.validity).toLocaleDateString() : "—"}</div>
               </div>
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>DO No.</div>
+                <div style={{ fontSize: 12, color: "#5b6660" }}>DO No.</div>
                 <div>{data.do_no || "—"}</div>
               </div>
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>Line Items</div>
+                <div style={{ fontSize: 12, color: "#5b6660" }}>Line Items</div>
                 <div>{data.items.length}</div>
               </div>
               <div>
-                <div style={{ fontSize: 12, color: "#666" }}>Total Amount</div>
+                <div style={{ fontSize: 12, color: "#5b6660" }}>Total Amount</div>
                 <div style={{ fontWeight: 600 }}>{Number(data.total_amount).toFixed(2)}</div>
               </div>
             </div>
